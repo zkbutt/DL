@@ -6,7 +6,7 @@ from math import ceil
 from f_tools.fun_od.f_boxes import fix_yxhw
 
 
-class Anchors(object):
+class AnchorsFound(object):
     def __init__(self, image_size, anchors_size, feature_map_steps, anchors_clip=False):
         '''
         没有长宽比就是个正方形
@@ -15,7 +15,7 @@ class Anchors(object):
         :param feature_map_steps: [8, 16, 32]  # 特图的步距
         :param anchors_clip: 是否剔除超边界
         '''
-        super(Anchors, self).__init__()
+        super(AnchorsFound, self).__init__()
         # 定义对应3个特征的尺寸 [[16, 32], [64, 128], [256, 512]] 这里是框正方形
         self.anchors_size = anchors_size  # 这个定义一个特图有多少个Anchors
         # 特征层对应的步距   [8, 16, 32] 原图size/特图size = images/feature_maps = steps
@@ -62,13 +62,11 @@ class Anchors(object):
 
 if __name__ == '__main__':
     size = [320, 320]
+    anchors_size = [[16, 32], [64, 128], [256, 512]]
+    feature_map_steps = [8, 16, 32]
+    clip = False
 
-    cfg = {}
-    cfg['min_sizes'] = [[16, 32], [64, 128], [256, 512]]
-    cfg['steps'] = [8, 16, 32]
-    cfg['clip'] = False
-
-    anchors = Anchors(cfg, size).get_anchors()  # torch.Size([16800, 4])
+    anchors = AnchorsFound(size, anchors_size, feature_map_steps, clip).get_anchors()  # torch.Size([16800, 4])
     index_start = int(anchors.shape[0] / 2)
     # index_start = 0
     anchors = anchors[index_start:index_start + 2]  # 这里选出 anchors
@@ -101,7 +99,7 @@ if __name__ == '__main__':
         rect = plt.Rectangle((a[0], a[1]), a[2], a[3], color="r", fill=False)
         ax.add_patch(rect)
 
-    # -------------修正点------------
+    # -------------下面是画修正点------------
     mbox_loc = torch.rand(2, 4)
     mbox_ldm = torch.rand(2, 10)
     # xs=[0.1, 0.2]

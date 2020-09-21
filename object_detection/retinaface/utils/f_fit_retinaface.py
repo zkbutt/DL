@@ -11,16 +11,19 @@ import torch.distributed as dist
 from torch.cuda.amp import GradScaler, autocast
 
 from f_tools.GLOBAL_LOG import flog
-from object_detection.faster_rcnn.train_utils.coco_utils import get_coco_api_from_dataset
-from object_detection.faster_rcnn.train_utils.coco_eval import CocoEvaluator
+from object_detection.ssd.train_utils.coco_utils import get_coco_api_from_dataset
+from object_detection.ssd.train_utils.coco_eval import CocoEvaluator
+from torch.autograd import Variable
 
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq,
+def train_one_epoch(model, optimizer, fun_loss, anchors, data_loader, device, epoch, print_freq,
                     train_loss=None, train_lr=None, warmup=False):
     '''
 
     :param model:
     :param optimizer:
+    :param fun_loss:
+    :param anchors:
     :param data_loader:
     :param device:
     :param epoch: 当前次数
@@ -31,45 +34,58 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq,
     :return:
     '''
     model.train()
-    metric_logger = MetricLogger(delimiter="  ")  # 日志记录
+    metric_logger = MetricLogger(delimiter="  ")  # 日志记录器
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
 
     lr_scheduler = None
-    if epoch == 0 and warmup is True:  # 当训练第一轮（epoch=0）时，是否进行 lr 策略配置
-        warmup_factor = 1.0 / 1000
+    if epoch == 0 and warmup is True:  # 当训练第一轮（epoch=0）时，启用warmup训练方式，可理解为热身训练
+        warmup_factor = 5.0 / 10000
         warmup_iters = min(1000, len(data_loader) - 1)
+        # 是否进行 lr 策略配置
         lr_scheduler = warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
 
     # ---半精度训练1---
     scaler = GradScaler()
-
     for images, targets in metric_logger.log_every(data_loader, print_freq, header):
-        '''
-        images 输入的一批图片是未处理的原图 尺寸不一样 torch.Size([3, 375, 500]) 
-        targets gt未归一化
-        '''
-        # --------------数据组装 并确保变量的设备信息一致-------------
-        images = list(image.to(device) for image in images)  # 保持list(tensor)不变 变设备
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-        # --------------数据组装完成-------------
+        # -----------------------输入模型前的数据处理------------------------
+        with torch.no_grad():  # np -> tensor 这里不需要求导
+            # torch.Size([8, 3, 640, 640])
+            images = Variable(torch.from_numpy(images).type(torch.float)).to(device)
+            # n,15(4+10+1)
+            targets = [Variable(torch.from_numpy(target).type(torch.float)).to(device) for target in targets]
+        # -----------------------数据组装完成------------------------
 
         # ---半精度训练2---
         with autocast():
-            loss_dict = model(images, targets)  # 模型训练输出损失 rpn 和 roi的分类及回归损失
-            losses = sum(loss for loss in loss_dict.values())
+            # ---------------模型输入输出 损失计算要变 ----------------------
+            out = model(images)  # 这里要变
+            r_loss, c_loss, landm_loss = fun_loss(out, anchors, targets, device)
+            losses = 2 * r_loss + c_loss + landm_loss  # 这个用于优化
 
-            # 对输出的字典进行多GPU处理 'loss_classifier' 'loss_box_reg'  'loss_objectness'  'loss_rpn_box_reg'
-            loss_dict_reduced = reduce_dict(loss_dict)
-            losses_reduced = sum(loss for loss in loss_dict_reduced.values())  # 总损失
-            loss_value = losses_reduced.item() # 从tensor中取出
+            # -----------------构建展示字典及返回值------------------------
+            # 多GPU时结果处理 reduce_dict 方法
+            # losses_dict_reduced = reduce_dict(losses_dict)
+            losses_dict_reduced = {
+                "total_losses": losses,
+                "r_loss": r_loss,
+                "c_loss": c_loss,
+                "landm_loss": landm_loss,
+            }
+
+            # -----------总loss处理成数值----------------
+            losses_reduce = losses_dict_reduced["total_losses"]
+            loss_value = losses_reduce.item()
+
+
+            #--------------后面是一样的---------------
+            # 记录训练损失 这个是返回值
             if isinstance(train_loss, list):
-                # 记录训练损失 这个是返回值
                 train_loss.append(loss_value)
 
             if not math.isfinite(loss_value):  # 当计算的损失为无穷大时停止训练
                 flog.error("Loss is {}, stopping training".format(loss_value))
-                flog.error(loss_dict_reduced)
+                flog.error(losses_dict_reduced)
                 sys.exit(1)
         # ---半精度训练2  完成---
 
@@ -79,13 +95,17 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq,
         scaler.step(optimizer)
         scaler.update()
 
+        # 半精度开了这两个要关
+        # losses.backward()
+        # optimizer.step()
+
         if lr_scheduler is not None:  # 第一轮使用warmup训练方式
             lr_scheduler.step()
 
-        # 这里记录日志输出 loss是必须的
-        metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
+        # 这里记录日志输出 直接用字典输入
+        metric_logger.update(**losses_dict_reduced)
         now_lr = optimizer.param_groups[0]["lr"]
-        metric_logger.update(lr=now_lr) # 更新SmoothdValue
+        metric_logger.update(lr=now_lr)
         if isinstance(train_lr, list):
             train_lr.append(now_lr)  # 这个是返回值
 
@@ -97,11 +117,11 @@ def evaluate(model, data_loader, device, data_set=None, mAP_list=None):
     :param model:
     :param data_loader:
     :param device:
-    :param data_set: 直接用data_loader
-    :param mAP_list:
+    :param data_set:
+    :param mAP_list: 返回值
     :return:
     '''
-    n_threads = torch.get_num_threads()
+    n_threads = torch.get_num_threads()  # 获出CPU核心数
     # FIXME remove this and make paste_masks_in_image run on the GPU
     torch.set_num_threads(1)
     cpu_device = torch.device("cpu")
@@ -109,26 +129,47 @@ def evaluate(model, data_loader, device, data_set=None, mAP_list=None):
     metric_logger = MetricLogger(delimiter="  ")
     header = "Test: "
 
-    coco = get_coco_api_from_dataset(data_loader.dataset)
+    # ---VOC转换数据集到coco
+    if data_set is None:
+        data_set = get_coco_api_from_dataset(data_loader.dataset)
     iou_types = _get_iou_types(model)
-    coco_evaluator = CocoEvaluator(coco, iou_types)
+    coco_evaluator = CocoEvaluator(data_set, iou_types)
 
-    for image, targets in metric_logger.log_every(data_loader, 100, header):
-        image = list(img.to(device) for img in image)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+    for images, targets in metric_logger.log_every(data_loader, 100, header):
+        # ---------------模型输入输出 损失计算要变 ----------------------
+        with torch.no_grad():  # np -> tensor 这里不需要求导
+            # torch.Size([8, 3, 640, 640])
+            images = Variable(torch.from_numpy(images).type(torch.float)).to(device)
+            # n,15(4+10+1)
+            targets = [Variable(torch.from_numpy(target).type(torch.float)).to(device) for target in targets]
 
         # 当使用CPU时，跳过GPU相关指令
         if device != torch.device("cpu"):
             torch.cuda.synchronize(device)
 
-        model_time = time.time()
-        outputs = model(image)
+        model_time = time.time()  # 开始时间
+        #  list((bboxes_out, labels_out, scores_out), ...)
+        results = model(images, targets)
 
-        outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
-        model_time = time.time() - model_time
+        # 多outputs数据组装 个结果切换到CPU
+        outputs = []
+        for index, (bboxes_out, labels_out, scores_out) in enumerate(results):
+            info = {"boxes": bboxes_out.to(cpu_device),
+                    "labels": labels_out.to(cpu_device),
+                    "scores": scores_out.to(cpu_device),
+                    "height_width": targets[index]["height_width"]}
+            outputs.append(info)
+        # outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
 
-        res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
+        model_time = time.time() - model_time  # 结束时间
 
+        res = dict()
+        for index in range(len(outputs)):
+            info = {targets[index]["image_id"].item(): outputs[index]}
+            res.update(info)
+        # res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
+
+        # coco运算
         evaluator_time = time.time()
         coco_evaluator.update(res)
         evaluator_time = time.time() - evaluator_time
@@ -140,8 +181,8 @@ def evaluate(model, data_loader, device, data_set=None, mAP_list=None):
     coco_evaluator.synchronize_between_processes()
 
     # accumulate predictions from all images
-    coco_evaluator.accumulate()
-    coco_evaluator.summarize()
+    coco_evaluator.accumulate()  # 计算
+    coco_evaluator.summarize()  # 输出指标
     torch.set_num_threads(n_threads)
 
     print_txt = coco_evaluator.coco_eval[iou_types[0]].stats
@@ -149,7 +190,7 @@ def evaluate(model, data_loader, device, data_set=None, mAP_list=None):
     voc_mAP = print_txt[1]
     if isinstance(mAP_list, list):
         mAP_list.append(voc_mAP)
-    return coco_evaluator
+    # return coco_evaluator
 
 
 def warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor):
@@ -166,7 +207,9 @@ def warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor):
 
 class SmoothedValue(object):
     """
-    记录相关的统计量
+    记录一系列统计量
+    Track a series of values and provide access to smoothed values over a
+    window or the global series average.
     """
 
     def __init__(self, window_size=20, fmt=None):
@@ -331,10 +374,26 @@ class MetricLogger(object):
 
 
 def collate_fn(batch):
-    return tuple(zip(*batch))
+    # 多GPU
+    images, targets = tuple(zip(*batch))
+    # images = torch.stack(images, dim=0)
+    #
+    # boxes = []
+    # labels = []
+    # img_id = []
+    # for t in targets:
+    #     boxes.append(t['boxes'])
+    #     labels.append(t['labels'])
+    #     img_id.append(t["image_id"])
+    # targets = {"boxes": torch.stack(boxes, dim=0),
+    #            "labels": torch.stack(labels, dim=0),
+    #            "image_id": torch.as_tensor(img_id)}
+
+    return images, targets
 
 
 def mkdir(path):
+    # 多GPU
     try:
         os.makedirs(path)
     except OSError as e:
@@ -343,7 +402,6 @@ def mkdir(path):
 
 
 def get_world_size():
-    # 获取GPU个数
     if not is_dist_avail_and_initialized():
         return 1
     return dist.get_world_size()
@@ -377,7 +435,7 @@ def reduce_dict(input_dict, average=True):
         return reduced_dict
 
 
-def _get_iou_types(model):  # 取出框
+def _get_iou_types(model):
     model_without_ddp = model
     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
         model_without_ddp = model.module

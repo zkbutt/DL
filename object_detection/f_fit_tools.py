@@ -3,7 +3,7 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_factory import VOCDataSet
+from f_tools.datas.data_factory import VOCDataSet, WiderfaceDataSet
 import numpy as np
 from collections import defaultdict, deque
 
@@ -23,11 +23,15 @@ def sysconfig(path_save_weight, device=None):
     np.set_printoptions(suppress=True)  # 关闭科学计数
     # 检查保存权重文件夹是否存在，不存在则创建
     if not os.path.exists(path_save_weight):
-        os.makedirs(path_save_weight)
+        try:
+            os.makedirs(path_save_weight)
+        except Exception as e:
+            flog.error(' %s %s', path_save_weight, e)
+            exit(-1)
     return device
 
 
-def load_data4voc(data_transform, path_data_root, batch_size=2, bbox2one=False, test=False):
+def load_data4voc(data_transform, path_data_root, batch_size=2, bbox2one=False, isdebug=False):
     '''
 
     :param data_transform:
@@ -36,7 +40,7 @@ def load_data4voc(data_transform, path_data_root, batch_size=2, bbox2one=False, 
     :param bbox2one:  是否gt框进行归一化
     :return:
     '''
-    if test:
+    if isdebug:
         file_name = ['train_s.txt', 'val_s.txt']
     else:
         file_name = ['train.txt', 'val.txt']
@@ -83,6 +87,53 @@ def load_data4voc(data_transform, path_data_root, batch_size=2, bbox2one=False, 
     return train_data_loader, val_data_set_loader
 
 
+def load_data4widerface(path_data_root, img_size_in, batch_size=2, mode='train', isdebug=False, look=False):
+    '''
+
+    :param path_data_root:
+    :param img_size_in:
+    :param batch_size:
+    :param mode:  train val test 暂时debug只支持 train
+    :param isdebug:
+    :param look:
+    :return:
+        images: np(batch,(3,640,640))
+        targets: np(batch,(x个选框,15维))  4+1+10
+    '''
+
+    def detection_collate(batch):
+        '''
+
+        :param batch: list(batch,(tuple((3,640,640),(x个选框,15维))...))
+        :return:np(batch,(3,640,640))   np(batch,(x个选框,15维))
+        '''
+        images = []
+        targets = []
+        for img, box in batch:
+            if len(box) == 0:
+                continue
+            images.append(img)
+            targets.append(box)
+        images = np.array(images)
+        targets = np.array(targets)
+        return images, targets
+
+    train_dataset = WiderfaceDataSet(path_data_root, img_size_in, mode=mode, isdebug=isdebug, look=look)
+    # iter(train_dataset).__next__()
+    data_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        num_workers=0,
+        shuffle=True,
+        pin_memory=True,  # 不使用虚拟内存
+        drop_last=True,  # 除于batch_size余下的数据
+        collate_fn=detection_collate,
+    )
+    # 数据查看
+    # iter(data_loader).__next__()
+    return data_loader
+
+
 def load_weight(path_weight, model, optimizer=None, lr_scheduler=None):
     start_epoch = 0
     if path_weight and os.path.exists(path_weight):
@@ -118,3 +169,7 @@ def save_weight(path_save, model, name, optimizer=None, lr_scheduler=None, epoch
         'epoch': epoch}
     file_weight = os.path.join(path_save, (name + '-{}.pth').format(epoch))
     torch.save(sava_dict, file_weight)
+
+
+if __name__ == '__main__':
+    pass

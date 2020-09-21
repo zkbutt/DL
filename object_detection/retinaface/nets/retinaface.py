@@ -1,4 +1,5 @@
 import os
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
@@ -47,7 +48,8 @@ class LandmarkHead(nn.Module):
 
 
 class RetinaFace(nn.Module):
-    def __init__(self, in_channels_fpn, out_channel, return_layers):
+    def __init__(self, model_name, pretrain_path,
+                 in_channels_fpn, out_channel, return_layers):
         '''
 
         :param in_channels_fpn: fpn的输入通道维度 数组对应输
@@ -56,8 +58,21 @@ class RetinaFace(nn.Module):
         :param return_layers:  定义 backbone 的输出名
         '''
         super(RetinaFace, self).__init__()
-        backbone = MobileNetV1()
-        # ---根据字典抽取结构输出---{'stage1': 1, 'stage2': 2, 'stage3': 3},
+        if model_name == 'mobilenet0.25':
+            backbone = MobileNetV1()
+            if pretrain_path and os.path.exists(pretrain_path):
+                # checkpoint = torch.load(pretrain_path, map_location=torch.device('cpu'))
+                checkpoint = torch.load(pretrain_path)
+                new_state_dict = OrderedDict()
+                for k, v in checkpoint['state_dict'].items():
+                    name = k[7:]  # 移除后7层
+                    new_state_dict[name] = v
+                # load params
+                backbone.load_state_dict(new_state_dict)
+        elif model_name == 'Resnet50':
+            backbone = models.resnet50()
+
+        # ---根据字典抽取结构输出---
         # import torchvision.models._utils as _utils
         # self.body = _utils.IntermediateLayerGetter(backbone, {'stage1': 1, 'stage2': 2, 'stage3': 3})
         # 生成 IntermediateLayerGetter 对象 通过 out = self.body(inputs) 即可输出多个形成数组

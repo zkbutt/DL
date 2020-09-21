@@ -1,5 +1,7 @@
 import json
+from operator import itemgetter
 
+import cv2
 from torch.utils.data import Dataset
 import os
 import torch
@@ -9,7 +11,9 @@ import numpy as np
 # from f_tools.pic.f_show import show_od4boxs
 # from object_detection.faster_rcnn.draw_box_utils import draw_box
 # import matplotlib.pyplot as plt
-from PIL import Image
+from PIL import Image, ImageDraw
+
+from f_tools.GLOBAL_LOG import flog
 
 
 class VOCDataSet(Dataset):
@@ -41,7 +45,7 @@ class VOCDataSet(Dataset):
                 os.path.abspath(os.path.join(path_data_root, "..")), 'classes_voc.json'), 'r')
             self.class_dict = json.load(json_file)
         except Exception as e:
-            print(e)
+            flog.error(e)
             exit(-1)
 
     def __len__(self):
@@ -158,9 +162,214 @@ class VOCDataSet(Dataset):
         return doc
 
 
-class DATA_PREFETCHER():
+def _rand(a=0., b=1.):
+    return np.random.rand() * (b - a) + a
+
+
+class WiderfaceDataSet(Dataset):
     '''
-    要求进来的是tensor数据 GPU dataloader加速
+    包含有图片查看的功能
+    '''
+
+    def __init__(self, path_file, img_size, mode='train', isdebug=False, look=False):
+        '''
+
+        :param path_file: 数据文件的主路径
+        :param img_size:  超参 预处理后的尺寸[640,640]
+        :param mode:  train val test
+        :param isdebug:
+        :param look:  是否查看图片
+        '''
+        self.look = look
+        self.img_size = img_size
+        if isdebug:
+            _file_name = '_label.txt'
+        else:
+            _file_name = 'label.txt'
+
+        self.txt_path = os.path.join(path_file, mode, _file_name)
+
+        if os.path.exists(self.txt_path):
+            f = open(self.txt_path, 'r')
+        else:
+            raise Exception('标签文件不存在: %s' % self.txt_path)
+
+        self.imgs_path = []  # 每一张图片的全路径
+        self.words = []  # 每一张图片对应的15维数据 应该在取的时候再弄出来
+
+        # 这里要重做
+        lines = f.readlines()
+        is_first = True
+        labels = []
+        for line in lines:
+            line = line.rstrip()
+            if line.startswith('#'):  # 删除末尾空格
+                if is_first is True:
+                    is_first = False
+                else:  # 在处理下一个文件时,将上一个labels加入,并清空
+                    labels_copy = labels.copy()
+                    self.words.append(labels_copy)
+                    labels.clear()
+                _path_file = os.path.join(path_file, mode, 'images', line[2:])
+                self.imgs_path.append(_path_file)
+            else:
+                line = line.split(' ')
+                label = [int(float(x)) for x in line]  # 这里 lrtb
+                _t = list(itemgetter(0, 1, 2, 3, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17)(label))
+                # lrtb 转lrwh
+                _t[2] += _t[0]
+                _t[3] += _t[1]
+                if label[4] > 0:
+                    _t.append(1)
+                else:
+                    _t.append(-1)
+                labels.append(_t)
+        self.words.append(labels)  # 最后还有一个需要处理
+
+    def __len__(self):
+        return len(self.imgs_path)
+
+    def __getitem__(self, index):
+        '''
+
+        :param index:
+        :return:
+            <class 'tuple'>: (3, 640, 640)
+              lrwh = 4 + 1 +10
+        '''
+        # 随机打乱 loader有这个功能
+        # if index == 0:
+        #     shuffle_index = np.arange(len(self.imgs_path))
+        #     shuffle(shuffle_index)
+        #     self.imgs_path = np.array(self.imgs_path)[shuffle_index]
+        #     self.words = np.array(self.words)[shuffle_index]
+
+        img = Image.open(self.imgs_path[index])  # 原图数据
+        # 这里是原图
+        # import matplotlib.pyplot as plt
+        # fig = plt.figure()
+        # ax = fig.add_subplot(121)
+        labels = self.words[index]
+
+        if self.look:
+            self.show_face(img, labels)
+
+        # 加快图片解码 pip install jpeg4py -i https://pypi.tuna.tsinghua.edu.cn/simple
+        # import jpeg4py as jpeg
+        # img = jpeg.JPEG(self.imgs_path[index]).decode()
+
+        target = np.array(labels)
+        # 图形增强处理
+        img, target = self.pic_enhance(img, target, self.img_size)
+        rgb_mean = (104, 117, 123)  # bgr order
+
+        # 转换为
+        img = np.transpose(img - np.array(rgb_mean), (2, 0, 1))
+        img = np.array(img, dtype=np.float32)
+        return img, target
+
+    def show_face(self, img, labels):
+        draw = ImageDraw.Draw(img)
+        for box in labels:
+            l, t, r, b = box[0:4]
+            # left, top, right, bottom = box[0:4]
+            draw.rectangle([l, t, r, b], width=2, outline=(255, 255, 255))
+            _ww = 2
+            if box[-1] > 0:
+                _t = 4
+                for _ in range(5):
+                    ltrb = [int(box[_t]) - _ww, int(box[_t + 1]) - _ww, int(box[_t]) + _ww, int(box[_t + 1]) + _ww]
+                    print(ltrb)
+                    draw.rectangle(ltrb)
+                    _t += 2
+        img.show()  # 通过系统的图片软件打开
+
+    def pic_enhance(self, image, targes, input_shape, jitter=(0.9, 1.1), hue=.1, sat=1.5, val=1.5):
+        '''
+        图片增强
+        :param image: 原图数据
+        :param targes: 一个图多个框和关键点,15维=4+10+1
+        :param input_shape: 预处理后的尺寸
+        :param jitter: 原图片的宽高的扭曲比率
+        :param hue: hsv色域中三个通道的扭曲
+        :param sat: 色调（H），饱和度（S），
+        :param val:明度（V）
+        :return:
+            image 预处理后图片 nparray: (640, 640, 3)
+            和 一起处理的选框 并归一化
+        '''
+        iw, ih = image.size
+        h, w = input_shape
+        box = targes
+
+        # 对图像进行缩放并且进行长和宽的扭曲
+        new_ar = w / h * _rand(jitter[0], jitter[1]) / _rand(jitter[0], jitter[1])
+        scale = _rand(0.75, 1.25)  # 在0.25到2之间缩放
+        if new_ar < 1:
+            nh = int(scale * h)
+            nw = int(nh * new_ar)
+        else:
+            nw = int(scale * w)
+            nh = int(nw / new_ar)
+        image = image.resize((nw, nh), Image.BICUBIC)
+
+        # 将图像多余的部分加上灰条 这里调整尺寸
+        dx = int(_rand(0, w - nw))
+        dy = int(_rand(0, h - nh))
+        new_image = Image.new('RGB', (w, h), (128, 128, 128))
+        new_image.paste(image, (dx, dy))
+        image = new_image
+
+        # 50% 翻转图像
+        flip = _rand() < .5
+        if flip:
+            image = image.transpose(Image.FLIP_LEFT_RIGHT)
+
+        # 色域扭曲
+        hue = _rand(-hue, hue)
+        sat = _rand(1, sat) if _rand() < .5 else 1 / _rand(1, sat)
+        val = _rand(1, val) if _rand() < .5 else 1 / _rand(1, val)
+        # PIL.Image对象 -> 归一化的np对象 (640, 640, 3)
+        x = cv2.cvtColor(np.array(image, np.float32) / 255, cv2.COLOR_RGB2HSV)
+        x[..., 0] += hue * 360
+        x[..., 0][x[..., 0] > 1] -= 1
+        x[..., 0][x[..., 0] < 0] += 1
+        x[..., 1] *= sat
+        x[..., 2] *= val
+        x[x[:, :, 0] > 360, 0] = 360
+        x[:, :, 1:][x[:, :, 1:] > 1] = 1
+        x[x < 0] = 0
+        image_data = cv2.cvtColor(x, cv2.COLOR_HSV2RGB) * 255  # numpy array, 0 to 1
+
+        if len(box) > 0:
+            np.random.shuffle(box)
+            box[:, [0, 2, 4, 6, 8, 10, 12]] = box[:, [0, 2, 4, 6, 8, 10, 12]] * nw / iw + dx
+            box[:, [1, 3, 5, 7, 9, 11, 13]] = box[:, [1, 3, 5, 7, 9, 11, 13]] * nh / ih + dy
+            if flip:
+                box[:, [0, 2, 4, 6, 8, 10, 12]] = w - box[:, [2, 0, 6, 4, 8, 12, 10]]
+                box[:, [5, 7, 9, 11, 13]] = box[:, [7, 5, 9, 13, 11]]
+            box[:, 0:14][box[:, 0:14] < 0] = 0
+            box[:, [0, 2, 4, 6, 8, 10, 12]][box[:, [0, 2, 4, 6, 8, 10, 12]] > w] = w
+            box[:, [1, 3, 5, 7, 9, 11, 13]][box[:, [1, 3, 5, 7, 9, 11, 13]] > h] = h
+
+            box_w = box[:, 2] - box[:, 0]
+            box_h = box[:, 3] - box[:, 1]
+            box = box[np.logical_and(box_w > 1, box_h > 1)]  # discard invalid box
+
+        # self.show_face(image, box)
+
+        # -----------归一化--------------
+        box[:, 4:-1][box[:, -1] == -1] = 0
+        box = box.astype(np.float)
+        box[:, [0, 2, 4, 6, 8, 10, 12]] = box[:, [0, 2, 4, 6, 8, 10, 12]] / np.array(w)
+        box[:, [1, 3, 5, 7, 9, 11, 13]] = box[:, [1, 3, 5, 7, 9, 11, 13]] / np.array(h)
+        box_data = box
+        return image_data, box_data
+
+
+class Data_Prefetcher():
+    '''
+    nvidia 要求进来的是tensor数据 GPU dataloader加速
     将预处理通过GPU完成
     '''
 
@@ -202,7 +411,7 @@ class DATA_PREFETCHER():
 
 if __name__ == '__main__':
     train_loader = None
-    prefetcher = DATA_PREFETCHER(train_loader)
+    prefetcher = Data_Prefetcher(train_loader)
     data = prefetcher.next()
     i = 0
     while data is not None:

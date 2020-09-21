@@ -9,7 +9,7 @@ from PIL import Image, ImageFont, ImageDraw
 from torch.autograd import Variable
 from object_detection.retinaface.nets.retinaface import RetinaFace
 from object_detection.retinaface.utils.config import cfg_mnet, cfg_re50
-from object_detection.retinaface.utils.anchors import Anchors
+from object_detection.retinaface.utils.anchors import AnchorsFound
 from object_detection.retinaface.utils.box_utils import decode, decode_landm, non_max_suppression
 
 
@@ -73,7 +73,7 @@ class Retinaface(object):
         # 增加batch_size维度
         image = torch.from_numpy(image).unsqueeze(0)  # 最前面增加一维 可用 image[None]
         # 生成 所有比例anchors
-        anchors = Anchors(self.cfg, image_size=(im_height, im_width)).get_anchors()
+        anchors = AnchorsFound(self.cfg, image_size=(im_height, im_width)).get_anchors()
 
         with torch.no_grad():
 

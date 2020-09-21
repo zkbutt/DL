@@ -8,11 +8,13 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 
 from f_tools.GLOBAL_LOG import flog
-from object_detection.f_fit_tools import sysconfig
-from object_detection.retinaface.CONFIG_RETINAFACE import PATH_SAVE_WEIGHT, PATH_DATA_ROOT, IMG_SIZE_IN, BATCH_SIZE
+from object_detection.retinaface.utils.f_fit_pytorch import train_one_epoch
+from f_tools.fun_od.f_anc import AnchorsFound
+from object_detection.f_fit_tools import sysconfig, load_data4widerface, load_weight
+from object_detection.retinaface.CONFIG_RETINAFACE import PATH_SAVE_WEIGHT, PATH_DATA_ROOT, DEBUG, IMAGE_SIZE, MOBILENET025, PATH_FIT_WEIGHT, NEGATIVE_RATIO, NUM_CLASSES, NEG_IOU_THRESHOLD, END_EPOCHS, \
+    PRINT_FREQ
 from object_detection.retinaface.nets.retinaface import RetinaFace
-from object_detection.retinaface.nets.retinaface_training import DataGenerator, MultiBoxLoss, detection_collate
-from object_detection.retinaface.utils.anchors import Anchors
+from object_detection.retinaface.nets.retinaface_training import MultiBoxLoss
 
 
 def get_lr(optimizer):  # 获取优化器lr
@@ -70,69 +72,58 @@ def fit_one_epoch(model, cls_loss, epoch, data_loader, epoch_end, anchors, devic
 if __name__ == "__main__":
     '''------------------系统配置---------------------'''
     # training_dataset_path = './data/widerface/train/label.txt'
-    Use_Data_Loader = True
+    # Use_Data_Loader = True
+    claxx = MOBILENET025  # 这里根据实际情况改
     device = sysconfig(PATH_SAVE_WEIGHT)
-    device = torch.device("cpu")
+    if DEBUG:
+        device = torch.device("cpu")
 
     '''---------------数据加载及处理--------------'''
-    train_dataset = DataGenerator(PATH_DATA_ROOT, IMG_SIZE_IN, test=True)
-    # iter(train_dataset).__next__()
-    data_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, num_workers=0,
-                             shuffle=True,
-                             pin_memory=True,  # 不使用虚拟内存
-                             drop_last=True,  # 除于batch_size余下的数据
-                             collate_fn=detection_collate)
-    # for iteration, batch in enumerate(gen, 1):
-    #     print(iteration)
-    #     pass
-    # 数据查看
-    # iter(gen).__next__()
-    # prefetcher = DataPrefetcher(gen)
-    # data, label = prefetcher.__next__()
+    # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
+    data_loader = load_data4widerface(PATH_DATA_ROOT, IMAGE_SIZE, isdebug=True)
+    # iter(data_loader).__next__()
 
     '''------------------模型定义---------------------'''
-    model = RetinaFace(IN_CHANNELS_FPN, OUT_CHANNEL, RETURN_LAYERS)
+    model = RetinaFace(claxx.MODEL_NAME,
+                       claxx.PATH_MODEL_WEIGHT,
+                       claxx.IN_CHANNELS_FPN, claxx.OUT_CHANNEL,
+                       claxx.RETURN_LAYERS)
     # if torchvision._is_tracing() 判断训练模式
     # self.training 判断训练模式
     model.train()  # 启用 BatchNormalization 和 Dropout
     model.to(device)
 
-    # 模型分析
-    # print(model)
-    # import tensorwatch as tw
-    # img = tw.draw_model(model, [1, 3, 1024, 1024])
-    # img.save(r'pic_model.jpg')
-    # # 查看网络的统计结果
-    # args = tw.model_stats(model, [1, 3, 640, 640])
-    # print(args)
-
-    lr = 1e-3
-    batch_size = 8
-    epoch_start = 0
-    epoch_end = 25
-
-    cls_loss = MultiBoxLoss(num_classes, NEGATIVE_RATIO)
+    cls_loss = MultiBoxLoss(NUM_CLASSES, NEGATIVE_RATIO, NEG_IOU_THRESHOLD)
     # 权重衰减(如L2惩罚)(默认: 0)
-    optimizer = optim.Adam(model.parameters(), LR, weight_decay=5e-4)
+    optimizer = optim.Adam(model.parameters(), 1e-3, weight_decay=5e-4)
     # 在发现loss不再降低或者acc不再提高之后，降低学习率
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
 
-    if PATH_MODEL_WEIGHT and os.path.exists(PATH_MODEL_WEIGHT):
-        flog.info('Loading weights into state dict...')
-        checkpoint = torch.load(PATH_MODEL_WEIGHT)
-        model.load_state_dict(checkpoint['model'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-        start_epoch = checkpoint['epoch'] + 1
-        flog.warning('已加载权重文件为 %s', PATH_MODEL_WEIGHT)
+    # feadre权重加载
+    start_epoch = load_weight(PATH_FIT_WEIGHT, model, optimizer, lr_scheduler)
 
     '''------------------模型训练---------------------'''
-    anchors = Anchors(IMAGE_SIZE, ANCHORS_SIZE, FEATURE_MAP_STEPS, ANCHORS_CLIP).get_anchors()
+    # 返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数
+    anchors = AnchorsFound(IMAGE_SIZE, claxx.ANCHORS_SIZE, claxx.FEATURE_MAP_STEPS, claxx.ANCHORS_CLIP).get_anchors()
     anchors.to(device)
 
-    #   冻结一定部分训练
-    # for param in model.body.parameters():
-    #     param.requires_grad = False
+    # 主干网一般要冻结
+    for param in model.body.parameters():
+        param.requires_grad = False
+
+    train_loss = []
+    learning_rate = []
+    val_map = []
+
+    for epoch in range(start_epoch, END_EPOCHS):
+        train_one_epoch(model=model, optimizer=optimizer,
+                        data_loader=data_loader,
+                        device=device, epoch=epoch,
+                        print_freq=PRINT_FREQ,
+                        train_loss=train_loss,
+                        train_lr=learning_rate)
+
+        lr_scheduler.step(loss)  # 更新学习
 
     for epoch in range(epoch_start, epoch_end):
         loss = fit_one_epoch(model, cls_loss, epoch, data_loader, epoch_end, anchors, device)

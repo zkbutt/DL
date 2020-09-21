@@ -7,7 +7,7 @@ from f_tools.fits.f_show import plot_loss_and_lr, plot_map
 from object_detection.faster_rcnn import p_transforms4faster
 from object_detection.f_fit_tools import sysconfig, load_data4voc, load_weight, save_weight
 from object_detection.faster_rcnn.CONFIG_FASTER import PATH_SAVE_WEIGHT, BATCH_SIZE, NUM_CLASSES, PATH_MODEL_WEIGHT, \
-    PATH_FIT_WEIGHT, PRINT_FREQ, PATH_DATA_ROOT, END_EPOCHS
+    PATH_FIT_WEIGHT, PRINT_FREQ, PATH_DATA_ROOT, END_EPOCHS, DEBUG
 from object_detection.faster_rcnn.network_files.faster_rcnn_framework import FasterRCNN, FastRCNNPredictor
 from object_detection.faster_rcnn.backbone.resnet50_fpn_model import resnet50_fpn_backbone
 from object_detection.faster_rcnn.train_utils import train_eval_utils as utils
@@ -18,7 +18,7 @@ def create_model(num_classes, path_weights):
     model = FasterRCNN(backbone=backbone, num_classes=91)  # 用的coco权重是91
     # summary(model, (3, 400, 500)) # 无法使用
     # 载入预训练模型权重
-    if os.path.exists(path_weights):
+    if path_weights and os.path.exists(path_weights):
         # 这个权重是整个网络的权重,不需要分步 底层会自动冻结权重
         weights_dict = torch.load(path_weights)
         missing_keys, unexpected_keys = model.load_state_dict(weights_dict, strict=False)
@@ -40,7 +40,8 @@ def create_model(num_classes, path_weights):
 if __name__ == "__main__":
     '''------------------系统配置---------------------'''
     device = sysconfig(PATH_SAVE_WEIGHT)
-    # device = torch.device("cpu")
+    if DEBUG:
+        device = torch.device("cpu")
 
     '''---------------数据加载及处理--------------'''
     # 主要是需要同时处理 target 采用自定义的 transforms
@@ -54,6 +55,7 @@ if __name__ == "__main__":
                                                            PATH_DATA_ROOT,
                                                            BATCH_SIZE,
                                                            bbox2one=False,
+                                                           isdebug=DEBUG,
                                                            )
 
     '''------------------模型定义---------------------'''
@@ -86,7 +88,6 @@ if __name__ == "__main__":
 
         lr_scheduler.step()  # 更新学习率
 
-
         utils.evaluate(model=model, data_loader=val_data_set_loader,
                        device=device, data_set=None,
                        mAP_list=val_map)
@@ -107,4 +108,3 @@ if __name__ == "__main__":
     if len(val_map) != 0:
         plot_map(val_map)
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))
-
