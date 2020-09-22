@@ -5,7 +5,6 @@ import torch
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import VOCDataSet, WiderfaceDataSet
 import numpy as np
-from collections import defaultdict, deque
 
 
 def sysconfig(path_save_weight, device=None):
@@ -31,7 +30,7 @@ def sysconfig(path_save_weight, device=None):
     return device
 
 
-def load_data4voc(data_transform, path_data_root, batch_size=2, bbox2one=False, isdebug=False):
+def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, isdebug=False):
     '''
 
     :param data_transform:
@@ -87,7 +86,7 @@ def load_data4voc(data_transform, path_data_root, batch_size=2, bbox2one=False, 
     return train_data_loader, val_data_set_loader
 
 
-def load_data4widerface(path_data_root, img_size_in, batch_size=2, mode='train', isdebug=False, look=False):
+def load_data4widerface(path_data_root, img_size_in, batch_size, mode='train', isdebug=False, look=False):
     '''
 
     :param path_data_root:
@@ -105,7 +104,9 @@ def load_data4widerface(path_data_root, img_size_in, batch_size=2, mode='train',
         '''
 
         :param batch: list(batch,(tuple((3,640,640),(x个选框,15维))...))
-        :return:np(batch,(3,640,640))   np(batch,(x个选框,15维))
+        :return:
+            images: <class 'tuple'>: (batch, 3, 640, 640)
+            targets: list[batch,(23,15)]
         '''
         images = []
         targets = []

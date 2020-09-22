@@ -1,15 +1,11 @@
 import cv2
 import numpy as np
-import colorsys
 import os
 import torch
 import torch.nn as nn
-import torch.backends.cudnn as cudnn
-from PIL import Image, ImageFont, ImageDraw
-from torch.autograd import Variable
 from object_detection.retinaface.nets.retinaface import RetinaFace
 from object_detection.retinaface.utils.config import cfg_mnet, cfg_re50
-from object_detection.retinaface.utils.anchors import AnchorsFound
+from object_detection.retinaface.utils.anchorsfound import AnchorsFound
 from object_detection.retinaface.utils.box_utils import decode, decode_landm, non_max_suppression
 
 
@@ -20,42 +16,6 @@ def preprocess_input(image):
 
 
 class Retinaface(object):
-    _defaults = {
-        "model_path": 'model_data/Retinaface_mobilenet0.25.pth',
-        "confidence": 0.5,
-        "backbone": "mobilenet",
-        "cuda": False
-    }
-
-    @classmethod
-    def get_defaults(cls, n):
-        if n in cls._defaults:
-            return cls._defaults[n]
-        else:
-            return "Unrecognized attribute name '" + n + "'"
-
-    def __init__(self, **kwargs):
-        self.__dict__.update(self._defaults)
-        if self.backbone == "mobilenet":
-            self.cfg = cfg_mnet
-        else:
-            self.cfg = cfg_re50
-        self.generate()
-
-    def generate(self):
-        # os.environ["CUDA_VISIBLE_DEVICES"] = '0'
-        self.net = RetinaFace(cfg=self.cfg, phase='eval').eval()
-
-        if os.path.exists(self.model_path):
-            print('Loading weights into state dict...')
-            state_dict = torch.load(self.model_path)
-            self.net.load_state_dict(state_dict)
-        else:
-            raise Exception('没有正确加载权重文件')
-        if self.cuda:
-            self.net = nn.DataParallel(self.net)
-            self.net = self.net.cuda()
-        print('Finished!')
 
     def detect_image(self, image):
         '''

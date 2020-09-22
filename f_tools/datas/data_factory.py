@@ -173,7 +173,7 @@ class WiderfaceDataSet(Dataset):
 
     def __init__(self, path_file, img_size, mode='train', isdebug=False, look=False):
         '''
-
+        原文件是 lrwh 转 lrtb
         :param path_file: 数据文件的主路径
         :param img_size:  超参 预处理后的尺寸[640,640]
         :param mode:  train val test
@@ -216,7 +216,7 @@ class WiderfaceDataSet(Dataset):
                 line = line.split(' ')
                 label = [int(float(x)) for x in line]  # 这里 lrtb
                 _t = list(itemgetter(0, 1, 2, 3, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17)(label))
-                # lrtb 转lrwh
+                #lrwh 转 lrtb
                 _t[2] += _t[0]
                 _t[3] += _t[1]
                 if label[4] > 0:
@@ -235,7 +235,7 @@ class WiderfaceDataSet(Dataset):
         :param index:
         :return:
             <class 'tuple'>: (3, 640, 640)
-              lrwh = 4 + 1 +10
+            list(x,15)  ltrb = 4 + 1 +10 归一化后的
         '''
         # 随机打乱 loader有这个功能
         # if index == 0:

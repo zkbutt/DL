@@ -5,7 +5,7 @@ DEBUG = True
 PATH_DATA_ROOT = r'D:\down\AI\datas\m_VOC2007'
 # PATH_DATA_ROOT = r'm:\AI\datas\VOC2012'
 # PATH_DATA_ROOT = r'I:\VOC2012'
-BATCH_SIZE = 4  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
+BATCH_SIZE = 2  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
 PRINT_FREQ = 50  # 每50批打印一次
 NUM_CLASSES = 21
 

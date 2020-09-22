@@ -48,16 +48,16 @@ def train_one_epoch(model, optimizer, fun_loss, anchors, data_loader, device, ep
     # ---半精度训练1---
     scaler = GradScaler()
     for images, targets in metric_logger.log_every(data_loader, print_freq, header):
-        # -----------------------输入模型前的数据处理------------------------
-        with torch.no_grad():  # np -> tensor 这里不需要求导
-            # torch.Size([8, 3, 640, 640])
-            images = Variable(torch.from_numpy(images).type(torch.float)).to(device)
-            # n,15(4+10+1)
-            targets = [Variable(torch.from_numpy(target).type(torch.float)).to(device) for target in targets]
-        # -----------------------数据组装完成------------------------
-
         # ---半精度训练2---
         with autocast():
+            # -----------------------输入模型前的数据处理------------------------
+            with torch.no_grad():  # np -> tensor 这里不需要求导
+                # torch.Size([8, 3, 640, 640])
+                images = Variable(torch.from_numpy(images).type(torch.float)).to(device)
+                # n,15(4+10+1)
+                targets = [Variable(torch.from_numpy(target).type(torch.float)).to(device) for target in targets]
+            # -----------------------数据组装完成------------------------
+
             # ---------------模型输入输出 损失计算要变 ----------------------
             out = model(images)  # 这里要变
             r_loss, c_loss, landm_loss = fun_loss(out, anchors, targets, device)
@@ -77,8 +77,7 @@ def train_one_epoch(model, optimizer, fun_loss, anchors, data_loader, device, ep
             losses_reduce = losses_dict_reduced["total_losses"]
             loss_value = losses_reduce.item()
 
-
-            #--------------后面是一样的---------------
+            # --------------后面是一样的---------------
             # 记录训练损失 这个是返回值
             if isinstance(train_loss, list):
                 train_loss.append(loss_value)

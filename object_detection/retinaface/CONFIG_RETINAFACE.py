@@ -5,7 +5,7 @@ PATH_DATA_ROOT = r'D:\down\AI\datas\widerface'
 # PATH_DATA_ROOT = r'M:\AI\datas\widerface'
 IMAGE_SIZE = (640, 640)  # 预处理 统一尺寸
 # IMAGE_SIZE = (840, 840)  # 预处理 统一尺寸
-BATCH_SIZE = 2  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
+BATCH_SIZE = 5  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
 NUM_CLASSES = 2  # 模型分类数 人脸只有1 0
 rgb_mean = (104, 117, 123)  # 图片的RGB偏差
 
@@ -23,6 +23,7 @@ PATH_FIT_WEIGHT = None
 END_EPOCHS = 10
 PRINT_FREQ = 50  # 每50批打印一次
 OUT_CHANNEL = 64  # FPN的输出 与SSH输出一致
+VARIANCE = [0.1, 0.2]  # 框修正限制
 
 '''Loss参数'''
 PREDICT_IOU_THRESHOLD = 0.3  # 用于预测的阀值
@@ -42,7 +43,7 @@ class MOBILENET025:
     '''模型参数'''
     PATH_MODEL_WEIGHT = r'D:\down\AI\weights\retinaface\mobilenetV1X0.25_pretrain.tar'
 
-    IN_CHANNELS_FPN = 32
+    IN_CHANNELS = 32
     OUT_CHANNEL = 64
     RETURN_LAYERS = {'stage1': 1, 'stage2': 2, 'stage3': 3}
     loc_weight = 2.0
@@ -60,7 +61,7 @@ class RESNET50:
     ANCHOR_NUM = 2
 
     '''模型参数'''
-    IN_CHANNELS_FPN = [64, 128, 256]  # 对应RETURN_LAYERS
+    IN_CHANNELS = [64, 128, 256]  # 对应RETURN_LAYERS
     IN_CHANNEL = 256
     OUT_CHANNEL = 256
     RETURN_LAYERS = {'layer2': 1, 'layer3': 2, 'layer4': 3}

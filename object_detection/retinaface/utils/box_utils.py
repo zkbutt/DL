@@ -1,11 +1,25 @@
 import torch
 import numpy as np
 
+from f_tools.GLOBAL_LOG import flog
+
 
 def xywh2ltrb(boxes):
     # xywh -> ltrb
     return torch.cat((boxes[:, :2] - boxes[:, 2:] / 2,  # xmin, ymin
                       boxes[:, :2] + boxes[:, 2:] / 2), 1)  # xmax, ymax
+
+
+def ltrb2xywh(bboxes):
+    _l = (bboxes[:, :2] + bboxes[:, 2:] / 2,  # x, y
+          bboxes[:, :2] - bboxes[:, 2:])  # w, h
+    if isinstance(bboxes, np.ndarray):
+        return np.concatenate(_l, axis=1)
+    elif isinstance(bboxes, torch.Tensor):
+        return torch.cat(_l, 1)  # w, h
+    else:
+        flog.error('bboxes类型错误 %s', type(bboxes))
+        raise Exception('bboxes类型错误', type(bboxes))
 
 
 def center_size(boxes):
@@ -21,8 +35,8 @@ def intersect(box_a, box_b):
     :param box_b:
     :return:
     '''
-    A = box_a.size(0)
-    B = box_b.size(0)
+    A = box_a.shape[0]
+    B = box_b.shape[0]
     max_xy = torch.min(box_a[:, 2:].unsqueeze(1).expand(A, B, 2),
                        box_b[:, 2:].unsqueeze(0).expand(A, B, 2))
     min_xy = torch.max(box_a[:, :2].unsqueeze(1).expand(A, B, 2),
@@ -141,15 +155,15 @@ def log_sum_exp(x):
 
 def decode(loc, priors, variances):
     '''
-    调整并
-    :param loc:  回归系数
-    :param priors: anchors 调整比例 x y w h
-    :param variances:
+    调整预测框并转换为ltrb 输入支持(xxx,4) xywh
+    :param loc:  回归系数 torch.Size([37840, 4])
+    :param priors: 这个就是 anchors 调整比例 x y w h
+    :param variances: 限制调整在网格内
     :return:
     '''
     boxes = torch.cat((priors[:, :2] + loc[:, :2] * variances[0] * priors[:, 2:],
                        priors[:, 2:] * torch.exp(loc[:, 2:] * variances[1])), 1)
-    # 左上右下
+    # x y w h -> ltrb
     boxes[:, :2] -= boxes[:, 2:] / 2  # 中点移左上
     boxes[:, 2:] += boxes[:, :2]
     return boxes
@@ -168,9 +182,9 @@ def decode_landm(pre, priors, variances):
 
 def non_max_suppression(boxes, conf_thres=0.5, nms_thres=0.3):
     '''
-    左上右下
+    输入左上右下
     :param boxes: # 已连接的 <class 'tuple'>: (37840, 15) 4+1+10
-    :param conf_thres:
+    :param conf_thres: 类别得分阀值
     :param nms_thres:
     :return:
     '''
@@ -179,23 +193,24 @@ def non_max_suppression(boxes, conf_thres=0.5, nms_thres=0.3):
     mask = detection[:, 4] >= conf_thres
     detection = detection[mask]
     if not np.shape(detection)[0]:
+        flog.warning('第一级 conf_thres 没有目标 %s', conf_thres)
         return []
 
     best_box = []
-    scores = detection[:, 4]
+    scores = detection[:, 4]  # 降一维 (18920)
     # 2 . 根据得分对框进行从大到小排序。
-    arg_sort = np.argsort(scores)[::-1]
-    detection = detection[arg_sort]  # 行重组
+    arg_sort = torch.argsort(scores,descending=True)  # np反序索引
+    detection = detection[arg_sort]  # 行重组 <class 'tuple'>: (18920, 15)
 
-    while np.shape(detection)[0] > 0:
+    while detection.shape[0] > 0:  # 按分数遍历
         # 3、每次取出得分最大的框，计算其与其它所有预测框的重合程度，重合程度过大的则剔除。
         best_box.append(detection[0])
         if len(detection) == 1:
             break
-        ious = jaccard(best_box[-1], detection[1:])  # 最新的一个
+        ious = jaccard(best_box[-1][None], detection[1:])  # 最后最新的一个,增加一维
         detection = detection[1:][ious < nms_thres]  # 面积大于阀值说明是同类不要
 
-    return np.array(best_box)
+    return best_box
 
 # def iou(b1, b2):
 #     '''

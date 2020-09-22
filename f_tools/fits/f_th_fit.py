@@ -189,28 +189,51 @@ def visualize_model(validate_loader, class_names, model, num_images=6, device='c
                 return
 
 
-def update_lr(optimizer, lr):
-    '''
-        curr_lr=0.001
-        if (epoch + 1) % 20 == 0:
-            curr_lr /= 3
-            update_lr(optimizer, curr_lr)
-
-        lambda_G = lambda epoch : 0.5 ** (epoch // 30)
-    :param optimizer:
-    :param lr:
-    :return:
-
-    optimizer = optim.Adam(model.parameters(), lr=0.0002)
-
-    lambda_G = lambda epoch: 0.5 ** (epoch // 30)
-    # 29表示从epoch = 30开始
-    schduler_G = torch.optim.lr_scheduler.LambdaLR(optimizer.parameters(), lambda_G, last_epoch=29)
-
-    schduler_G = torch.optim.lr_scheduler.StepLR(optimizer.parameters(), step_size=30, gamma=0.1, last_epoch=29)
-    '''
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
 
 
 
+def fit_one_epoch(model, cls_loss, epoch, data_loader, epoch_end, anchors, device):
+    total_r_loss = 0
+    total_c_loss = 0
+    total_landmark_loss = 0
+
+    start_time = time.time()
+    with tqdm(total=len(data_loader), desc=f'Epoch {epoch + 1}/{epoch_end}', postfix=dict, mininterval=0.3) as pbar:
+        for i, (images, targets) in enumerate(data_loader):
+            # if i >= epoch_size:
+            #     break
+            with torch.no_grad():  # np -> tensor
+                # torch.Size([8, 3, 640, 640])
+                images = Variable(torch.from_numpy(images).type(torch.float)).to(device)
+                # n,15(4+10+1)
+                targets = [Variable(torch.from_numpy(target).type(torch.float)).to(device) for target in targets]
+            optimizer.zero_grad()
+            # forward
+            out = model(images)  # tuple(torch.Size([8, 16800, 4]),torch.Size([8, 16800, 2]),torch.Size([8, 16800, 10]))
+            r_loss, c_loss, landm_loss = cls_loss(out, anchors, targets, device)
+            loss = 2 * r_loss + c_loss + landm_loss  # r_loss放大2倍
+
+            loss.backward()
+            optimizer.step()
+
+            total_c_loss += c_loss.item()
+            total_r_loss += r_loss.item()
+            total_landmark_loss += landm_loss.item()
+            waste_time = time.time() - start_time
+
+            pbar.set_postfix(**{'Conf Loss': total_c_loss / (i + 1),
+                                'Regression Loss': total_r_loss / (i + 1),
+                                'LandMark Loss': total_landmark_loss / (i + 1),
+                                'lr': get_lr(optimizer),
+                                's/step': waste_time})
+            pbar.update(1)
+            start_time = time.time()
+
+    flog.info('Saving state, iter:', str(epoch + 1))
+    sava_dict = {
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'lr_scheduler': lr_scheduler.state_dict(),
+        'epoch': epoch}
+    torch.save(sava_dict, os.path.join(PATH_MODEL_WEIGHT, 'retinaface{}.pth'.format(epoch + 1)))
+    return (total_c_loss + total_r_loss + total_landmark_loss) / (len(data_loader))

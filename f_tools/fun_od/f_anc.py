@@ -452,7 +452,7 @@ class AnchorsFound(object):
     def __init__(self, image_size, anchors_size, feature_map_steps, anchors_clip=False):
         '''
         没有长宽比就是个正方形
-        :param image_size:  原图预处理后尺寸
+        :param image_size:  原图预处理后尺寸 im_height, im_width
         :param anchors_size:  框尺寸 [[16, 32], [64, 128], [256, 512]] 对应特图
         :param feature_map_steps: [8, 16, 32]  # 特图的步距
         :param anchors_clip: 是否剔除超边界

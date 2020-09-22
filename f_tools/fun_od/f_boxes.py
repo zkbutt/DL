@@ -183,3 +183,38 @@ def resize_boxes4tensor(boxes, original_size, new_size):
     ymin = ymin * ratios_height
     ymax = ymax * ratios_height
     return torch.stack((xmin, ymin, xmax, ymax), dim=1)
+
+
+def nms(boxes, scores, iou_threshold):
+    '''
+         boxes (Tensor[N, 4])) – bounding boxes坐标. 格式：(x1, y1, x2, y2)
+         scores (Tensor[N]) – bounding boxes得分
+         iou_threshold (float) – IoU过滤阈值
+     返回:NMS过滤后的bouding boxes索引（降序排列）
+     '''
+    # type: (Tensor, Tensor, float) -> Tensor
+    return torch.ops.torchvision.nms(boxes, scores, iou_threshold)
+
+
+def batched_nms(boxes, scores, idxs, iou_threshold):
+    '''
+
+    :param boxes: 拉平所有类别的box重复的 n*20,4
+    :param scores:
+    :param idxs:  真实类别index
+    :param iou_threshold:
+    :return:
+    '''
+    # type: (Tensor, Tensor, Tensor, float) -> Tensor
+    if boxes.numel() == 0:
+        return torch.empty((0,), dtype=torch.int64, device=boxes.device)
+
+    # torchvision.ops.boxes.batched_nms(boxes, scores, lvl, nms_thresh)
+    # 根据最大的一个值确定每一类的偏移
+    max_coordinate = boxes.max()  # 选出每个框的 坐标最大的一个值
+    # idxs 的设备和 boxes 一致 , 真实类别index * (1+最大值) 则确保同类框向 左右平移 实现隔离
+    offsets = idxs.to(boxes) * (max_coordinate + 1)
+    # boxes 加上对应层的偏移量后，保证不同类别之间boxes不会有重合的现象
+    boxes_for_nms = boxes + offsets[:, None]
+    keep = nms(boxes_for_nms, scores, iou_threshold)
+    return keep

@@ -7,7 +7,7 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_show import plot_loss_and_lr, plot_map
 from object_detection.faster_rcnn import p_transforms4faster
 from object_detection.faster_rcnn.CONFIG_FASTER import PATH_SAVE_WEIGHT, BATCH_SIZE, NUM_CLASSES, PATH_MODEL_WEIGHT, \
-    PATH_FIT_WEIGHT, END_EPOCHS, PRINT_FREQ, PATH_DATA_ROOT
+    PATH_FIT_WEIGHT, END_EPOCHS, PRINT_FREQ, PATH_DATA_ROOT, DEBUG
 from object_detection.faster_rcnn.backbone.mobilenetv2_model import MobileNetV2
 from object_detection.f_fit_tools import sysconfig, load_data4voc, load_weight, save_weight
 from object_detection.faster_rcnn.network_files.faster_rcnn_framework import FasterRCNN
@@ -62,6 +62,7 @@ if __name__ == "__main__":
                                                            PATH_DATA_ROOT,
                                                            BATCH_SIZE,
                                                            bbox2one=False,
+                                                           isdebug=DEBUG,
                                                            )
 
     '''------------------模型定义---------------------'''
