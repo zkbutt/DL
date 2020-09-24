@@ -14,7 +14,6 @@ from f_tools.GLOBAL_LOG import flog
 from torch.autograd import Variable
 
 from f_tools.fits.fitting.coco_eval import CocoEvaluator
-from f_tools.fits.fitting.coco_utils import get_coco_api_from_dataset
 from pycocotools.coco import COCO
 
 
@@ -75,77 +74,33 @@ def train_one_epoch(data_loader, loss_process, optimizer, epoch, print_freq,
 
 
 @torch.no_grad()
-def evaluate(data_loader, loss_process, print_freq, mAP_list=None):
+def evaluate(data_loader, loss_process, print_freq, is_map=True, coco_res=None):
     '''
 
     :param loss_process:
     :param data_loader:
     :param device:
     :param data_set:
-    :param mAP_list: 返回值
+    :param is_map: 是否需要输出coco_map
+    :param coco_res: 返回值 保存coco输出
     :return:
     '''
-    n_threads = torch.get_num_threads()  # 获出CPU核心数 与设置 torch.set_num_threads(n_threads)匹配
-    # FIXME 通过CPU进行预测
-    # torch.set_num_threads(1)
-    cpu_device = torch.device("cpu")
     metric_logger = MetricLogger(delimiter="  ")
     header = "Test: "
 
-    # ---VOC转换数据集到coco
-    coco_ds = COCO()
-    coco_ds.dataset = loss_process.to_coco(data_loader.dataset)
-    coco_ds.createIndex()
-    iou_types = ["bbox"]
-    coco_evaluator = CocoEvaluator(coco_ds, iou_types)
-
+    res = None
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
-        res, model_time = loss_process(batch_data)
+        res = loss_process(batch_data)
+        if is_map:
+            pass
+        metric_logger.update()
 
-        # 多outputs数据组装 个结果切换到CPU
-        outputs = []
-        for index, (bboxes_out, labels_out, scores_out) in enumerate(res):
-            info = {"boxes": bboxes_out.to(cpu_device),
-                    "labels": labels_out.to(cpu_device),
-                    "scores": scores_out.to(cpu_device),
-                    "height_width": targets[index]["height_width"]}
-            outputs.append(info)
-        # outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
-
-        model_time = time.time() - model_time  # 结束时间
-
-        res = dict()
-        for i, output in enumerate(outputs):
-            # res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
-            res.update({i, output})
-
-        # for index in range(len(outputs)):
-        #     info = {targets[index]["image_id"].item(): outputs[index]}
-        #     res.update(info)
-        # res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
-
-        # coco运算
-        evaluator_time = time.time()
-        coco_evaluator.update(res)
-        evaluator_time = time.time() - evaluator_time
-        metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
-
-    # gather the stats from all processes
-    metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
-    coco_evaluator.synchronize_between_processes()
-
-    # accumulate predictions from all images
-    coco_evaluator.accumulate()  # 计算
-    coco_evaluator.summarize()  # 输出指标
-    torch.set_num_threads(n_threads)
-
-    print_txt = coco_evaluator.coco_eval[iou_types[0]].stats
-    coco_mAP = print_txt[0]  # 取出指标
-    voc_mAP = print_txt[1]
-    if isinstance(mAP_list, list):
-        mAP_list.append(voc_mAP)
-    return print_txt
+    if is_map:
+        # coco_res=xx()# 输出指标
+        if coco_res:
+            coco_res.append(coco_res)
+        pass
+    return res
 
 
 def warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor):
@@ -502,6 +457,36 @@ def init_distributed_mode(args):
                                          world_size=args.world_size, rank=args.rank)
     torch.distributed.barrier()
     setup_for_distributed(args.rank == 0)
+
+
+class CocoExport():
+
+    def __init__(self, dataset) -> None:
+        super().__init__()
+        _coco_ds = COCO()
+        _coco_ds.dataset = dataset
+        _coco_ds.createIndex()
+        iou_types = ["bbox"]
+        self.coco_evaluator = CocoEvaluator(_coco_ds, iou_types)
+
+    def __call__(self, data_outputs):
+        '''
+        构造coco测试集格式
+        :param data_outputs:  list(dict{'boxes':(x,4),'labels':[x],'scores':[x]})
+        :return:
+            res={0:info1,...x:infox}
+        '''
+        cpu_device = torch.device("cpu")
+        res = dict()
+        for index, (bboxes_out, labels_out, scores_out, hw) in enumerate(data_outputs):
+            info = {
+                "boxes": bboxes_out.to(cpu_device),
+                "labels": labels_out.to(cpu_device),
+                "scores": scores_out.to(cpu_device),
+                "height_width": hw
+            }
+            res.update({index, info})
+        return res
 
 
 if __name__ == '__main__':
