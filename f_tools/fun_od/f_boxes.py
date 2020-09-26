@@ -125,9 +125,9 @@ def bbox_loc4np(src_bbox, dst_bbox):
     return loc
 
 
-def bbox_iou(bbox_a, bbox_b):
+def bbox_iou4np(bbox_a, bbox_b):
     '''
-    求所有bboxs 与所有标定框 的交并比 第二维（ymin，xmin，ymax，xmax）
+    求所有bboxs 与所有标定框 的交并比 ltrb
     返回一个数
     :param bbox_a: 多个预测框 (n,4)
     :param bbox_b: 多个标定框 (k,4)
@@ -156,6 +156,36 @@ def bbox_iou(bbox_a, bbox_b):
     _a = area_a[:, None] + area_b
     _area_all = (_a - area_i)  # (2002,2)-(2002,2)
     return area_i / _area_all  # (2002,2)
+
+
+def bbox_iou4ts(box_a, box_b):
+    '''
+       通过左上右下计算 IoU  全是 ltrb
+       :param box_a:  bboxs
+       :param box_b: 先验框
+       :return: (a.shape[0] b.shape[0])
+   '''
+    a = box_a.shape[0]
+    b = box_b.shape[0]
+    # x,2 -> x,1,2 -> x b 2  ,选出rb最大的
+    max_xy = torch.min(
+        box_a[:, 2:].unsqueeze(1).expand(a, b, 2),
+        box_b[:, 2:].unsqueeze(0).expand(a, b, 2)
+    )
+    # 选出lt最小的
+    min_xy = torch.max(
+        box_a[:, :2].unsqueeze(1).expand(a, b, 2),
+        box_b[:, :2].unsqueeze(0).expand(a, b, 2)
+    )
+    # 得有有效的长宽 np高级
+    inter = torch.clamp((max_xy - min_xy), min=0)
+    inter = inter[:, :, 0] * inter[:, :, 1]  # torch.Size([a个, b个, 2])
+
+    # # x,2 -> x,1,2 -> x b 2 直接算面积
+    area_a = ((box_a[:, 2] - box_a[:, 0]) * (box_a[:, 3] - box_a[:, 1])).unsqueeze(1).expand_as(inter)
+    area_b = ((box_b[:, 2] - box_b[:, 0]) * (box_b[:, 3] - box_b[:, 1])).unsqueeze(0).expand_as(inter)
+    union = area_a + area_b - inter
+    return inter / union
 
 
 def resize_boxes4tensor(boxes, original_size, new_size):

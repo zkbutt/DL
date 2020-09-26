@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from f_tools.fun_od.f_boxes import tlbr2yxhw, tlbr2tlhw
+from f_tools.fun_od.f_boxes import tlbr2yxhw, tlbr2tlhw, fix_yxhw
 
 cor_names = {
     'aliceblue': '#F0F8FF',
@@ -454,7 +454,7 @@ class AnchorsFound(object):
         没有长宽比就是个正方形
         :param image_size:  原图预处理后尺寸 im_height, im_width
         :param anchors_size:  框尺寸 [[16, 32], [64, 128], [256, 512]] 对应特图
-        :param feature_map_steps: [8, 16, 32]  # 特图的步距
+        :param feature_map_steps: [8, 16, 32]  # 特图的步距 可通过尺寸算出来
         :param anchors_clip: 是否剔除超边界
         '''
         super(AnchorsFound, self).__init__()
@@ -469,6 +469,7 @@ class AnchorsFound(object):
         # feature_maps: [[80, 80], [40, 40], [20, 20]] = [640,640] / [8, 16, 32]
         # self.feature_maps = np.ceil(self.image_size[None] / self.feature_map_steps[:, None])
         from math import ceil
+        # torch.tensor(image_size)[None].expand((3, 2)) / torch.tensor(feature_map_steps).type(torch.float)[:, None]
         self.feature_maps = [[ceil(self.image_size[0] / step), ceil(self.image_size[1] / step)]
                              for step in self.feature_map_steps]
 
@@ -476,7 +477,8 @@ class AnchorsFound(object):
         '''
         要得到最终的框还需乘原图对应的尺寸
         :return:
-            返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数
+            返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框
+            这里是 x,y,w,h 调整系数
         '''
         anchors = []
         # 为每一个特图 生成
@@ -632,5 +634,5 @@ def __t001():
 
 if __name__ == '__main__':
     # __t001()
-    # __t_anc4found()
+    __t_anc4found()
     pass

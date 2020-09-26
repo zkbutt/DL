@@ -22,7 +22,7 @@ def decom_vgg16():  # 获得vgg16的backbone卷积层和classifier全连接层
         # 使用这个 pretrained=True
         # model = vgg16(not opt.load_path)  # 若load_path为空即没有FasterRCNN预训练权重则使用pytorch权重
         model = vgg16()  # 本地加载
-        # model.load_state_dict(torch.load(r'D:\down\AI\weights\pytorch\vgg16-397923af.pth'))
+        # model.load_state_dict(torch.load(r'M:\weights\pytorch\vgg16-397923af.pth'))
         model.load_state_dict(torch.load(Config.PATH_VGG16_WEIGHT))
 
     # ----------- 取出各层 和 classifier重组 重新返回 ----------

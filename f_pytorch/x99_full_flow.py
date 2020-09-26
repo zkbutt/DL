@@ -210,7 +210,7 @@ if __name__ == '__main__':
 
     '''------------------全局变量---------------------'''
     save_path = os.path.join(os.path.abspath('.'), os.path.basename(__file__) + '.pth')  # 当前文件下,当前名称
-    PATH_DATAS = r'D:\down\AI\datas'
+    PATH_DATAS = r'M:\AI\datas'
     # PATH_DATAS = r'M:\datas\omniglot-master\python'
     # PATH_DATAS = r'M:\datas\omniglot-master\python'
 

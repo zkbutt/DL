@@ -1,7 +1,8 @@
 DEBUG = True
 
 '''样本及预处理'''
-PATH_DATA_ROOT = r'D:\down\AI\datas\widerface'
+# PATH_DATA_ROOT = r'M:\AI\datas\widerface'
+PATH_DATA_ROOT = r'd:\t001\coco'
 # PATH_DATA_ROOT = r'M:\AI\datas\widerface'
 IMAGE_SIZE = (640, 640)  # 预处理 统一尺寸
 # IMAGE_SIZE = (840, 840)  # 预处理 统一尺寸
@@ -11,7 +12,7 @@ rgb_mean = (104, 117, 123)  # 图片的RGB偏差
 
 '''模型权重'''
 # PATH_SAVE_WEIGHT = r'm:\AI\weights\feadre'
-PATH_SAVE_WEIGHT = r'D:\down\AI\weights\feadre'
+PATH_SAVE_WEIGHT = r'M:\AI\weights\feadre'
 PATH_MODEL_WEIGHT = r'M:\AI\weights\pytorch\fasterrcnn_resnet50_fpn_coco-258fb6c6.pth'
 # PATH_MODEL_WEIGHT = r'M:\AI\weights\pytorch\fasterrcnn_mobilenet_v2-b0353104.pth'
 # PATH_MODEL_WEIGHT = None
@@ -41,10 +42,16 @@ class MOBILENET025:
     ANCHOR_NUM = 2
 
     '''模型参数'''
-    PATH_MODEL_WEIGHT = r'D:\down\AI\weights\retinaface\mobilenetV1X0.25_pretrain.tar'
+    PATH_MODEL_WEIGHT = r'M:\AI\weights\retinaface\mobilenetV1X0.25_pretrain.tar'
 
-    IN_CHANNELS = 32
-    OUT_CHANNEL = 64
+    IN_CHANNELS = 32  # in_channels 用于设置 FPN的输入
+    #    in_channels_fpn = [
+    #             IN_CHANNELS * 2,
+    #             IN_CHANNELS * 4,
+    #             IN_CHANNELS * 8,
+    #         ]
+    OUT_CHANNEL = 64  # 定义FPN的输出  通常为统一尺寸
+
     RETURN_LAYERS = {'stage1': 1, 'stage2': 2, 'stage3': 3}
     loc_weight = 2.0
     EPOCH_START = 0

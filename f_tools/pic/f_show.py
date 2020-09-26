@@ -89,7 +89,7 @@ def __draw_text(draw, box_to_display_str_map, box, left, right, top, bottom, col
 
 
 def draw_box(image, boxes, classes, scores, category_index, difficult=None, thresh=0.5, line_thickness=8):
-    flog.debug('最终额 %s 个目标框 ', (scores>thresh).sum())
+    flog.debug('最终额 %s 个目标框 ', (scores > thresh).sum())
     if not difficult:
         difficult = np.zeros(boxes.shape[0])
     box_to_display_str_map = collections.defaultdict(list)
@@ -131,6 +131,8 @@ def show_od4dataet(train_data_set, num=5):
                  )
         plt.imshow(img)
         plt.show()
+
+
 
 
 def show_od4boxs(img, boxs, labels=None, is_tensor=False):

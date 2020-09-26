@@ -1,22 +1,22 @@
 from __future__ import print_function
 
 import os
-import time
 
 import torch
 import torch.optim as optim
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.data_pretreatment import Compose, RandomHorizontalFlip, ToTensor, Resize
 from f_tools.fits.f_show import plot_loss_and_lr
 from f_tools.fits.fitting.f_fit_retinaface import train_one_epoch, evaluate
 from f_tools.fun_od.f_anc import AnchorsFound
-from object_detection.f_fit_tools import sysconfig, load_data4widerface, load_weight, save_weight
+from object_detection.coco_t.coco_dataset import CocoDataset
+from object_detection.f_fit_tools import sysconfig, load_weight, save_weight
 from object_detection.retinaface.CONFIG_RETINAFACE import PATH_SAVE_WEIGHT, PATH_DATA_ROOT, DEBUG, IMAGE_SIZE, \
     MOBILENET025, PATH_FIT_WEIGHT, NEGATIVE_RATIO, NUM_CLASSES, NEG_IOU_THRESHOLD, END_EPOCHS, \
-    PRINT_FREQ, BATCH_SIZE
+    PRINT_FREQ, BATCH_SIZE, VARIANCE
 from object_detection.retinaface.nets.retinaface import RetinaFace
-from object_detection.retinaface.nets.retinaface_training import MultiBoxLoss
-from object_detection.retinaface.utils.box_utils import ltrb2xywh
+from object_detection.retinaface.nets.retinaface_loss import MultiBoxLoss
 
 
 class LossProcess(torch.nn.Module):
@@ -27,8 +27,8 @@ class LossProcess(torch.nn.Module):
     def __init__(self, model, anchors, cls_loss, device):
         super(LossProcess, self).__init__()
         self.args = {
-            'anchors': anchors,
-            'fun_loss': cls_loss,
+            'anchors': anchors,  # AnchorsFound 对象
+            'fun_loss': cls_loss,  # MultiBoxLoss 对象
         }
         self.model = model
         self.device = device
@@ -41,30 +41,33 @@ class LossProcess(torch.nn.Module):
 
           这个是loss计算过程  前向 后向
           :param batch_data: tuple(images,targets)
-              images: <class 'tuple'>: (batch, 3, 640, 640)
-              targets: list[batch,(23,15)]
+            images:tensor(batch,c,h,w)
+            list( # batch个
+                target: dict{
+                        image_id: int,
+                        bboxs: np(num_anns, 4),
+                        labels: np(num_anns),
+                        keypoints: np(num_anns,10),
+                    }
+                )
           :return:
               loss_total: 这个用于优化
-              show_dict: total_losses 这个key必须 训练的返回值
+              show_dict:  log_dict
           '''
         # -----------------------输入模型前的数据处理------------------------
         images, targets = batch_data
 
-        # with torch.no_grad():  # np -> tensor 这里不需要求导
-        # tuple(np(batch,3,640,640)) -> torch.Size([8, 3, 640, 640])
-        images = torch.tensor(images).type(torch.float).to(self.device)
-        # list(batch,tensor(x,15(4+10+1)))
-        targets = [torch.tensor(target).type(torch.float).to(self.device) for target in targets]
-        # -----------------------数据组装完成------------------------
-
         # ---------------模型输入输出 ----------------------
-        # tuple(特图层个,(框,类别,关键点))
-        #       框 torch.Size([batch, 16800, 4])
-        #       类别 torch.Size([batch, 16800, 2])
-        #       关键点 torch.Size([batch, 16800, 10])
+        '''
+        输出 tuple(# 预测器 框4 类别2 关键点10
+            torch.Size([batch, 16800, 4]) # 框
+            torch.Size([batch, 16800, 2]) # 类别
+            torch.Size([batch, 16800, 10]) # 关键点
+        )
+        '''
         out = self.model(images)
         # 返回list(tensor)
-        loss_list = self.args['fun_loss'](out, self.args['anchors'], targets, device)
+        loss_list = self.args['fun_loss'](out, self.args['anchors'], targets, self.device)
         if self.training:
             r_loss, c_loss, landm_loss = loss_list
             loss_total = 2 * r_loss + c_loss + landm_loss  # 这个用于优化
@@ -111,20 +114,84 @@ if __name__ == "__main__":
 
     '''---------------数据加载及处理--------------'''
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
-    data_loader = load_data4widerface(PATH_DATA_ROOT, IMAGE_SIZE, BATCH_SIZE, isdebug=True)
+    data_type = 'train2017'
+    mode = 'keypoints'
+
+    data_transform = {
+        "train": Compose([
+            Resize(IMAGE_SIZE),  # (h,w)
+            RandomHorizontalFlip(1),
+            ToTensor(),
+        ]),
+        "val": Compose([ToTensor()])
+    }
+    # train_dataset = CocoDataset(PATH_DATA_ROOT, mode, data_type, device, None)
+    train_dataset = CocoDataset(PATH_DATA_ROOT, mode, data_type, device, data_transform['train'])
+
+    '''
+      归一化后 toTensor
+          image_mean = [0.485, 0.456, 0.406]
+          image_std = [0.229, 0.224, 0.225]
+    '''
+
+
+    def collate_fn(batch_datas):
+        '''
+
+        :param batch_datas:
+            list(
+                batch(
+                    img: (h,w,c),
+                    target: dict{
+                        image_id: int,
+                        bboxs: np(num_anns, 4),
+                        labels: np(num_anns),
+                        keypoints: np(num_anns,10),
+                    }
+                )
+            )
+        :return:
+            images:tensor(batch,c,h,w)
+            list( # batch个
+                target: dict{
+                        image_id: int,
+                        bboxs: np(num_anns, 4),
+                        labels: np(num_anns),
+                        keypoints: np(num_anns,10),
+                    }
+                )
+        '''
+        images = torch.empty((len(batch_datas), *(batch_datas[0][0].shape)), device=batch_datas[0][0].device)
+        targets = []
+        for i, (img, taget) in enumerate(batch_datas):
+            images[i] = img
+            targets.append(taget)
+        return images, targets
+
+
+    data_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        num_workers=0,
+        shuffle=True,
+        pin_memory=True,  # 不使用虚拟内存
+        drop_last=True,  # 除于batch_size余下的数据
+        collate_fn=collate_fn,
+    )
+
     # iter(data_loader).__next__()
 
     '''------------------模型定义---------------------'''
     model = RetinaFace(claxx.MODEL_NAME,
                        claxx.PATH_MODEL_WEIGHT,
                        claxx.IN_CHANNELS, claxx.OUT_CHANNEL,
-                       claxx.RETURN_LAYERS)
+                       claxx.RETURN_LAYERS, claxx.ANCHOR_NUM)
     # if torchvision._is_tracing() 判断训练模式
     # self.training 判断训练模式
     model.train()  # 启用 BatchNormalization 和 Dropout
     model.to(device)
 
-    cls_loss = MultiBoxLoss(NUM_CLASSES, NEGATIVE_RATIO, NEG_IOU_THRESHOLD)
+    cls_loss = MultiBoxLoss(NUM_CLASSES, NEGATIVE_RATIO, NEG_IOU_THRESHOLD, VARIANCE)
     # 权重衰减(如L2惩罚)(默认: 0)
     optimizer = optim.Adam(model.parameters(), 1e-3, weight_decay=5e-4)
     # 在发现loss不再降低或者acc不再提高之后，降低学习率
@@ -134,7 +201,9 @@ if __name__ == "__main__":
     start_epoch = load_weight(PATH_FIT_WEIGHT, model, optimizer, lr_scheduler)
 
     '''------------------模型训练---------------------'''
+
     # 返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数
+    # 特图的步距
     anchors = AnchorsFound(IMAGE_SIZE, claxx.ANCHORS_SIZE, claxx.FEATURE_MAP_STEPS, claxx.ANCHORS_CLIP).get_anchors()
     anchors.to(device)
 

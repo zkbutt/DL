@@ -1,3 +1,6 @@
+import os
+
+from PIL import ImageFont
 from pycocotools.coco import COCO
 import numpy as np
 import skimage.io as io
@@ -41,21 +44,22 @@ def f查看网络图片():
     plt.show()
 
 
-def 查看本地图片():
-    id = 1
-    # 指定返回一张索引
-    imgIds = coco.getImgIds(imgIds=[id])
-    bzs = coco.loadImgs([id])  # 这里原始返回list
-    # 本地加载 h,w,c
-    img = io.imread('%s/images/%s/%s' % (dataDir, dataType, bzs[0]['file_name']))
-    # 加载图片基本信息 h w id filename
-    # 获取该图片的所有标注的id
-    annIds = coco.getAnnIds(imgIds=bzs[0]['id'])
-    anns = coco.loadAnns(annIds)  # annotation 对象
-    plt.axis('off')
-    plt.imshow(img)
-    coco.showAnns(anns)  # 显示标注
-    plt.show()
+def t_coco_pic(coco, path_img):
+    # id = 1
+    # imgIds = coco.getImgIds(imgIds=[id])
+    ids = coco.getImgIds()
+    for id in ids:
+        img_info = coco.loadImgs([id])  # 这里原始返回list
+        # 本地加载 h,w,c
+        img = io.imread(os.path.join(path_img, img_info[0]['file_name']))
+        # 加载图片基本信息 h w id filename
+        # 获取该图片的所有标注的id
+        annIds = coco.getAnnIds(imgIds=img_info[0]['id'])
+        anns = coco.loadAnns(annIds)  # annotation 对象
+        plt.axis('off')
+        plt.imshow(img)
+        coco.showAnns(anns)  # 显示标注
+        plt.show()
 
 
 def f_show(img, anns):
@@ -73,7 +77,7 @@ def f_show(img, anns):
 
 def f评估():
     path_res = ''
-    cocoGt = COCO(annFile)  # 标注文件的路径及文件名，json文件形式
+    cocoGt = COCO(file_ann)  # 标注文件的路径及文件名，json文件形式
     cocoDt = cocoGt.loadRes('my_result.json')  # 自己的生成的结果的路径及文件名，json文件形式
     cocoEval = COCOeval(cocoGt, cocoDt, "bbox")  # segm表示分割  bbox目标检测 keypoints关键点检测
     cocoEval.evaluate()
@@ -81,18 +85,72 @@ def f评估():
     cocoEval.summarize()
 
 
+def show_od4coco(img, target, coco):
+    fig, ax = plt.subplots(figsize=(12.80, 7.20))
+    size = 4
+    font_dict = {
+        'family': 'serif',
+        'style': 'italic', # ['normal','italic','oblique']
+        'weight': 'normal', # ['light','normal','medium','semibold','bold','heavy','black']
+        'color': 'red',
+        # 'bold': 1,
+        'size': 6
+    }
+    try:
+        font = ImageFont.truetype('arial.ttf', 24)
+    except IOError:
+        font = ImageFont.load_default()
+
+    cats = coco.loadCats(target['labels'])
+
+    for cat, bbox, keypoint in zip(cats, target['bboxs'], target['keypoints']):
+        skeleton = cat['skeleton']
+        keypoint = keypoint
+        print()
+
+        # coco的关键点连接骨架  index 1开始
+
+        sks = [[15, 13], [3, 5], [4, 6]]
+        kp = np.array([0, 0, 0, 236, 240, 2, 254, 238, 2])
+
+        # ltrb -> ltwh
+        rect = plt.Rectangle((bbox[0], bbox[1]), bbox[2] - bbox[0], bbox[3] - bbox[1],
+                             linewidth=2,
+                             color="r",
+                             fill=False)
+        ax.add_patch(rect)
+
+        # text_width, text_height = font.getsize(cat['name'])
+        plt.text(bbox[0], bbox[1] - font_dict['size'], cat['name'], color='white',
+                 verticalalignment='top', horizontalalignment='left',
+                 fontdict=font_dict
+                 )
+
+        if keypoint[0] != 0 and keypoint[1] != 0:
+            x = keypoint[0::2]
+            y = keypoint[1::2]
+            # 画骨架线
+            for sk in skeleton:
+                sk = np.array(sk) - 1
+                plt.plot(x[sk], y[sk], linewidth=size - 2, color='red')
+            # 画标注点
+            plt.plot(x, y, 'o', markersize=size, markerfacecolor='k', markeredgecolor='aqua', markeredgewidth=size - 3)
+    plt.imshow(img)
+    plt.show()
+
+
 if __name__ == '__main__':
     pylab.rcParams['figure.figsize'] = (8.0, 10.0)
 
-    # dataDir = 'D:\down\AI\datas\coco2017'
-    dataDir = r'd:\t001\coco'  # 自已的数据集
-    dataType = 'val2017'  # 自动会添加 imgages
-    # dataType = 'train2017'
-    annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
-    # annFile = '{}/annotations/person_keypoints_{}.json'.format(dataDir, dataType)
+    # dataDir = 'M:\datas\coco2017'
+    path_root = r'd:\t001\coco'  # 自已的数据集
+    # dataType = 'val2017'  # 自动会添加 imgages
+    data_type = 'train2017'
+    # annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
+    file_ann = '{}/annotations/person_keypoints_{}.json'.format(path_root, data_type)
 
     # 初始化标注数据的 COCO api
-    coco = COCO(annFile)
+    coco = COCO(file_ann)
 
     # 查看具体类
     cats = coco.loadCats(coco.getCatIds())
@@ -104,8 +162,8 @@ if __name__ == '__main__':
     # print('COCO supercategories: \n{}'.format(' '.join(nms)))
 
     # f查看网络图片()
-
-    查看本地图片()
+    path_save_img = os.path.join(path_root, 'images', data_type)
+    t_coco_pic(coco, path_save_img)
 
     # f_show(img)
 

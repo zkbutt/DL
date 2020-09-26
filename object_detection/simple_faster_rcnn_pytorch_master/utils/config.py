@@ -7,11 +7,11 @@ from pprint import pprint
 
 class Config:
     # path_vgg16=r'M:\AI\weights\pytorch\vgg16-397923af.pth'
-    PATH_VGG16_WEIGHT= r'D:\down\AI\weights\pytorch\vgg16-397923af.pth'
+    PATH_VGG16_WEIGHT= r'M:\weights\pytorch\vgg16-397923af.pth'
 
     # data
     # voc_data_dir = '/home/cy/.chainer/dataset/pfnet/chainercv/voc/VOCdevkit/VOC2007/'
-    voc_data_dir = r'D:\down\AI\datas\m_VOC2007\trainval'
+    voc_data_dir = r'M:\datas\m_VOC2007\trainval'
     # voc_data_dir = r'M:\datas\m_VOC2007\trainval'
     min_size = 600  # image resize
     max_size = 1000  # image resize

@@ -34,32 +34,42 @@ def intersect(box_a, box_b):
     :param box_a:真实框
     :param box_b:
     :return:
+        torch.Size([a个, b个, 2])
     '''
-    A = box_a.shape[0]
-    B = box_b.shape[0]
-    max_xy = torch.min(box_a[:, 2:].unsqueeze(1).expand(A, B, 2),
-                       box_b[:, 2:].unsqueeze(0).expand(A, B, 2))
-    min_xy = torch.max(box_a[:, :2].unsqueeze(1).expand(A, B, 2),
-                       box_b[:, :2].unsqueeze(0).expand(A, B, 2))
+    a = box_a.shape[0]
+    b = box_b.shape[0]
+    # x,2 -> x,1,2 -> x b 2  ,选出rb最大的
+    max_xy = torch.min(
+        box_a[:, 2:].unsqueeze(1).expand(a, b, 2),
+        box_b[:, 2:].unsqueeze(0).expand(a, b, 2)
+    )
+    # 选出lt最小的
+    min_xy = torch.max(
+        box_a[:, :2].unsqueeze(1).expand(a, b, 2),
+        box_b[:, :2].unsqueeze(0).expand(a, b, 2)
+    )
+    # 得有有效的长宽 np高级
     inter = torch.clamp((max_xy - min_xy), min=0)
     return inter[:, :, 0] * inter[:, :, 1]
 
 
 def jaccard(box_a, box_b):
     '''
-    通过左上右下计算 IoU
-    :param box_a:  真实框
+    通过左上右下计算 IoU  全是 ltrb
+    :param box_a:  bboxs
     :param box_b: 先验框
-    :return: (a个 b个)二维表
+    :return: (a.shape[0] b.shape[0])
     '''
     inter = intersect(box_a, box_b)
+    # # x,2 -> x,1,2 -> x b 2 直接算面积
     area_a = ((box_a[:, 2] - box_a[:, 0]) * (box_a[:, 3] - box_a[:, 1])).unsqueeze(1).expand_as(inter)
     area_b = ((box_b[:, 2] - box_b[:, 0]) * (box_b[:, 3] - box_b[:, 1])).unsqueeze(0).expand_as(inter)
     union = area_a + area_b - inter
     return inter / union
 
 
-def match(threshold, gt, anc, variances, labels, landms, loc_t, conf_t, landm_t, idx):
+def match(bboxs, labels, keypoints, anc, idx, loc_t, conf_t, landm_t,
+          threshold, variances):
     '''
     计算 标签 和 anc的差距
 
@@ -67,46 +77,49 @@ def match(threshold, gt, anc, variances, labels, landms, loc_t, conf_t, landm_t,
     gt对应的最大的保留
     iou小的分数置0
 
-    :param threshold: iou阀值 小于不要 设为0
-    :param gt: 标签 GT
-    :param anc: default boxes 左上右下
-    :param variances: [0.1, 0.2] 写死的
+    :param bboxs: ltrb 标签 GT 真实目标 torch.Size([18, 4])
     :param labels:  真实标签
-    :param landms: 真实5点定位
+    :param keypoints: 真实5点定位
+    :param anc:  xywh
+    :param idx: 一批图片的 index
+
     :param loc_t: 已定义的返回值
     :param conf_t: 已定义的返回值
     :param landm_t: 已定义的返回值
-    :param idx: 一批图片的 index
+    :param threshold: iou阀值 小于不要 设为0
+    :param variances: [0.1, 0.2] 写死的
     :return:
     '''
 
-    # 计算交并比 m,n  m是gt框   n是anc框
-    val = jaccard(gt, xywh2ltrb(anc))
-    # 每个gt匹配到的最大IoU def gt个  keepdim=True和squeeze_(1) 可以去掉 结果一致
-    gt_anc_val, gt_anc_ind = val.max(1, keepdim=True)
-    gt_anc_ind.squeeze_(1)
-    gt_anc_val.squeeze_(1)
-    # 每个def匹配到的最大IoU gt 有可能多个anc对一个gt
-    anc_gt_val, anc_gt_ind = val.max(0, keepdim=True)
-    anc_gt_ind.squeeze_(0)
-    anc_gt_val.squeeze_(0)
+    # 计算交并比 m,n  m是bboxs框   n是anc框  最输入 ltrb
+    val = jaccard(bboxs, xywh2ltrb(anc))
 
-    # 修改gt个 anc 的值 确保对应的anc保留  anc可以是[1,gt个]之间
-    anc_gt_val.index_fill_(0, gt_anc_ind, 2)
+    # 每个bbox匹配到的最大IoU anc   得gt个  torch.Size([40])
+    bbox_anc_val, bbox_anc_ind = val.max(1)  # 存的是 anc的index
+
+    # 每个anc匹配到的最大IoU bbox 有可能多个anc对一个bbox keepdim squeeze_ 可以去掉
+    anc_bbox_val, anc_bbox_ind = val.max(0, keepdim=True)
+    anc_bbox_ind.squeeze_(0)
+    anc_bbox_val.squeeze_(0)  # torch.Size([16800]) 存的是bbox的index
+
+    # 修改 bbox个对应最好的 anc 的值 , 确保对应的anc保留  修改值anc为[1,bbox个]之间
+    anc_bbox_val.index_fill_(0, bbox_anc_ind, 2)  # 修改为2
     # 确保保留的 anc 的 gt  index 不会出错
-    for j in range(gt_anc_ind.size(0)):
-        anc_gt_ind[gt_anc_ind[j]] = j
+    for j in range(bbox_anc_ind.size(0)):
+        anc_bbox_ind[bbox_anc_ind[j]] = j
 
-    # [anc个,4] 取出每一个anchor对应的 gt
-    matches_gt = gt[anc_gt_ind]
-    # [anc个] 取出每一个anchor对应的label
-    conf = labels[anc_gt_ind]
+    # [anc个,4] 根据 anc个bbox索引 让bbox与anc同维便于后面运算
+    matches_bbox = bboxs[anc_bbox_ind]
+    # [anc个] 取出每一个anchor对应的label 同上
+    conf = labels[anc_bbox_ind]
     # [anc个,10] 取出每一个anchor对应的landms
-    matches_landm = landms[anc_gt_ind]
+    matches_landm = keypoints[anc_bbox_ind]
 
-    conf[anc_gt_val < threshold] = 0  # 未选中的全部置0为负样本
+    # 正负样本分类
+    conf[anc_bbox_val < threshold] = 0  # 值小于阀值的类别设置为 0负样本
 
-    loc = encode(matches_gt, anc, variances)
+    # matches_bbox ltrb
+    loc = encode(matches_bbox, anc, variances)
     landm = encode_landm(matches_landm, anc, variances)
 
     loc_t[idx] = loc  # [num_priors,4] encoded offsets to learn
@@ -114,38 +127,49 @@ def match(threshold, gt, anc, variances, labels, landms, loc_t, conf_t, landm_t,
     landm_t[idx] = landm
 
 
-def encode(matched, anc, variances):
+def encode(matches_bbox, anc, variances):
     '''
     计算loss
-    :param matched: 建议框 xywh
-    :param anc: 所有的
+    :param matches_bbox: 已anc同维的,已匹配bbox的框 ltrb
+    :param anc: xywh
     :param variances:
     :return:
     '''
-    # 进行编码的操作
-    g_cxcy = (matched[:, :2] + matched[:, 2:]) / 2 - anc[:, :2]
-    # 中心编码
-    g_cxcy /= (variances[0] * anc[:, 2:])
+    # ltrb -> xywh
+    xy = (matches_bbox[:, :2] + matches_bbox[:, 2:]) / 2
+    wh = (matches_bbox[:, 2:] - matches_bbox[:, :2])
 
-    # 宽高编码
-    g_wh = (matched[:, 2:] - matched[:, :2]) / anc[:, 2:]
-    g_wh = torch.log(g_wh) / variances[1]
-    return torch.cat([g_cxcy, g_wh], 1)  # [num_priors,4]
+    # 中心值
+    gap_xy = (xy - anc[:, :2]) / (variances[0] * anc[:, 2:])
+
+    # 宽高差距
+    gap_wh = torch.log(wh / anc[:, 2:]) / variances[1]
+    return torch.cat([gap_xy, gap_wh], dim=1)
 
 
-def encode_landm(matched, priors, variances):
-    matched = torch.reshape(matched, (matched.size(0), 5, 2))
-    priors_cx = priors[:, 0].unsqueeze(1).expand(matched.size(0), 5).unsqueeze(2)
-    priors_cy = priors[:, 1].unsqueeze(1).expand(matched.size(0), 5).unsqueeze(2)
-    priors_w = priors[:, 2].unsqueeze(1).expand(matched.size(0), 5).unsqueeze(2)
-    priors_h = priors[:, 3].unsqueeze(1).expand(matched.size(0), 5).unsqueeze(2)
-    priors = torch.cat([priors_cx, priors_cy, priors_w, priors_h], dim=2)
+def encode_landm(matches_landm, anc, variances):
+    '''
+    
+    :param matches_landm: [16800,10] xy,xy,xy,xy,xy
+    :param anc: xywh torch.Size([16800, 4])
+    :param variances:
+    :return:
+        gap_cxcy: torch.Size([16800, 10])
+    '''
+    size = matches_landm.size(0)  # [16800,10] -> [16800,5,2]
+    matches_landm = torch.reshape(matches_landm, (size, 5, 2))
+    # 分列组装  anc[:, 0] 降维 [size] -> [size,1] -> [size,5] -> [size,5,1]
+    priors_cx = anc[:, 0].unsqueeze(1).expand(size, 5).unsqueeze(2)
+    priors_cy = anc[:, 1].unsqueeze(1).expand(size, 5).unsqueeze(2)
+    priors_w = anc[:, 2].unsqueeze(1).expand(size, 5).unsqueeze(2)
+    priors_h = anc[:, 3].unsqueeze(1).expand(size, 5).unsqueeze(2)
+    #  [size,5,1] 4个 ->  [size,5,4]
+    anc = torch.cat([priors_cx, priors_cy, priors_w, priors_h], dim=2)
 
     # 减去中心后除上宽高
-    g_cxcy = matched[:, :, :2] - priors[:, :, :2]
-    g_cxcy /= (variances[0] * priors[:, :, 2:])
-    g_cxcy = g_cxcy.reshape(g_cxcy.size(0), -1)
-    return g_cxcy
+    gap_cxcy = (matches_landm[:, :, :2] - anc[:, :, :2]) / (variances[0] * anc[:, :, 2:])
+    gap_cxcy = gap_cxcy.reshape(gap_cxcy.size(0), -1)  # 拉平
+    return gap_cxcy
 
 
 def log_sum_exp(x):
@@ -199,7 +223,7 @@ def non_max_suppression(boxes, conf_thres=0.5, nms_thres=0.3):
     best_box = []
     scores = detection[:, 4]  # 降一维 (18920)
     # 2 . 根据得分对框进行从大到小排序。
-    arg_sort = torch.argsort(scores,descending=True)  # np反序索引
+    arg_sort = torch.argsort(scores, descending=True)  # np反序索引
     detection = detection[arg_sort]  # 行重组 <class 'tuple'>: (18920, 15)
 
     while detection.shape[0] > 0:  # 按分数遍历

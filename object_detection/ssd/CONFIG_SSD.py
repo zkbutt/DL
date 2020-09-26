@@ -1,6 +1,6 @@
 '''样本'''
-# PATH_DATA_ROOT = r'D:\down\AI\datas\widerface'
-# PATH_DATA_ROOT = r'D:\down\AI\datas\m_VOC2007'
+# PATH_DATA_ROOT = r'M:\datas\widerface'
+# PATH_DATA_ROOT = r'M:\datas\m_VOC2007'
 PATH_DATA_ROOT = r'm:\AI\datas\VOC2012'
 # PATH_DATA_ROOT = r'I:\VOC2012'
 BATCH_SIZE = 24  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5

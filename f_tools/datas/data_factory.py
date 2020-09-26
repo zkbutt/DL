@@ -216,7 +216,7 @@ class WiderfaceDataSet(Dataset):
                 line = line.split(' ')
                 label = [int(float(x)) for x in line]  # 这里 lrtb
                 _t = list(itemgetter(0, 1, 2, 3, 4, 5, 7, 8, 10, 11, 13, 14, 16, 17)(label))
-                #lrwh 转 lrtb
+                # lrwh 转 lrtb
                 _t[2] += _t[0]
                 _t[3] += _t[1]
                 if label[4] > 0:
@@ -376,8 +376,8 @@ class Data_Prefetcher():
     def __init__(self, loader):
         self.loader = iter(loader)
         self.stream = torch.cuda.Stream()
-        self.mean = torch.tensor([0.485 * 255, 0.456 * 255, 0.406 * 255]).cuda().view(1, 3, 1, 1)
-        self.std = torch.tensor([0.229 * 255, 0.224 * 255, 0.225 * 255]).cuda().view(1, 3, 1, 1)
+        # self.mean = torch.tensor([0.485 * 255, 0.456 * 255, 0.406 * 255]).cuda().view(1, 3, 1, 1)
+        # self.std = torch.tensor([0.229 * 255, 0.224 * 255, 0.225 * 255]).cuda().view(1, 3, 1, 1)
         # With Amp, it isn't necessary to manually convert data to half.
         # if args.fp16:
         #     self.mean = self.mean.half()
@@ -401,7 +401,7 @@ class Data_Prefetcher():
             self.next_input = self.next_input.float()
             self.next_input = self.next_input.sub_(self.mean).div_(self.std)
 
-    def next(self):
+    def __next__(self):
         torch.cuda.current_stream().wait_stream(self.stream)
         input = self.next_input
         target = self.next_target
