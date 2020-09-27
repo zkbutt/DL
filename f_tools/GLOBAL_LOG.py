@@ -6,6 +6,7 @@ from logging import handlers
 
 import colorlog
 
+from f_tools.f_general import get_path_root
 
 '''
 args=(os.path.abspath(os.getcwd() + "/info.log"),"midnight", 1, 6,'utf-8')
@@ -57,9 +58,11 @@ def get_logger(name='root'):
         # W 每星期（interval==0时代表星期一）
         # midnight 每天凌晨
     '''
-    from f_tools.f_general import get_path_root
+    path_root = os.path.join(get_path_root(), 'logs')
+    if not os.path.exists(path_root):
+        os.makedirs(path_root)
     th = handlers.TimedRotatingFileHandler(
-        filename=os.path.join(get_path_root(), 'logs', datetime.datetime.now().strftime('%Y_%m_%d') + '.log'),
+        filename=os.path.join(path_root, datetime.datetime.now().strftime('%Y_%m_%d') + '.log'),
         when='D',
         backupCount=5, encoding='utf-8')
     th.setFormatter(formatter)
@@ -84,7 +87,6 @@ flog = get_logger(__name__)
 # print(id(flog1))
 
 if __name__ == '__main__':
-
     # flog.debug('一个连接只需一个 %s', get_path_root)
     # flog.debug('多个连接无需   %s%s', [1, 2, {123}], get_path_root())
     pass

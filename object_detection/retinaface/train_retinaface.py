@@ -224,7 +224,10 @@ if __name__ == "__main__":
 
         process = LossProcess(model, anchors, cls_loss, device)
 
-        # 一批金额
+        # 训练流程: 拉平所有输出 -> 对anc就行修复 ->计算损失
+
+
+
         loss = train_one_epoch(data_loader, process, optimizer, epoch,
                                PRINT_FREQ, train_loss=train_loss, train_lr=learning_rate,
                                )

@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from f_tools.fun_od.f_boxes import tlbr2yxhw, tlbr2tlhw, fix_yxhw
+from f_tools.fun_od.f_boxes import ltrb2xywh, ltrb2ltwh, fix_anc4p
 
 cor_names = {
     'aliceblue': '#F0F8FF',
@@ -542,7 +542,7 @@ def __t_anc4found():
     mbox_ldm = torch.rand(2, 10)
     # xs=[0.1, 0.2]
     '''核心 box 修复'''
-    fix_yxhw(anchors, mbox_loc, (1, 1))
+    fix_anc4p(anchors, mbox_loc, (1, 1))
     # --------------anchors 转换画图--------------
     __anchors = anchors.clone()
     __anchors[:, [0, 2]] = __anchors[:, [0, 2]] * size[0]
@@ -623,7 +623,7 @@ def __t001():
                   'gray', 'brown', 'coral', 'gold',
                   'saga']
     for i, (a, cor_key) in enumerate(zip(_anchors, cor_names)):  # 画矩形框
-        a = tlbr2tlhw(a[None])
+        a = ltrb2ltwh(a[None])
         a = a.reshape(-1)
         # 这里要左上长宽,左上长宽
         rect = plt.Rectangle((a[0], a[1]), a[2], a[3], color=cor_names[cor_key], fill=False)

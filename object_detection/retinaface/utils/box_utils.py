@@ -95,30 +95,30 @@ def match(bboxs, labels, keypoints, anc, idx, loc_t, conf_t, landm_t,
     val = jaccard(bboxs, xywh2ltrb(anc))
 
     # 每个bbox匹配到的最大IoU anc   得gt个  torch.Size([40])
-    bbox_anc_val, bbox_anc_ind = val.max(1)  # 存的是 anc的index
+    bbox_anc_iou, bbox_anc_ind = val.max(1)  # 存的是 anc的index
 
     # 每个anc匹配到的最大IoU bbox 有可能多个anc对一个bbox keepdim squeeze_ 可以去掉
-    anc_bbox_val, anc_bbox_ind = val.max(0, keepdim=True)
+    anc_bbox_iou, anc_bbox_ind = val.max(0, keepdim=True)
     anc_bbox_ind.squeeze_(0)
-    anc_bbox_val.squeeze_(0)  # torch.Size([16800]) 存的是bbox的index
+    anc_bbox_iou.squeeze_(0)  # torch.Size([16800]) 存的是bbox的index
 
     # 修改 bbox个对应最好的 anc 的值 , 确保对应的anc保留  修改值anc为[1,bbox个]之间
-    anc_bbox_val.index_fill_(0, bbox_anc_ind, 2)  # 修改为2
+    anc_bbox_iou.index_fill_(0, bbox_anc_ind, 2)  # 修改为2
     # 确保保留的 anc 的 gt  index 不会出错
     for j in range(bbox_anc_ind.size(0)):
         anc_bbox_ind[bbox_anc_ind[j]] = j
 
     # [anc个,4] 根据 anc个bbox索引 让bbox与anc同维便于后面运算
-    matches_bbox = bboxs[anc_bbox_ind]
+    matches_bbox = bboxs[anc_bbox_ind] # 这里有问题? anc_bbox_ind这个还未进行阀值筛选
     # [anc个] 取出每一个anchor对应的label 同上
     conf = labels[anc_bbox_ind]
     # [anc个,10] 取出每一个anchor对应的landms
     matches_landm = keypoints[anc_bbox_ind]
 
     # 正负样本分类
-    conf[anc_bbox_val < threshold] = 0  # 值小于阀值的类别设置为 0负样本
+    conf[anc_bbox_iou < threshold] = 0  # 值小于阀值的类别设置为 0负样本
 
-    # matches_bbox ltrb
+    # matches_bbox ltrb 计算loss
     loc = encode(matches_bbox, anc, variances)
     landm = encode_landm(matches_landm, anc, variances)
 

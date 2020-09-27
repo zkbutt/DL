@@ -130,26 +130,26 @@ class Encoder(object):
         ious = calc_iou_tensor(gt, self.dboxes_ltrb)  # [gt个, 8732]
 
         # 每个def匹配到的最大IoU gt [8732,] 个
-        best_def_ious, best_def_idx = ious.max(dim=0)
+        anc_bbox_iou, anc_bbox_ind = ious.max(dim=0)
         # 每个gt匹配到的最大IoU def [nboxes,]个
-        best_gt_ious, best_gt_idx = ious.max(dim=1)
+        bbox_anc_iou, bbox_anc_ind = ious.max(dim=1)
 
         # 每个gt匹配到的最大IoU 的 default box  iou分数设置为2 即保留为正例
-        best_def_ious.index_fill_(0, best_gt_idx, 2.0)  # 保留gt个 有可能是多对一 实际保留<=gt的个数
+        anc_bbox_iou.index_fill_(0, bbox_anc_ind, 2.0)  # 保留gt个 有可能是多对一 实际保留<=gt的个数
 
         # 修正对应iou最大值的 gt  index 不会出错
-        idx = torch.arange(0, best_gt_idx.size(0), dtype=torch.int64)
-        best_def_idx[best_gt_idx[idx]] = idx
+        idx = torch.arange(0, bbox_anc_ind.size(0), dtype=torch.int64)
+        anc_bbox_ind[bbox_anc_ind[idx]] = idx
 
         # 寻找与bbox_in iou大于0.5的default box,对应论文中Matching strategy的第二条(这里包括了第一条匹配到的信息)
-        masks = best_def_ious > criteria  # 布尔索引 是降维后的 1维
+        masks = anc_bbox_iou > criteria  # 布尔索引 是降维后的 1维
 
         # [8732,] 标识def 对应的 gt 索引
         labels_out = torch.zeros(self.nboxes, dtype=torch.int64)  # 标签默认为同维 类别0为负样本
-        labels_out[masks] = labels_in[best_def_idx[masks]]  # 将正样本的GT 的真 实标签选出来 1~20
+        labels_out[masks] = labels_in[anc_bbox_ind[masks]]  # 将正样本的GT 的真 实标签选出来 1~20
         bboxes_out = self.dboxes_ltrb.clone()
         # 把找出正样本的框 设置为 gt
-        bboxes_out[masks, :] = gt[best_def_idx[masks], :]
+        bboxes_out[masks, :] = gt[anc_bbox_ind[masks], :]
 
         # 转换成 (x,y,w,h)
         x = 0.5 * (bboxes_out[:, 0] + bboxes_out[:, 2])  # x
@@ -467,54 +467,61 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
 
 
 class PostProcess(nn.Module):
-    def __init__(self, dboxes):
+    def __init__(self, ancs, variance=(0.1, 0.2), criteria=0.5, max_output=100):
+        '''
+
+        :param ancs: 生成的基础ancs  xywh  只有一张图  (m*w*h,4)
+        :param variance: 用于控制预测值
+        :param criteria: iou阀值
+        :param max_output: 最大预测数
+        '''
         super(PostProcess, self).__init__()
-        # [num_anchors, 4] -> [1, num_anchors, 4] 增加一维
-        self.dboxes_xywh = nn.Parameter(dboxes(order='xywh').unsqueeze(dim=0),
-                                        requires_grad=False)
-        self.scale_xy = dboxes.scale_xy  # 0.1
-        self.scale_wh = dboxes.scale_wh  # 0.2
+        # [num_anchors, 4] -> [4, num_anchors] -> [1, 4, num_anchors]
+        unsqueeze = ancs.transpose(0, 1).unsqueeze(dim=0)
+        self.anc_bboxs = nn.Parameter(unsqueeze, requires_grad=False)
+        self.scale_xy = variance[0]
+        self.scale_wh = variance[1]
 
-        self.criteria = 0.5  # 非极大超参
-        self.max_output = 100  # 最多100个目标
+        self.criteria = criteria  # 非极大超参
+        self.max_output = max_output  # 最多100个目标
 
-    def scale_back_batch(self, bboxes_in, scores_in):
+    def scale_back_batch(self, ploc, plabel):
         '''
             修正def 并得出分数 softmax
             1）通过预测的 boxes 回归参数得到最终预测坐标
             2）将box格式从 xywh 转换回ltrb
             3）将预测目标 score通过softmax处理
-        :param bboxes_in: 预测出的框 偏移量 xywh [N, 4, 8732]
-        :param scores_in: 预测所属类别 [N, label_num, 8732]
+        :param ploc: 预测出的框 偏移量 xywh [N, 4, 8732]
+        :param plabel: 预测所属类别 [N, label_num, 8732]
         :return:  返回 anc+预测偏移 = 修复后anc 的 ltrb 形式
         '''
         # type: (Tensor, Tensor)
         # Returns a view of the original tensor with its dimensions permuted.
         # [batch, 4, 8732] -> [batch, 8732, 4]
-        bboxes_in = bboxes_in.permute(0, 2, 1)
+        ploc = ploc.permute(0, 2, 1)
         # [batch, label_num, 8732] -> [batch, 8732, label_num]
-        scores_in = scores_in.permute(0, 2, 1)
+        plabel = plabel.permute(0, 2, 1)
         # print(bboxes_in.is_contiguous())
 
-        # ------------固定公式修正预测框(前面有乘10,这里0.1) 0.1 -> 10 ;  0.2 -> 5 ------------
-        bboxes_in[:, :, :2] = self.scale_xy * bboxes_in[:, :, :2]  # 预测的x, y回归参数
-        bboxes_in[:, :, 2:] = self.scale_wh * bboxes_in[:, :, 2:]  # 预测的w, h回归参数
+        # ------------限制预测值------------
+        ploc[:, :, :2] = self.scale_xy * ploc[:, :, :2]  # 预测的x, y回归参数
+        ploc[:, :, 2:] = self.scale_wh * ploc[:, :, 2:]  # 预测的w, h回归参数
         # 将预测的回归参数叠加到default box上得到最终的预测边界框
-        bboxes_in[:, :, :2] = bboxes_in[:, :, :2] * self.dboxes_xywh[:, :, 2:] + self.dboxes_xywh[:, :, :2]
-        bboxes_in[:, :, 2:] = bboxes_in[:, :, 2:].exp() * self.dboxes_xywh[:, :, 2:]
+        ploc[:, :, :2] = ploc[:, :, :2] * self.dboxes_xywh[:, :, 2:] + self.dboxes_xywh[:, :, :2]
+        ploc[:, :, 2:] = ploc[:, :, 2:].exp() * self.dboxes_xywh[:, :, 2:]
 
         # 修复完成转回至ltrb
-        l = bboxes_in[:, :, 0] - 0.5 * bboxes_in[:, :, 2]
-        t = bboxes_in[:, :, 1] - 0.5 * bboxes_in[:, :, 3]
-        r = bboxes_in[:, :, 0] + 0.5 * bboxes_in[:, :, 2]
-        b = bboxes_in[:, :, 1] + 0.5 * bboxes_in[:, :, 3]
-        bboxes_in[:, :, 0] = l  # xmin
-        bboxes_in[:, :, 1] = t  # ymin
-        bboxes_in[:, :, 2] = r  # xmax
-        bboxes_in[:, :, 3] = b  # ymax
+        l = ploc[:, :, 0] - 0.5 * ploc[:, :, 2]
+        t = ploc[:, :, 1] - 0.5 * ploc[:, :, 3]
+        r = ploc[:, :, 0] + 0.5 * ploc[:, :, 2]
+        b = ploc[:, :, 1] + 0.5 * ploc[:, :, 3]
+        ploc[:, :, 0] = l  # xmin
+        ploc[:, :, 1] = t  # ymin
+        ploc[:, :, 2] = r  # xmax
+        ploc[:, :, 3] = b  # ymax
 
         # scores_in: [batch, 8732, label_num]  输出8732个分数 -1表示最后一个维度
-        return bboxes_in, F.softmax(scores_in, dim=-1)
+        return ploc, F.softmax(plabel, dim=-1)
 
     def decode_single_new(self, bboxes_in, scores_in, criteria, num_output):
         '''
@@ -571,15 +578,15 @@ class PostProcess(nn.Module):
 
         return bboxes_out, labels_out, scores_out
 
-    def forward(self, bboxes_in, scores_in):
+    def forward(self, ploc, plabel):
         '''
         将预测回归参数叠加到default box上得到最终预测box，并执行非极大值抑制虑除重叠框
-        :param bboxes_in: 预测出的框 偏移量
-        :param scores_in: 预测所属类别
+        :param ploc: 预测出的框 偏移量 torch.Size([1, 4, 8732])
+        :param plabel: 预测所属类别 torch.Size([1, 21, 8732])
         :return: list每一个图的 多个bboxes_out, labels_out, scores_out
         '''
         # 通过预测的boxes回归参数得到最终预测坐标, 将预测目标score通过softmax处理
-        bboxes, probs = self.scale_back_batch(bboxes_in, scores_in)
+        bboxes, probs = self.scale_back_batch(ploc, plabel)
 
         outputs = torch.jit.annotate(List[Tuple[Tensor, Tensor, Tensor]], [])
         # 遍历一个batch中的每张image数据

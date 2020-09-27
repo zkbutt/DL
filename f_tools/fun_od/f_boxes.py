@@ -2,50 +2,40 @@ import torch
 import numpy as np
 
 
-def tlbr2yxhw(bboxs):
-    '''
-    上左下右 -> 中心高宽 输出 (n,4)
-    :param bboxs:  t,l,b,r
-    :return:y,x,h,w
-    '''
-    bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]  # h
-    bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]  # w
+def ltrb2xywh(bboxs):
+    bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
+    bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
     bboxs[:, 0] = bboxs[:, 0] + 0.5 * bboxs[:, 2]
     bboxs[:, 1] = bboxs[:, 1] + 0.5 * bboxs[:, 3]
     return bboxs
 
 
-def tlbr2tlhw(bboxs):
-    '''
-    上左下右 -> 上左高宽 输出 (n,4)
-    :param bboxs:  t,l,b,r
-    :return:t,l,h,w
-    '''
-    bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]  # h
-    bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]  # w
+def ltrb2ltwh(bboxs):
+    bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
+    bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
     return bboxs
 
 
-def yxhw2ltrb(bboxs):
+def xywh2ltrb(bboxs):
     '''
-    中心高宽 -> 上左下右
-    :bboxs y,x,h,w
-    :return: t,l,b,r
+
+    :param bboxs: [N, 4, 8732]
+    :return:
     '''
-    t = bboxs[:0] - 0.5 * bboxs[:, 2]
-    l = bboxs[:1] - 0.5 * bboxs[:, 3]
-    b = bboxs[:0] + 0.5 * bboxs[:, 2]
-    r = bboxs[:1] + 0.5 * bboxs[:, 3]
-    bboxs[:0] = t
-    bboxs[:1] = l
-    bboxs[:2] = b
-    bboxs[:3] = r
+    l = bboxs[:, :, 0] - 0.5 * bboxs[:, :, 2]
+    t = bboxs[:, :, 1] - 0.5 * bboxs[:, :, 3]
+    r = bboxs[:, :, 0] + 0.5 * bboxs[:, :, 2]
+    b = bboxs[:, :, 1] + 0.5 * bboxs[:, :, 3]
+    bboxs[:, :, 0] = l  # xmin
+    bboxs[:, :, 1] = t  # ymin
+    bboxs[:, :, 2] = r  # xmax
+    bboxs[:, :, 3] = b  # ymax
     return bboxs
 
 
-def fix_yxhw(bboxs, loc, variances=(0.1, 0.2)):
+def fix_anc4p(bboxs, loc, variances=(0.1, 0.2)):
     '''
-    用于 retinaface
+    用于预测时
     :param bboxs: y,x,h,w
     :param loc: 修正系数
     :return: 中心点和 宽高的调整系数
@@ -55,74 +45,6 @@ def fix_yxhw(bboxs, loc, variances=(0.1, 0.2)):
     # 宽高缩放
     bboxs[:, 2:] = bboxs[:, 2:] * torch.exp(loc[:, 2:] * variances[1])
     return bboxs
-
-
-def loc_bbox4np(src_bbox, loc):
-    ''' 只对 xywh 进行运算
-     已知源bbox 和位置偏差dx，dy，dh，dw，求目标框G
-    :param src_bbox: (n,4) 表示多个选区 , 左上右下角坐标
-    :param loc: 回归修正参数 (n,4)  中心点 (dx,dy,dh,dw)
-    :return: 修正后选区
-    '''
-    # 左上右下 ---> 中心点 (dx,dy,dh,dw)
-    src_height = src_bbox[:, 2] - src_bbox[:, 0]
-    src_width = src_bbox[:, 3] - src_bbox[:, 1]
-    src_ctr_y = src_bbox[:, 0] + 0.5 * src_height
-    src_ctr_x = src_bbox[:, 1] + 0.5 * src_width
-
-    _ = loc[:, 0]  # 这种取出来会降低维度
-    _ = loc[:, :1]  # 与这个等效
-    dy = loc[:, 0::4]
-    dx = loc[:, 1::4]
-    dh = loc[:, 2::4]
-    dw = loc[:, 3::4]
-
-    # 根据公式 进行选框回归 Gy Gx Gh Gw
-    ctr_y = dy * src_height[:, np.newaxis] + src_ctr_y[:, np.newaxis]
-    ctr_x = dx * src_width[:, np.newaxis] + src_ctr_x[:, np.newaxis]
-    h = np.exp(dh) * src_height[:, np.newaxis]
-    w = np.exp(dw) * src_width[:, np.newaxis]
-
-    # 开内存  中心点 (dx,dy,dh,dw) ---> 左上右下
-    dst_bbox = np.zeros(loc.shape, dtype=loc.dtype)
-    dst_bbox[:, 0::4] = ctr_y - 0.5 * h
-    dst_bbox[:, 1::4] = ctr_x - 0.5 * w
-    dst_bbox[:, 2::4] = ctr_y + 0.5 * h
-    dst_bbox[:, 3::4] = ctr_x + 0.5 * w
-    return dst_bbox
-
-
-def bbox_loc4np(src_bbox, dst_bbox):
-    ''' 只对 xywh 进行运算
-    已知源框和目标框求出其位置偏差
-    :param src_bbox:  正选出的正样本
-    :param dst_bbox: 左上右下
-    :return: <class 'tuple'>: (128, 4)
-    '''
-    height = src_bbox[:, 2] - src_bbox[:, 0]
-    width = src_bbox[:, 3] - src_bbox[:, 1]
-    ctr_y = src_bbox[:, 0] + 0.5 * height
-    ctr_x = src_bbox[:, 1] + 0.5 * width
-
-    # 左上右下转中心 hw
-    base_height = dst_bbox[:, 2] - dst_bbox[:, 0]
-    base_width = dst_bbox[:, 3] - dst_bbox[:, 1]
-    base_ctr_y = dst_bbox[:, 0] + 0.5 * base_height
-    base_ctr_x = dst_bbox[:, 1] + 0.5 * base_width
-
-    # 除法不能为0 log不能为负 取此类型的最小的一个数
-    eps = np.finfo(height.dtype).eps
-    height = np.maximum(height, eps)
-    width = np.maximum(width, eps)
-
-    # 按公式算偏差 , loc2bbox 这个是算偏差
-    dy = (base_ctr_y - ctr_y) / height
-    dx = (base_ctr_x - ctr_x) / width
-    dh = np.log(base_height / height)
-    dw = np.log(base_width / width)
-
-    loc = np.vstack((dy, dx, dh, dw)).transpose()
-    return loc
 
 
 def bbox_iou4np(bbox_a, bbox_b):
@@ -161,6 +83,7 @@ def bbox_iou4np(bbox_a, bbox_b):
 def bbox_iou4ts(box_a, box_b):
     '''
        通过左上右下计算 IoU  全是 ltrb
+       calc_iou4ts 这个方法更优雅
        :param box_a:  bboxs
        :param box_b: 先验框
        :return: (a.shape[0] b.shape[0])
@@ -168,11 +91,13 @@ def bbox_iou4ts(box_a, box_b):
     a = box_a.shape[0]
     b = box_b.shape[0]
     # x,2 -> x,1,2 -> x b 2  ,选出rb最大的
+    # rb = torch.min(boxes1[:, None, 2:], boxes2[:, 2:])  # right-bottom [N,M,2]
     max_xy = torch.min(
         box_a[:, 2:].unsqueeze(1).expand(a, b, 2),
         box_b[:, 2:].unsqueeze(0).expand(a, b, 2)
     )
     # 选出lt最小的
+    # lt = torch.max(boxes1[:, None, :2], boxes2[:, :2])  # left-top [N,M,2]
     min_xy = torch.max(
         box_a[:, :2].unsqueeze(1).expand(a, b, 2),
         box_b[:, :2].unsqueeze(0).expand(a, b, 2)
@@ -184,8 +109,47 @@ def bbox_iou4ts(box_a, box_b):
     # # x,2 -> x,1,2 -> x b 2 直接算面积
     area_a = ((box_a[:, 2] - box_a[:, 0]) * (box_a[:, 3] - box_a[:, 1])).unsqueeze(1).expand_as(inter)
     area_b = ((box_b[:, 2] - box_b[:, 0]) * (box_b[:, 3] - box_b[:, 1])).unsqueeze(0).expand_as(inter)
+
     union = area_a + area_b - inter
-    return inter / union
+    iou = inter / union
+    return iou
+
+
+def box_area(boxes):
+    """
+    Computes the area of a set of bounding boxes, which are specified by its
+    (x1, y1, x2, y2) coordinates.
+
+    Arguments:
+        boxes (Tensor[N, 4]): boxes for which the area will be computed. They
+            are expected to be in (x1, y1, x2, y2) format
+
+    Returns:
+        area (Tensor[N]): area for each box
+    """
+    return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+
+
+def calc_iou4ts(boxes1, boxes2):
+    '''
+
+    :param boxes1: (Tensor[N, 4])  bboxs
+    :param boxes2: (Tensor[M, 4])  ancs
+    :return: (Tensor[N, M])
+    '''
+    area1 = box_area(boxes1)
+    area2 = box_area(boxes2)
+
+    #  When the shapes do not match,
+    #  the shape of the returned output tensor follows the broadcasting rules
+    lt = torch.max(boxes1[:, None, :2], boxes2[:, :2])  # left-top [N,M,2]
+    rb = torch.min(boxes1[:, None, 2:], boxes2[:, 2:])  # right-bottom [N,M,2]
+
+    wh = (rb - lt).clamp(min=0)  # [N,M,2]
+    inter = wh[:, :, 0] * wh[:, :, 1]  # [N,M]
+
+    iou = inter / (area1[:, None] + area2 - inter)
+    return iou
 
 
 def resize_boxes4tensor(boxes, original_size, new_size):
@@ -248,3 +212,49 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
     boxes_for_nms = boxes + offsets[:, None]
     keep = nms(boxes_for_nms, scores, iou_threshold)
     return keep
+
+
+@torch.no_grad()
+def pos_match(ancs, bboxs, criteria, ):
+    '''
+    正样本选取
+        1. 每一个bboxs框 尽量有一个anc与之对应
+        2. 每一个anc iou大于大于阀值的保留
+    :param ancs: 已修复的ans
+    :param bboxs: 标签框
+    :param criteria: iou正例筛选 0.5
+    :return:
+        masks: 正例的 index 布尔
+        bboxs_ids : 正例对应的bbox的index
+    '''
+    # (bboxs个,anc个)
+    iou = calc_iou4ts(bboxs, ancs)
+    # (1,anc个值)降维  每一个anc对应的bboxs  最大的iou和index
+    anc_bbox_iou, anc_bbox_ind = iou.max(dim=0)  # 存的是 bboxs的index
+
+    # (bbox个,1)降维  每一个bbox对应的anc  最大的iou和index
+    bbox_anc_iou, bbox_anc_ind = iou.max(dim=1)  # 存的是 anc的index
+
+    # 强制保留 将每一个bbox对应的最大的anc索引 的anc_bbox_iou值强设为2 大于阀值即可
+    anc_bbox_iou.index_fill_(0, bbox_anc_ind, 2)  # dim index val
+
+    # 确保保留的 anc 的 gt  index 不会出错 exp:一个anc对应多个bboxs, bbox只有这一个anc时
+    _ids = torch.arange(0, bbox_anc_ind.size(0), dtype=torch.int64)
+    anc_bbox_ind[bbox_anc_ind[_ids]] = _ids
+    # for j in range(bbox_anc_ind.size(0)): # 与上句等价
+    #     anc_bbox_ind[bbox_anc_ind[j]] = j
+
+    # ----------正例的index 和 正例对应的bbox索引----------
+    masks = anc_bbox_iou > criteria  # anc 的正例index
+
+    bboxs_ids = anc_bbox_ind[masks]  # anc对应最大bboxs的索引 进行iou过滤筛选 形成正例对应的bbox的索引
+
+    # 根据 bboxs 索引list 将bboxs取出与anc 形成维度对齐 便于后面与anc修复算最终偏差 ->[anc个,4]
+    # ancs[masks, :] = bboxs[bboxs_ids] 只计算正样本的定位损失  区别是过滤了 iou的
+
+    # # 构建正反例label 使原有label保持不变
+    # labels_out = torch.zeros(ancs.shape[0], dtype=torch.int64)  # 标签默认为同维 类别0为负样本
+
+    # # 正例保持原样 反例置0
+    # labels_out[masks] = labels_in[bboxs_ids]
+    return masks, bboxs_ids

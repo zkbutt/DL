@@ -5,6 +5,10 @@ from object_detection.retinaface.utils.box_utils import match, log_sum_exp
 
 
 class MultiBoxLoss(nn.Module):
+    '''
+    类别损失: 计算正反例
+    定位损失: 正样本无标签
+    '''
     def __init__(self, num_classes, neg_pos, overlap_thresh, variance):
         '''
 

@@ -46,7 +46,7 @@ class Backbone(nn.Module):
 
 
 class SSD300(nn.Module):
-    '''核心类'''
+    '''SSD核心类'''
 
     def __init__(self, backbone=None, num_classes=21):
         super(SSD300, self).__init__()
@@ -146,26 +146,26 @@ class SSD300(nn.Module):
         detection_features = torch.jit.annotate(List[Tensor], [])  # [x]
         detection_features.append(x)
         for layer in self.additional_blocks:
-            x = layer(x)
+            x = layer(x)  # 对应此方法 _build_additional_features
             detection_features.append(x)  # 这里为什么不直接连接运行完成
 
-        # Feature Map 38x38x4, 19x19x6, 10x10x6, 5x5x6, 3x3x4, 1x1x4
+        # 将每一个特图的预测拉平,Feature Map 38x38x4, 19x19x6, 10x10x6, 5x5x6, 3x3x4, 1x1x4
         locs, confs = self.bbox_view(detection_features, self.loc, self.conf)
-
-        # For SSD 300, shall return nbatch x 8732 x {nlabels, nlocs} results
-        # 38x38x4 + 19x19x6 + 10x10x6 + 5x5x6 + 3x3x4 + 1x1x4 = 8732
+        # torch.Size([3, 4, 8732])   torch.Size([3, 21, 8732])
+        # 特图叠加后38x38x4 + 19x19x6 + 10x10x6 + 5x5x6 + 3x3x4 + 1x1x4 = 8732
 
         if self.training:
             if targets is None:
                 raise ValueError("In training mode, targets 不能为空")
-            # bboxes_out (Tensor 8732 x 4), labels_out (Tensor 8732)
+            # bboxes_out torch.Size([3, 8732, 4]), labels_out (Tensor 8732)
             bboxes_out = targets['boxes']
+            # batch,xxx,4 -> batch,4,xxx 转换通道
             bboxes_out = bboxes_out.transpose(1, 2).contiguous()
-            # print(bboxes_out.is_contiguous())
+            # torch.Size([3, 8732])
             labels_out = targets['labels']
             # print(labels_out.is_contiguous())
 
-            # ploc, plabel, gloc, glabel
+            # 预测值 locs, confs, 检签  bboxes_out, labels_out
             loss = self.compute_loss(locs, confs, bboxes_out, labels_out)
             return {"total_losses": loss}  # 组装成字典返回
 
@@ -225,40 +225,39 @@ class Loss(nn.Module):
 
         self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
 
-    def _location_vec(self, loc):
+    def _location_vec(self, gloc):
         '''
-        这里是 匹配的框 的第一步, 计划 anc与GT的调整系数
         计算ground truth相对anchors的回归参数
             self.dboxes 是def 是xywh self.dboxes
             两个参数只有前面几个用GT替代了的不一样 其它一个值 这里是稀疏
-        :param loc: 已完成 def 匹配的框 n,4,8732 正例已修改为GT  N,4,8732
+        :param gloc: 已完成 正例匹配 torch.Size([3, 4, 8732])
         :return:
             返回 ground truth相对anchors的回归参数 这里是稀疏
         '''
         # type: (Tensor)
         # 这里 scale_xy 是乘10
-        gxy = self.scale_xy * (loc[:, :2, :] - self.dboxes[:, :2, :]) / self.dboxes[:, 2:, :]  # Nx2x8732
-        gwh = self.scale_wh * (loc[:, 2:, :] / self.dboxes[:, 2:, :]).log()  # Nx2x8732
+        gxy = self.scale_xy * (gloc[:, :2, :] - self.dboxes[:, :2, :]) / self.dboxes[:, 2:, :]  # Nx2x8732
+        gwh = self.scale_wh * (gloc[:, 2:, :] / self.dboxes[:, 2:, :]).log()  # Nx2x8732
         return torch.cat((gxy, gwh), dim=1).contiguous()
 
     def forward(self, ploc, plabel, gloc, glabel):
         '''
 
-        :param ploc: 预测的 N,4,8732
-        :param plabel: 预测的  N,label_numx,8732
-        :param gloc: 已完成 def 匹配的框 n,4,8732 正例已修改为GT
-        :param glabel: 已完成 def 匹配的真实标签 0~20  n,8732  anchor匹配到的对应GTBOX的分数
+        :param ploc: 预测值 N,4,8732
+        :param plabel: 预测值  N,label_numx,8732
+        :param gloc: 已完成 正例匹配 n,4,8732
+        :param glabel: 已完成 正例匹配  0~20值  (batch,8732)  anchor匹配到的对应GTBOX的分数
         :return:
         '''
         # type: (Tensor, Tensor, Tensor, Tensor)
         # 计算gt的location回归参数 稀疏阵 Tensor: [N, 4, 8732]
         vec_gd = self._location_vec(gloc)
 
-        # 获取正样本的mask  Tensor: [N, 8732]
+        # 获取正样本的mask 同维运算 Tensor: [N, 8732]
         mask = glabel > 0
         # mask1 = torch.nonzero(glabel)
 
-        # batch中的每张图片的正样本个数 Tensor: [N] 降维
+        # batch中的每张图片的正样本个数 Tensor: [N] 1维降维
         pos_num = mask.sum(dim=1)  # 这个用于统计布尔标签总数
 
         # -------------计算定位损失------------------(只有正样本) 很多0
@@ -274,7 +273,7 @@ class Loss(nn.Module):
         # 按照confidence_loss降序排列 con_idx(Tensor: [N, 8732])
         _, con_idx = con_neg.sort(dim=1, descending=True)  # descending 倒序
         _, con_rank = con_idx.sort(dim=1)  # 两次索引排序 用于取最大的n个布尔索引
-        # 负样本数是正样本的3倍，但不能超过总样本数8732
+        # 限制正样本3倍不能超过负样本的总个数
         neg_num = torch.clamp(NEG_RATIO * pos_num, max=mask.size(1)).unsqueeze(-1)
         neg_mask = con_rank < neg_num  # Tensor [N, 8732]
 
@@ -285,7 +284,7 @@ class Loss(nn.Module):
         # 总损失为[n]
         total_loss = loc_loss + con_loss
 
-        # 没有正样本的图像不计算分类损失  eg. [15, 3, 5, 0] -> [1.0, 1.0, 1.0, 0.0]
+        # 没有正样本的图像不计算分类损失  pos_num是每一张图片的正例个数 eg. [15, 3, 5, 0] -> [1.0, 1.0, 1.0, 0.0]
         num_mask = (pos_num > 0).float()  # 统计一个batch中的每张图像中是否存在正样本
         pos_num = pos_num.float().clamp(min=torch.finfo(torch.float).eps)
         # 每个图片平均一下
