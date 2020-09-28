@@ -14,11 +14,13 @@ from f_tools.GLOBAL_LOG import flog
 from torch.autograd import Variable
 
 from f_tools.fits.fitting.coco_eval import CocoEvaluator
+from f_tools.fits.fitting.coco_utils import get_coco_api_from_dataset
 from pycocotools.coco import COCO
 
 
-def train_one_epoch(data_loader, loss_process, optimizer, epoch, print_freq,
-                    lr_scheduler=None, train_loss=None, train_lr=None):
+def train_one_epoch(data_loader, loss_process, optimizer, epoch,
+                    print_freq=60, lr_scheduler=None,
+                    ret_train_loss=None, ret_train_lr=None):
     '''
 
     :param data_loader:
@@ -27,8 +29,8 @@ def train_one_epoch(data_loader, loss_process, optimizer, epoch, print_freq,
     :param epoch: 当前次数
     :param print_freq:  每隔50批打印一次
     :param lr_scheduler:  每批训练lr更新器
-    :param train_loss:  train_loss[] 返回值
-    :param train_lr:  learning_rate[] 返回值
+    :param ret_train_loss:  train_loss[] 返回值
+    :param ret_train_lr:  learning_rate[] 返回值
     :return:
     '''
     metric_logger = MetricLogger(delimiter="  ")  # 日志记录器
@@ -43,8 +45,8 @@ def train_one_epoch(data_loader, loss_process, optimizer, epoch, print_freq,
             #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
             loss_total, log_dict = loss_process(batch_data)
 
-            if isinstance(train_loss, list):
-                train_loss.append(loss_total)
+            if isinstance(ret_train_loss, list):
+                ret_train_loss.append(loss_total)
 
             if not math.isfinite(loss_total):  # 当计算的损失为无穷大时停止训练
                 flog.error("Loss is {}, stopping training".format(loss_total))
@@ -68,8 +70,8 @@ def train_one_epoch(data_loader, loss_process, optimizer, epoch, print_freq,
         metric_logger.update(**log_dict)
         now_lr = optimizer.param_groups[0]["lr"]
         metric_logger.update(lr=now_lr)
-        if isinstance(train_lr, list):
-            train_lr.append(now_lr)  # 这个是返回值
+        if isinstance(ret_train_lr, list):
+            ret_train_lr.append(now_lr)  # 这个是返回值
     return metric_logger.meters['total_losses'].avg  # 默认使用平均值
 
 
@@ -88,19 +90,14 @@ def evaluate(data_loader, loss_process, print_freq, is_map=True, coco_res=None):
     metric_logger = MetricLogger(delimiter="  ")
     header = "Test: "
 
-    res = None
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
         res = loss_process(batch_data)
-        if is_map:
-            pass
+
         metric_logger.update()
 
-    if is_map:
-        # coco_res=xx()# 输出指标
-        if coco_res:
-            coco_res.append(coco_res)
-        pass
-    return res
+    # coco_res=xx()# 输出指标
+    if coco_res:
+        coco_res.append(coco_res)
 
 
 def warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor):
@@ -553,7 +550,7 @@ if __name__ == '__main__':
     }
 
     train_one_epoch(dataloader, fun_loss_process, model, optimizer, device, epoch, print_freq,
-                    train_loss=None, train_lr=None,
+                    ret_train_loss=None, ret_train_lr=None,
                     **fun_loss_process_args,
                     )
 

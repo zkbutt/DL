@@ -215,17 +215,17 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
 
 
 @torch.no_grad()
-def pos_match(ancs, bboxs, criteria, ):
+def pos_match(ancs, bboxs, criteria):
     '''
-    正样本选取
+    正样本选取策略
         1. 每一个bboxs框 尽量有一个anc与之对应
         2. 每一个anc iou大于大于阀值的保留
-    :param ancs: 已修复的ans
+    :param ancs:  anc模板
     :param bboxs: 标签框
-    :param criteria: iou正例筛选 0.5
+    :param criteria: 小于等于0.35的反例
     :return:
-        masks: 正例的 index 布尔
-        bboxs_ids : 正例对应的bbox的index
+        label_neg_mask: 返回反例的布尔索引
+        anc_bbox_ind : anc对应的bbox的index 用于提出标签
     '''
     # (bboxs个,anc个)
     iou = calc_iou4ts(bboxs, ancs)
@@ -245,16 +245,10 @@ def pos_match(ancs, bboxs, criteria, ):
     #     anc_bbox_ind[bbox_anc_ind[j]] = j
 
     # ----------正例的index 和 正例对应的bbox索引----------
-    masks = anc_bbox_iou > criteria  # anc 的正例index
+    # masks = anc_bbox_iou > criteria  # anc 的正例index
+    # masks = anc_bbox_ind[masks]  # anc对应最大bboxs的索引 进行iou过滤筛选 形成正例对应的bbox的索引
 
-    bboxs_ids = anc_bbox_ind[masks]  # anc对应最大bboxs的索引 进行iou过滤筛选 形成正例对应的bbox的索引
+    # 这里改成反倒置0
+    label_neg_mask = anc_bbox_iou <= criteria  # anc 的正例index
 
-    # 根据 bboxs 索引list 将bboxs取出与anc 形成维度对齐 便于后面与anc修复算最终偏差 ->[anc个,4]
-    # ancs[masks, :] = bboxs[bboxs_ids] 只计算正样本的定位损失  区别是过滤了 iou的
-
-    # # 构建正反例label 使原有label保持不变
-    # labels_out = torch.zeros(ancs.shape[0], dtype=torch.int64)  # 标签默认为同维 类别0为负样本
-
-    # # 正例保持原样 反例置0
-    # labels_out[masks] = labels_in[bboxs_ids]
-    return masks, bboxs_ids
+    return label_neg_mask, anc_bbox_ind

@@ -13,10 +13,10 @@ from object_detection.retinaface.nets.layers import FPN, SSH
 
 
 class ClassHead(nn.Module):
-    def __init__(self, inchannels=512, num_anchors=2):
+    def __init__(self, inchannels, num_anchors, num_classes):
         super(ClassHead, self).__init__()
         self.num_anchors = num_anchors
-        self.conv1x1 = nn.Conv2d(inchannels, self.num_anchors * 2, kernel_size=(1, 1), stride=1, padding=0)
+        self.conv1x1 = nn.Conv2d(inchannels, self.num_anchors * num_classes, kernel_size=(1, 1), stride=1, padding=0)
 
     def forward(self, x):
         out = self.conv1x1(x)
@@ -48,13 +48,14 @@ class LandmarkHead(nn.Module):
 
 class RetinaFace(nn.Module):
     def __init__(self, model_name, pretrain_path,
-                 in_channels, out_channel, return_layers, anchor_num):
+                 in_channels, out_channel, return_layers, anchor_num, num_classes):
         '''
 
         :param in_channels: fpn的输入通道维度 数组对应输
         :param out_channel: FPN的输出 与SSH输出一致
-        :param path_model_weight: backbone 权重文件路径
+        :param pretrain_path: backbone 权重文件路径
         :param return_layers:  定义 backbone 的输出名
+        :param num_classes: 样本的类别数  输出类别数
         '''
         super(RetinaFace, self).__init__()
         if model_name == 'mobilenet0.25':
@@ -87,14 +88,15 @@ class RetinaFace(nn.Module):
         self.ssh2 = SSH(out_channel, out_channel)
         self.ssh3 = SSH(out_channel, out_channel)
 
-        self.ClassHead = self._make_class_head(fpn_num=3, inchannels=out_channel, anchor_num=anchor_num)
+        self.ClassHead = self._make_class_head(fpn_num=3, inchannels=out_channel, anchor_num=anchor_num,
+                                               num_classes=num_classes)
         self.BboxHead = self._make_bbox_head(fpn_num=3, inchannels=out_channel, anchor_num=anchor_num)
         self.LandmarkHead = self._make_landmark_head(fpn_num=3, inchannels=out_channel, anchor_num=anchor_num)
 
-    def _make_class_head(self, fpn_num=3, inchannels=64, anchor_num=2):
+    def _make_class_head(self, fpn_num, inchannels, anchor_num, num_classes):
         classhead = nn.ModuleList()
         for i in range(fpn_num):
-            classhead.append(ClassHead(inchannels, anchor_num))
+            classhead.append(ClassHead(inchannels, anchor_num, num_classes))
         return classhead
 
     def _make_bbox_head(self, fpn_num=3, inchannels=64, anchor_num=2):
@@ -128,8 +130,9 @@ class RetinaFace(nn.Module):
 
         # 为每一输出的特图进行预测,输出进行连接 torch.Size([8, 16800, 4])
         bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(features)], dim=1)
-        # torch.Size([8, 16800, 2]) 这里可以优化成一个值
+        # torch.Size([8, 8400, 2]) 这里可以优化成一个值
         classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(features)], dim=1)
+        classifications = classifications.reshape((classifications.shape[0], -1))
         # torch.Size([8, 16800, 10])
         ldm_regressions = torch.cat([self.LandmarkHead[i](feature) for i, feature in enumerate(features)], dim=1)
 

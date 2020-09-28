@@ -45,6 +45,12 @@ def f查看网络图片():
 
 
 def t_coco_pic(coco, path_img):
+    '''
+    遍历所有图片打开查看
+    :param coco:
+    :param path_img:
+    :return:
+    '''
     # id = 1
     # imgIds = coco.getImgIds(imgIds=[id])
     ids = coco.getImgIds()
@@ -90,8 +96,8 @@ def show_od4coco(img, target, coco):
     size = 4
     font_dict = {
         'family': 'serif',
-        'style': 'italic', # ['normal','italic','oblique']
-        'weight': 'normal', # ['light','normal','medium','semibold','bold','heavy','black']
+        'style': 'italic',  # ['normal','italic','oblique']
+        'weight': 'normal',  # ['light','normal','medium','semibold','bold','heavy','black']
         'color': 'red',
         # 'bold': 1,
         'size': 6

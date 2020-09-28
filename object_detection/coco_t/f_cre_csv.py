@@ -73,7 +73,7 @@ class Widerface2Csv:
         :param path_dst:
         :return:
         '''
-        classes = {}
+        classes = {'human_face': 1}
         infos = []
         _ts = []
         file = ''
@@ -87,12 +87,14 @@ class Widerface2Csv:
                     fun_copy(path_src, path_dst)
                 str_split = path_src.split(os.sep)
                 file = str_split[-1]  # 取文件名
-                # flog.debug('f %s', path_src)
-                _t = str_split[-2].split('--')
+                # flog.debug('f %s', path_src
+
+                # -----------这里处理类别------------
                 # 59--people--driving--car\59_peopledrivingcar_peopledrivingcar_59_592.jpg
-                _class_name = '_'.join(_t[1:])
-                label = _class_name
-                classes[_class_name] = int(_t[0]) + 1
+                _t = str_split[-2].split('--')
+                # _class_name = '_'.join(_t[1:])
+                # label = _class_name
+                # classes[_class_name] = int(_t[0]) + 1
                 continue
             else:
                 line = line.split(' ')  # 20个数字

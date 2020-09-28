@@ -7,16 +7,17 @@ import torch.optim as optim
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_pretreatment import Compose, RandomHorizontalFlip, ToTensor, Resize
+from f_tools.fits.f_lossfun import KeypointsLoss
 from f_tools.fits.f_show import plot_loss_and_lr
 from f_tools.fits.fitting.f_fit_retinaface import train_one_epoch, evaluate
 from f_tools.fun_od.f_anc import AnchorsFound
+from f_tools.fun_od.f_boxes import pos_match
 from object_detection.coco_t.coco_dataset import CocoDataset
 from object_detection.f_fit_tools import sysconfig, load_weight, save_weight
 from object_detection.retinaface.CONFIG_RETINAFACE import PATH_SAVE_WEIGHT, PATH_DATA_ROOT, DEBUG, IMAGE_SIZE, \
-    MOBILENET025, PATH_FIT_WEIGHT, NEGATIVE_RATIO, NUM_CLASSES, NEG_IOU_THRESHOLD, END_EPOCHS, \
-    PRINT_FREQ, BATCH_SIZE, VARIANCE
+    MOBILENET025, PATH_FIT_WEIGHT, NEGATIVE_RATIO, NEG_IOU_THRESHOLD, END_EPOCHS, \
+    PRINT_FREQ, BATCH_SIZE, VARIANCE, LOSS_COEFFICIENT
 from object_detection.retinaface.nets.retinaface import RetinaFace
-from object_detection.retinaface.nets.retinaface_loss import MultiBoxLoss
 
 
 class LossProcess(torch.nn.Module):
@@ -24,23 +25,16 @@ class LossProcess(torch.nn.Module):
     前向和反向 loss过程函数
     '''
 
-    def __init__(self, model, anchors, cls_loss, device):
+    def __init__(self, model, anchors, losser):
         super(LossProcess, self).__init__()
-        self.args = {
-            'anchors': anchors,  # AnchorsFound 对象
-            'fun_loss': cls_loss,  # MultiBoxLoss 对象
-        }
+        self.anchors = anchors
         self.model = model
-        self.device = device
+        self.losser = losser
 
     def forward(self, batch_data):
         '''
-        需注意多GPU时返回值处理
-        完成  数据组装完成   模型输入输出    构建展示字典及返回值
-        loss_total, log_dict = self.forward(model, device, batch_data, kwargs)
 
-          这个是loss计算过程  前向 后向
-          :param batch_data: tuple(images,targets)
+        :param batch_data: tuple(images,targets)
             images:tensor(batch,c,h,w)
             list( # batch个
                 target: dict{
@@ -50,36 +44,78 @@ class LossProcess(torch.nn.Module):
                         keypoints: np(num_anns,10),
                     }
                 )
-          :return:
-              loss_total: 这个用于优化
-              show_dict:  log_dict
-          '''
-        # -----------------------输入模型前的数据处理------------------------
-        images, targets = batch_data
-
-        # ---------------模型输入输出 ----------------------
+        :return:
+            loss_total: 这个用于优化
+            show_dict:  log_dict
         '''
-        输出 tuple(# 预测器 框4 类别2 关键点10
-            torch.Size([batch, 16800, 4]) # 框
-            torch.Size([batch, 16800, 2]) # 类别
-            torch.Size([batch, 16800, 10]) # 关键点
-        )
+        # -----------------------输入模型前的数据处理 开始------------------------
+        images, targets = batch_data
+        # -----------------------输入模型前的数据处理 完成------------------------
+
+        '''
+           模型输出 tuple(# 预测器 框4 类别2 关键点10
+               torch.Size([batch, 16800, 4]) # 框
+               torch.Size([batch, 16800, 2]) # 类别
+               torch.Size([batch, 16800, 10]) # 关键点
+           )
         '''
         out = self.model(images)
-        # 返回list(tensor)
-        loss_list = self.args['fun_loss'](out, self.args['anchors'], targets, self.device)
+        pbboxs = out[0]
+        plabels = out[1]
+        pkeypoints = out[2]
+
         if self.training:
-            r_loss, c_loss, landm_loss = loss_list
-            loss_total = 2 * r_loss + c_loss + landm_loss  # 这个用于优化
+            '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
+            num_batch = images.shape[0]
+            num_ancs = self.anchors.shape[0]
+
+            gbboxs = torch.Tensor(num_batch, num_ancs, 4).to(images)  # torch.Size([5, 16800, 4])
+            glabels = torch.Tensor(num_batch, num_ancs).to(images)  # 这个只会存在一维 无论多少类
+            gkeypoints = torch.Tensor(num_batch, num_ancs, 10).to(images)
+            '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
+            for index in range(num_batch):
+                bboxs = targets[index]['bboxs']  # torch.Size([40, 4])
+                labels = targets[index]['labels']  # torch.Size([40,2])
+
+                keypoints = targets[index]['keypoints']  # torch.Size([40, 10])
+                '''
+                masks: 正例的 index 布尔
+                bboxs_ids : 正例对应的bbox的index
+                '''
+                label_neg_mask, anc_bbox_ind = pos_match(self.anchors, bboxs, NEG_IOU_THRESHOLD)
+
+                # new_anchors = anchors.clone().detach()
+                # 将bbox取出替换anc对应位置 ,根据 bboxs 索引list 将bboxs取出与anc 形成维度对齐 便于后面与anc修复算最终偏差 ->[anc个,4]
+                # 只计算正样本的定位损失,将正例对应到bbox标签 用于后续计算anc与bbox的差距
+                match_bboxs = bboxs[anc_bbox_ind]
+                match_keypoints = keypoints[anc_bbox_ind]
+
+                # 构建正反例label 使原有label保持不变
+                # labels = torch.zeros(num_ancs, dtype=torch.int64)  # 标签默认为同维 类别0为负样本
+                # 正例保持原样 反例置0
+                match_labels = labels[anc_bbox_ind]
+                # match_labels[label_neg_mask] = torch.tensor(0).to(labels)
+                match_labels[label_neg_mask] = 0.  # 这里没有to设备
+                # labels[label_neg_ind] = 0 #  这是错误的用法
+                glabels[index] = match_labels
+
+                gbboxs[index] = match_bboxs
+                gkeypoints[index] = match_keypoints
+            '''---------------------与输出进行维度匹配及类别匹配  完成-------------------------'''
+
+            # ---------------损失计算 ----------------------
+            loss_total, loss_list = self.losser(pbboxs, plabels, pkeypoints, gbboxs, glabels, gkeypoints)
+
+            loss_bboxs, loss_labels, loss_keypoints = loss_list  # 这个用于显示
 
             # -----------------构建展示字典及返回值------------------------
             # 多GPU时结果处理 reduce_dict 方法
             # losses_dict_reduced = reduce_dict(losses_dict)
             show_dict = {
-                "total_losses": loss_total,
-                "r_loss": r_loss,
-                "c_loss": c_loss,
-                "landm_loss": landm_loss,
+                "loss_total": loss_total.detach().item(),
+                "loss_bboxs": loss_bboxs,
+                "loss_labels": loss_labels,
+                "loss_keypoints": loss_keypoints,
             }
             return loss_total, show_dict
         else:
@@ -137,16 +173,16 @@ if __name__ == "__main__":
 
     def collate_fn(batch_datas):
         '''
-
+        loader输出数据组装
         :param batch_datas:
             list(
                 batch(
                     img: (h,w,c),
                     target: dict{
                         image_id: int,
-                        bboxs: np(num_anns, 4),
-                        labels: np(num_anns),
-                        keypoints: np(num_anns,10),
+                        bboxs: tensor(num_anns, 4),
+                        labels: tensor(num_anns,类别数),
+                        keypoints: tensor(num_anns,10),
                     }
                 )
             )
@@ -155,13 +191,15 @@ if __name__ == "__main__":
             list( # batch个
                 target: dict{
                         image_id: int,
-                        bboxs: np(num_anns, 4),
-                        labels: np(num_anns),
-                        keypoints: np(num_anns,10),
+                        bboxs: tensor(num_anns, 4),
+                        labels: tensor(num_anns,类别数),
+                        keypoints: tensor(num_anns,10),
                     }
                 )
         '''
-        images = torch.empty((len(batch_datas), *(batch_datas[0][0].shape)), device=batch_datas[0][0].device)
+        _t = batch_datas[0][0]
+        # images = torch.empty((len(batch_datas), *_t.shape), device=_t.device)
+        images = torch.empty((len(batch_datas), *_t.shape)).to(_t)
         targets = []
         for i, (img, taget) in enumerate(batch_datas):
             images[i] = img
@@ -182,16 +220,21 @@ if __name__ == "__main__":
     # iter(data_loader).__next__()
 
     '''------------------模型定义---------------------'''
+    num_classes = len(data_loader.dataset.coco.getCatIds())  # 根据数据集取类别数
     model = RetinaFace(claxx.MODEL_NAME,
                        claxx.PATH_MODEL_WEIGHT,
                        claxx.IN_CHANNELS, claxx.OUT_CHANNEL,
-                       claxx.RETURN_LAYERS, claxx.ANCHOR_NUM)
+                       claxx.RETURN_LAYERS, claxx.ANCHOR_NUM,
+                       num_classes)
     # if torchvision._is_tracing() 判断训练模式
     # self.training 判断训练模式
     model.train()  # 启用 BatchNormalization 和 Dropout
     model.to(device)
 
-    cls_loss = MultiBoxLoss(NUM_CLASSES, NEGATIVE_RATIO, NEG_IOU_THRESHOLD, VARIANCE)
+    anchors = AnchorsFound(IMAGE_SIZE, claxx.ANCHORS_SIZE, claxx.FEATURE_MAP_STEPS, claxx.ANCHORS_CLIP).get_anchors()
+    anchors.to(device)
+
+    losser = KeypointsLoss(anchors, NEGATIVE_RATIO, VARIANCE, LOSS_COEFFICIENT)
     # 权重衰减(如L2惩罚)(默认: 0)
     optimizer = optim.Adam(model.parameters(), 1e-3, weight_decay=5e-4)
     # 在发现loss不再降低或者acc不再提高之后，降低学习率
@@ -204,8 +247,6 @@ if __name__ == "__main__":
 
     # 返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数
     # 特图的步距
-    anchors = AnchorsFound(IMAGE_SIZE, claxx.ANCHORS_SIZE, claxx.FEATURE_MAP_STEPS, claxx.ANCHORS_CLIP).get_anchors()
-    anchors.to(device)
 
     train_loss = []
     learning_rate = []
@@ -222,14 +263,11 @@ if __name__ == "__main__":
                 param.requires_grad = True
             model.train()
 
-        process = LossProcess(model, anchors, cls_loss, device)
-
-        # 训练流程: 拉平所有输出 -> 对anc就行修复 ->计算损失
-
-
+        process = LossProcess(model, anchors, losser)
 
         loss = train_one_epoch(data_loader, process, optimizer, epoch,
-                               PRINT_FREQ, train_loss=train_loss, train_lr=learning_rate,
+                               PRINT_FREQ,
+                               ret_train_loss=train_loss, ret_train_lr=learning_rate,
                                )
 
         lr_scheduler.step(loss)  # 更新学习

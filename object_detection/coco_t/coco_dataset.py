@@ -101,16 +101,14 @@ class CocoDataset(Dataset):
             # 预处理输入 PIL img 和 np的target
             img, target = self.transform_cpu(img, target)
 
-        '''---------------cocoAPI 查看图片在归一化前------------------'''
+        '''---------------cocoAPI测试 查看图片在归一化前------------------'''
         # cats = self.coco.loadCats(target['labels'])
         # ann_ids = self.coco.getAnnIds(target['image_id'])
         # anns = self.coco.loadAnns(ann_ids)
-        img_info = self.coco.loadImgs(target['image_id'])[0]
-        flog.debug(' %s', img_info)
+        # img_info = self.coco.loadImgs(target['image_id'])[0]
+        # flog.debug(' %s', img_info)
         # show_od4coco(img, target, self.coco)
-
-        from f_tools.pic.f_show import show_pics_ts
-
+        # from f_tools.pic.f_show import show_pics_ts
         # 归一化后用这个查看图
         # show_pics_ts(img[None])
 
@@ -197,10 +195,9 @@ if __name__ == '__main__':
 
     dataset = CocoDataset(path_root, mode, data_type)
     # dataset = CoCoDataset(path_root, mode, data_type, transform=data_transform['train'])
-    for d in dataset:
-        sample = d
     # plt.imshow(sample['img'])
     coco = dataset.coco
+    flog.debug(coco.loadCats(coco.getCatIds())) # 获取数据集类别数
     path_save_img = os.path.join(dataset.path_root, 'images', dataset.data_type)
 
     t_coco_pic(coco, path_save_img)

@@ -7,7 +7,7 @@ PATH_DATA_ROOT = r'd:\t001\coco'
 IMAGE_SIZE = (640, 640)  # 预处理 统一尺寸
 # IMAGE_SIZE = (840, 840)  # 预处理 统一尺寸
 BATCH_SIZE = 5  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
-NUM_CLASSES = 2  # 模型分类数 人脸只有1 0
+# NUM_CLASSES = 2  # 模型分类数 人脸只有1 0 影响类别输出   -----这个要根据样本改----
 rgb_mean = (104, 117, 123)  # 图片的RGB偏差
 
 '''模型权重'''
@@ -25,10 +25,11 @@ END_EPOCHS = 10
 PRINT_FREQ = 50  # 每50批打印一次
 OUT_CHANNEL = 64  # FPN的输出 与SSH输出一致
 VARIANCE = [0.1, 0.2]  # 框修正限制
+LOSS_COEFFICIENT = [2, 1, 1]  # 损失系数 用于  loss_bboxs loss_labels  loss_keypoints
 
 '''Loss参数'''
 PREDICT_IOU_THRESHOLD = 0.3  # 用于预测的阀值
-NEGATIVE_RATIO = 7  # 负样本比例
+NEGATIVE_RATIO = 3  # 负样本倍数
 NEG_IOU_THRESHOLD = 0.35  # 小于时作用负例,用于 MultiBoxLoss
 
 
