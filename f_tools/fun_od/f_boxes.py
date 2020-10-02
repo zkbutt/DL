@@ -11,6 +11,10 @@ def ltrb2xywh(bboxs):
 
 
 def ltrb2ltwh(bboxs):
+    '''
+    :param bboxs:
+    :return:
+    '''
     bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
     bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
     return bboxs
@@ -163,9 +167,9 @@ def resize_boxes4tensor(boxes, original_size, new_size):
     # type: (Tensor, List[int], List[int]) -> Tensor
     # 输出数组   新尺寸 /旧尺寸 = 对应 h w 的缩放因子
     ratios = [
-        torch.tensor(s, dtype=torch.float32, device=boxes.device)
+        torch.tensor(s_new, dtype=torch.float32, device=boxes.device)
         / torch.tensor(s_orig, dtype=torch.float32, device=boxes.device)
-        for s, s_orig in zip(new_size, original_size)
+        for s_new, s_orig in zip(new_size, original_size)
     ]
 
     ratios_height, ratios_width = ratios
@@ -239,7 +243,7 @@ def pos_match(ancs, bboxs, criteria):
     anc_bbox_iou.index_fill_(0, bbox_anc_ind, 2)  # dim index val
 
     # 确保保留的 anc 的 gt  index 不会出错 exp:一个anc对应多个bboxs, bbox只有这一个anc时
-    _ids = torch.arange(0, bbox_anc_ind.size(0), dtype=torch.int64)
+    _ids = torch.arange(0, bbox_anc_ind.size(0), dtype=torch.int64).to(anc_bbox_ind)
     anc_bbox_ind[bbox_anc_ind[_ids]] = _ids
     # for j in range(bbox_anc_ind.size(0)): # 与上句等价
     #     anc_bbox_ind[bbox_anc_ind[j]] = j
@@ -252,3 +256,7 @@ def pos_match(ancs, bboxs, criteria):
     label_neg_mask = anc_bbox_iou <= criteria  # anc 的正例index
 
     return label_neg_mask, anc_bbox_ind
+
+
+if __name__ == '__main__':
+    pass

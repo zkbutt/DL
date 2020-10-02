@@ -1,12 +1,12 @@
-DEBUG = True
+DEBUG = False
 
 '''样本及预处理'''
 # PATH_DATA_ROOT = r'M:\AI\datas\widerface'
-PATH_DATA_ROOT = r'd:\t001\coco'
-# PATH_DATA_ROOT = r'M:\AI\datas\widerface'
+# PATH_DATA_ROOT = r'd:\t001\coco'
+PATH_DATA_ROOT = r'M:\AI\datas\widerface\coco'
 IMAGE_SIZE = (640, 640)  # 预处理 统一尺寸
 # IMAGE_SIZE = (840, 840)  # 预处理 统一尺寸
-BATCH_SIZE = 5  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
+BATCH_SIZE = 48  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
 # NUM_CLASSES = 2  # 模型分类数 人脸只有1 0 影响类别输出   -----这个要根据样本改----
 rgb_mean = (104, 117, 123)  # 图片的RGB偏差
 
@@ -22,7 +22,7 @@ PATH_FIT_WEIGHT = None
 
 '''训练'''
 END_EPOCHS = 10
-PRINT_FREQ = 50  # 每50批打印一次
+PRINT_FREQ = 1  # 每50批打印一次
 OUT_CHANNEL = 64  # FPN的输出 与SSH输出一致
 VARIANCE = [0.1, 0.2]  # 框修正限制
 LOSS_COEFFICIENT = [2, 1, 1]  # 损失系数 用于  loss_bboxs loss_labels  loss_keypoints
@@ -69,6 +69,7 @@ class RESNET50:
     ANCHOR_NUM = 2
 
     '''模型参数'''
+    PATH_MODEL_WEIGHT = None
     IN_CHANNELS = [64, 128, 256]  # 对应RETURN_LAYERS
     IN_CHANNEL = 256
     OUT_CHANNEL = 256

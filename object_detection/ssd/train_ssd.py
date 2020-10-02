@@ -98,14 +98,14 @@ def main():
     # 如果电脑内存充裕，可提前加载验证集数据，以免每次验证时都要重新加载一次数据，节省时间
     # val_data = get_coco_api_from_dataset(train_data_loader.dataset)
     for epoch in range(start_epoch, END_EPOCHS):
-        utils.train_one_epoch(model=model, optimizer=optimizer,
-                              data_loader=train_data_loader,
-                              device=device, epoch=epoch,
-                              print_freq=PRINT_FREQ,
-                              train_loss=train_loss,
-                              train_lr=learning_rate)
-
-        lr_scheduler.step()  # 更新学习
+        # utils.train_one_epoch(model=model, optimizer=optimizer,
+        #                       data_loader=train_data_loader,
+        #                       device=device, epoch=epoch,
+        #                       print_freq=PRINT_FREQ,
+        #                       train_loss=train_loss,
+        #                       train_lr=learning_rate)
+        #
+        # lr_scheduler.step()  # 更新学习
 
         utils.evaluate(model=model, data_loader=val_data_set_loader,
                        device=device, data_set=None,

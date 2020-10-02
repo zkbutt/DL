@@ -27,8 +27,8 @@ class Widerface2Csv:
                # info = [[filename0, "xmin ymin xmax ymax label0"],
                #         filename1, "xmin ymin xmax ymax label1"]
            :param is_copy: 是否复制图片到同一位置
-           :param path_dst: 将图片文件复制到统一的位置
-           :param is_move: 是否
+           :param path_dst: 将图片文件复制到统一的位置 与is_move相对应
+           :param is_move: 是否移动复制
            :return:
                infos=[filename,l,t,r,b,英文标准]
                classes={"Parade": 1, "Handshaking": 2, "People_Marching":3...}
@@ -73,7 +73,7 @@ class Widerface2Csv:
         :param path_dst:
         :return:
         '''
-        classes = {'human_face': 1}
+        classes = {'human_face': 1}  # ---类别--- 写死
         infos = []
         _ts = []
         file = ''
@@ -83,15 +83,21 @@ class Widerface2Csv:
             if line.startswith('#'):  # 删除末尾空格
                 # 添加文件名
                 path_src = os.path.normpath(os.path.join(self.path_root, 'images', line[2:]))
-                if is_copy:
-                    fun_copy(path_src, path_dst)
                 str_split = path_src.split(os.sep)
                 file = str_split[-1]  # 取文件名
+                _file_dst = os.path.join(path_dst, file)
+
+                if os.path.exists(_file_dst):
+                    flog.warning('文件已复制 %s',_file_dst)
+                    continue
+                if is_copy:
+                    fun_copy(path_src, path_dst)
+
                 # flog.debug('f %s', path_src
 
                 # -----------这里处理类别------------
                 # 59--people--driving--car\59_peopledrivingcar_peopledrivingcar_59_592.jpg
-                _t = str_split[-2].split('--')
+                # _t = str_split[-2].split('--')
                 # _class_name = '_'.join(_t[1:])
                 # label = _class_name
                 # classes[_class_name] = int(_t[0]) + 1
@@ -130,27 +136,33 @@ class Widerface2Csv:
         return classes, infos
 
     def cre_file_json(self, classes, name):
-        f = open('./_file/classes_' + name + '.json', 'w')
-        json.dump(json.dumps(classes, ensure_ascii=False), f, ensure_ascii=False)
+        file_json = './_file/classes_' + name + '.json'
+        with open(file_json, 'w', encoding='utf-8') as f:
+            json.dump(classes, f, ensure_ascii=False, )
 
     def cre_file_csv(self, infos, name):
-        csv_labels = open('./_file/csv_labels_' + name + '.csv', "w")
-        for info in infos:
-            info = [str(i) for i in info]
-            s_ = ','.join(info) + '\n'
-            csv_labels.write(s_)
-        csv_labels.close()
+        path_csv = './_file/csv_labels_' + name + '.csv'
+        with open(path_csv, "w") as csv_labels:
+            for info in infos:
+                info = [str(i) for i in info]
+                s_ = ','.join(info) + 'human_face' + '\n'  # ---类别---
+                csv_labels.write(s_)
+            csv_labels.close()
 
 
 if __name__ == '__main__':
     '''
-    将文件进行重新标注 并 重构到一个文件夹中  选框为 ltrb
+    将文件进行重新标注 并 重构到一个文件夹中  选框为 ltrb 可选复制或移动
+    搜 # ---类别--- 写死
     '''
     # 标注文件
-    path_root = r'M:\datas\widerface\train'
-    file_txt = '_label.txt'
+    mode = 'train'  # val  test
+    # mode = 'val'
+    path_root = os.path.join('M:\AI\datas\widerface', mode)
+    file_txt = 'label.txt'
 
     # widerface_csv = Widerface2Csv(path_root, file_txt, 'bboxs')
     widerface_csv = Widerface2Csv(path_root, file_txt, 'keypoints')
+
     path_dst = os.path.join(path_root, 'images')  # 图片移动到此处
-    widerface_csv.to_csv(True, path_dst)
+    widerface_csv.to_csv(True, path_dst, is_move=True)

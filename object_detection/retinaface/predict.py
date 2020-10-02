@@ -13,6 +13,10 @@ from object_detection.retinaface.nets.retinaface import RetinaFace
 from object_detection.retinaface.utils.box_utils import decode, decode_landm, non_max_suppression
 
 if __name__ == '__main__':
+
+    # 尺寸修正 应该不是原图的
+    # _img_info = self.coco.loadImgs(image_id)[0]
+    # w, h = _img_info['width'], _img_info['height']
     '''------------------系统配置---------------------'''
     claxx = MOBILENET025  # 这里根据实际情况改
 

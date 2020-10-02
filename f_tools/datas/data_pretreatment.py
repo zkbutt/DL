@@ -67,7 +67,7 @@ class RandomHorizontalFlip(object):
             # image = image.flip(-1)  # 水平翻转图片
 
             width, height = image.size
-            flog.debug('width,height %s,%s', width, height)
+            # flog.debug('width,height %s,%s', width, height)
             image = image.transpose(Image.FLIP_LEFT_RIGHT)  # 水平翻转图片
 
             bbox = target["bboxs"]

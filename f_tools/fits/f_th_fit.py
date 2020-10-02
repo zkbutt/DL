@@ -189,9 +189,6 @@ def visualize_model(validate_loader, class_names, model, num_images=6, device='c
                 return
 
 
-
-
-
 def fit_one_epoch(model, cls_loss, epoch, data_loader, epoch_end, anchors, device):
     total_r_loss = 0
     total_c_loss = 0

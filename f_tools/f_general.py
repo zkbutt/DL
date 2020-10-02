@@ -1,6 +1,10 @@
+import errno
+import json
 import os
 import sys
 import time
+
+import numpy as np
 
 
 def get_path_root():
@@ -64,6 +68,27 @@ def show_progress(epoch, epochs, title, context):
     b = "." * int((1 - rate) * 50)
     time.sleep(0.2)
     print("\r{}: {:^3.0f}%[{}->{}] {}".format(title, int(rate * 100), a, b, context), end="")
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NpEncoder, self).default(obj)
+
+
+def mkdir(path):
+    # 多GPU
+    try:
+        os.makedirs(path)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
 
 
 '''------------初始化对象------------'''

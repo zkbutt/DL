@@ -476,9 +476,9 @@ class PostProcess(nn.Module):
         :param max_output: 最大预测数
         '''
         super(PostProcess, self).__init__()
-        # [num_anchors, 4] -> [4, num_anchors] -> [1, 4, num_anchors]
-        unsqueeze = ancs.transpose(0, 1).unsqueeze(dim=0)
-        self.anc_bboxs = nn.Parameter(unsqueeze, requires_grad=False)
+        # [num_anchors, 4] -> [1, num_anchors, 4] 增加一维
+        self.ancs = nn.Parameter(ancs(order='xywh').unsqueeze(dim=0),
+                                        requires_grad=False)
         self.scale_xy = variance[0]
         self.scale_wh = variance[1]
 
@@ -507,8 +507,8 @@ class PostProcess(nn.Module):
         ploc[:, :, :2] = self.scale_xy * ploc[:, :, :2]  # 预测的x, y回归参数
         ploc[:, :, 2:] = self.scale_wh * ploc[:, :, 2:]  # 预测的w, h回归参数
         # 将预测的回归参数叠加到default box上得到最终的预测边界框
-        ploc[:, :, :2] = ploc[:, :, :2] * self.dboxes_xywh[:, :, 2:] + self.dboxes_xywh[:, :, :2]
-        ploc[:, :, 2:] = ploc[:, :, 2:].exp() * self.dboxes_xywh[:, :, 2:]
+        ploc[:, :, :2] = ploc[:, :, :2] * self.ancs[:, :, 2:] + self.ancs[:, :, :2]
+        ploc[:, :, 2:] = ploc[:, :, 2:].exp() * self.ancs[:, :, 2:]
 
         # 修复完成转回至ltrb
         l = ploc[:, :, 0] - 0.5 * ploc[:, :, 2]

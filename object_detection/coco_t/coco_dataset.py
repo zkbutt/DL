@@ -114,6 +114,7 @@ class CocoDataset(Dataset):
 
         if self.out == 'ts':
             # target['image_id'] = torch.tensor(image_id)
+            img = img.to(self.device)
             for key, val in target.items():
                 target[key] = torch.tensor(val, device=self.device).type(torch.float)
 

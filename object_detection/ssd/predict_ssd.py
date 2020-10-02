@@ -52,7 +52,7 @@ if __name__ == '__main__':
     # 加载类别信息
     category_index = {}
     try:
-        json_file = open(os.path.join(PATH_DATA_ROOT, 'classes_voc.json'), 'r')
+        json_file = open(os.path.join(PATH_DATA_ROOT, 'classes_ids_voc.json'), 'r')
         class_dict = json.load(json_file)
         category_index = {v: k for k, v in class_dict.items()}
     except Exception as e:

@@ -1,4 +1,7 @@
+import _thread
 import json
+import time
+from concurrent.futures.thread import ThreadPoolExecutor
 from operator import itemgetter
 
 import cv2
@@ -42,7 +45,7 @@ class VOCDataSet(Dataset):
         try:
             # {"类别1": 1, "类别2":2}
             json_file = open(os.path.join(
-                os.path.abspath(os.path.join(path_data_root, "..")), 'classes_voc.json'), 'r')
+                os.path.abspath(os.path.join(path_data_root, "..")), 'classes_ids_voc.json'), 'r')
             self.class_dict = json.load(json_file)
         except Exception as e:
             flog.error(e)
@@ -374,38 +377,87 @@ class Data_Prefetcher():
     '''
 
     def __init__(self, loader):
-        self.loader = iter(loader)
-        self.stream = torch.cuda.Stream()
+        self.loader = loader
+        self.loader_iter = iter(loader)
+        self.stream = torch.cuda.Stream()  # 开启显卡空间
         # self.mean = torch.tensor([0.485 * 255, 0.456 * 255, 0.406 * 255]).cuda().view(1, 3, 1, 1)
         # self.std = torch.tensor([0.229 * 255, 0.224 * 255, 0.225 * 255]).cuda().view(1, 3, 1, 1)
         # With Amp, it isn't necessary to manually convert data to half.
         # if args.fp16:
         #     self.mean = self.mean.half()
         #     self.std = self.std.half()
+        import queue
+        self.datas_q = queue.Queue()
+        self.thread = 5
+        self.thread_num = 0
+
         self.preload()
+
+    def __iter__(self):
+        return self
+
+    def __len__(self):
+        return len(self.loader)
+
+    def load_data(self, *arg):
+        self_ = arg[0]
+        self_.thread_num += 1
+        flog.debug('%s %s', arg, self_.thread_num)
+        try:
+            self.datas_q.put(next(self_.loader_iter))
+        except StopIteration:
+            flog.warning('已没有数据%s', self_.thread_num)
+
+    def start_thread(self):
+        for i in range(self.thread):
+            # 这个转单独的参数 不是传list
+            self.threadPool.submit(self.load_data, self)
 
     def preload(self):
         try:
-            self.next_input, self.next_target = next(self.loader)
+            self.threadPool = ThreadPoolExecutor(max_workers=self.thread, thread_name_prefix="test_")
+            self.start_thread()
+
+            # 这里是预加载
+            self.datas_q.put(next(self.loader_iter))
+            # self.next_input, self.next_target = next(self.loader_iter)  # 加载到显存
+            # _thread.start_new_thread(self.load, ("----------Thread-1-------------", 2, self.loader_iter,))
+            # _thread.start_new_thread(self.load, ("----------Thread-1-------------", 2, self.loader_iter,))
+            # _thread.start_new_thread(self.load, ("----------Thread-1-------------", 2, self.loader_iter,))
+
+            # from multiprocessing import Process
+
+            # process = Process(target=self.load, args=(self.loader_iter,))
+            # process.start()
+
+            # self.next_input, self.next_target = next(self.loader_iter)  # 加载到显存
         except StopIteration:
-            self.next_input = None
-            self.next_target = None
-            return
+            self.datas_q = None
+            raise StopIteration()
+
         with torch.cuda.stream(self.stream):
-            self.next_input = self.next_input.cuda(non_blocking=True)
-            self.next_target = self.next_target.cuda(non_blocking=True)
+            # 这里进行GPU预处理
+            # self.next_input = self.next_input.cuda(non_blocking=True)
+            # self.next_target = self.next_target.cuda(non_blocking=True)
             # With Amp, it isn't necessary to manually convert data to half.
             # if args.fp16:
             #     self.next_input = self.next_input.half()
             # else:
-            self.next_input = self.next_input.float()
-            self.next_input = self.next_input.sub_(self.mean).div_(self.std)
+            # self.next_input = self.next_input.float()
+            # self.next_input = self.next_input.sub_(self.mean).div_(self.std)
+            # print()
+            pass
 
     def __next__(self):
+        flog.debug('gpu队列数 %s', self.datas_q.qsize())
         torch.cuda.current_stream().wait_stream(self.stream)
-        input = self.next_input
-        target = self.next_target
-        self.preload()
+        if self.datas_q.empty():
+            raise StopIteration()
+
+        input, target = self.datas_q.get()
+        if self.datas_q.qsize() < self.thread:
+            self.start_thread()
+
         return input, target
 
 

@@ -59,7 +59,7 @@ def 类进程():
 
 if __name__ == '__main__':
     print("父进程启动...--getpid:%s--getppid:%s" % (os.getpid(), os.getppid()))
-    # 普通子进程()
+    普通子进程()
 
     pp = Pool(2)
     for i in range(10):

@@ -21,7 +21,26 @@ class FIterator(object):
         if self.cur_pos < self.len:
             return self.a[self.cur_pos]
         else:
-            raise StopIteration()  # 表示至此停止迭代
+            raise StopIteration  # 表示至此停止迭代
+
+
+class MySquares():
+
+    def __init__(self) -> None:
+        self.num = 0
+
+    def __iter__(self):  # 返回自身的迭代器
+        return self
+
+    def __next__(self):
+        # ret = torch.rand((300, 300))
+        ret = self.num
+        # 这里是预加载
+        if self.num == 5:
+            raise StopIteration()
+        # self.next_input, self.next_target = next(self.loader)  # 加载到显存
+        self.num += 1
+        return ret
 
 
 if __name__ == '__main__':

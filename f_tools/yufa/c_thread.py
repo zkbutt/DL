@@ -100,18 +100,18 @@ if __name__ == '__main__':
     getName(): 返回线程名。
     setName(): 设置线程名。
     '''
-    threadLock = threading.Lock()
-    threads = []
-    thread1 = MyThread(1, "Thread-1", 1)
-    thread2 = MyThread(2, "Thread-2", 2)
+    # threadLock = threading.Lock()
+    # threads = []
+    # thread1 = MyThread(1, "Thread-1", 1)
+    # thread2 = MyThread(2, "Thread-2", 2)
 
     # thread1.setDaemon(True)  # 主线程退出时结束
     # thread1.start()
     # thread2.start()
 
     # 快速使用
-    thread_hello = threading.Thread(target=A.f1, args=('hello',))
-    thread_hello.start()
+    # thread_hello = threading.Thread(target=A.f1, args=('hello',))
+    # thread_hello.start()
     # threads.append(thread1)
     # threads.append(thread2)
     # for t in threads:
@@ -121,4 +121,13 @@ if __name__ == '__main__':
     # thread2.join()
     # print(thread1.is_alive())
     # print(thread1.getName())
+
+    # 线程池
+    from concurrent.futures import ThreadPoolExecutor
+
+    threadPool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="test_")
+    for i in range(0, 10):
+        future = threadPool.submit(test, i, i + 1)
+    print(future.result())
+
     print("退出主线程")

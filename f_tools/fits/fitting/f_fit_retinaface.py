@@ -2,25 +2,17 @@ import math
 import sys
 import time
 import datetime
-import pickle
-import os
 import torch
-import errno
 from collections import defaultdict, deque
 import torch.distributed as dist
 from torch.cuda.amp import GradScaler, autocast
 
 from f_tools.GLOBAL_LOG import flog
-from torch.autograd import Variable
-
-from f_tools.fits.fitting.coco_eval import CocoEvaluator
-from f_tools.fits.fitting.coco_utils import get_coco_api_from_dataset
-from pycocotools.coco import COCO
 
 
-def train_one_epoch(data_loader, loss_process, optimizer, epoch,
-                    print_freq=60, lr_scheduler=None,
-                    ret_train_loss=None, ret_train_lr=None):
+def f_train_one_epoch(data_loader, loss_process, optimizer, epoch,
+                      print_freq=60, lr_scheduler=None,
+                      ret_train_loss=None, ret_train_lr=None):
     '''
 
     :param data_loader:
@@ -46,7 +38,7 @@ def train_one_epoch(data_loader, loss_process, optimizer, epoch,
             loss_total, log_dict = loss_process(batch_data)
 
             if isinstance(ret_train_loss, list):
-                ret_train_loss.append(loss_total)
+                ret_train_loss.append(loss_total.detach())
 
             if not math.isfinite(loss_total):  # 当计算的损失为无穷大时停止训练
                 flog.error("Loss is {}, stopping training".format(loss_total))
@@ -72,52 +64,28 @@ def train_one_epoch(data_loader, loss_process, optimizer, epoch,
         metric_logger.update(lr=now_lr)
         if isinstance(ret_train_lr, list):
             ret_train_lr.append(now_lr)  # 这个是返回值
-    return metric_logger.meters['total_losses'].avg  # 默认使用平均值
+    return metric_logger.meters['total_losses'].avg  # 默认这epoch使用平均值
 
 
 @torch.no_grad()
-def evaluate(data_loader, loss_process, print_freq, is_map=True, coco_res=None):
+def f_evaluate(data_loader, forecast_process, epoch, print_freq):
     '''
 
-    :param loss_process:
     :param data_loader:
-    :param device:
-    :param data_set:
-    :param is_map: 是否需要输出coco_map
-    :param coco_res: 返回值 保存coco输出
+    :param forecast_process:
+    :param epoch:
+    :param print_freq:
     :return:
     '''
     metric_logger = MetricLogger(delimiter="  ")
     header = "Test: "
 
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
-        res = loss_process(batch_data)
+        evaluator_time = time.time()
+        forecast_process(batch_data, epoch)
 
-        metric_logger.update()
-
-    # coco_res=xx()# 输出指标
-    if coco_res:
-        coco_res.append(coco_res)
-
-
-def warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor):
-    '''
-
-    :param optimizer:
-    :param warmup_iters: 迭代次数最大1000
-    :param warmup_factor: 迭代值  5.0 / 10000 =0.0005
-    :return: 学习率倍率 从 设定值 warmup_factor -> 1
-    '''
-
-    def f(x):
-        """根据step数返回一个学习率倍率因子"""
-        if x >= warmup_iters:  # 当迭代数大于给定的warmup_iters时，倍率因子为1
-            return 1
-        alpha = float(x) / warmup_iters  # 随每一步变大最大1
-        # 迭代过程中倍率因子从 设定值 warmup_factor -> 1
-        return warmup_factor * (1 - alpha) + alpha
-
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=f)
+        eval_time = time.time() - evaluator_time
+        metric_logger.update(eval_time=eval_time)  # 这个填字典 添加的字段
 
 
 class SmoothedValue(object):
@@ -288,270 +256,177 @@ class MetricLogger(object):
                                                          total_time / len(iterable)))
 
 
-def collate_fn(batch):
-    # 多GPU
-    images, targets = tuple(zip(*batch))
-    # images = torch.stack(images, dim=0)
-    #
-    # boxes = []
-    # labels = []
-    # img_id = []
-    # for t in targets:
-    #     boxes.append(t['boxes'])
-    #     labels.append(t['labels'])
-    #     img_id.append(t["image_id"])
-    # targets = {"boxes": torch.stack(boxes, dim=0),
-    #            "labels": torch.stack(labels, dim=0),
-    #            "image_id": torch.as_tensor(img_id)}
-
-    return images, targets
+#
+# def get_world_size():
+#     if not is_dist_avail_and_initialized():
+#         return 1
+#     return dist.get_world_size()
 
 
-def mkdir(path):
-    # 多GPU
-    try:
-        os.makedirs(path)
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
+# def reduce_dict(input_dict, average=True):
+#     """
+#     Args:
+#         input_dict (dict): all the values will be reduced
+#         average (bool): whether to do average or sum
+#     Reduce the values in the dictionary from all processes so that all processes
+#     have the averaged results. Returns a dict with the same fields as
+#     input_dict, after reduction.
+#     """
+#     world_size = get_world_size()
+#     if world_size < 2:  # 单GPU的情况
+#         return input_dict
+#     with torch.no_grad():  # 多GPU的情况
+#         names = []
+#         values = []
+#         # sort the keys so that they are consistent across processes
+#         for k in sorted(input_dict.keys()):
+#             names.append(k)
+#             values.append(input_dict[k])
+#         values = torch.stack(values, dim=0)
+#         dist.all_reduce(values)
+#         if average:
+#             values /= world_size
+#
+#         reduced_dict = {k: v for k, v in zip(names, values)}
+#         return reduced_dict
 
 
-def get_world_size():
-    if not is_dist_avail_and_initialized():
-        return 1
-    return dist.get_world_size()
+# def _get_iou_types(model):
+#     model_without_ddp = model
+#     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+#         model_without_ddp = model.module
+#     iou_types = ["bbox"]
+#     return iou_types
 
 
-def reduce_dict(input_dict, average=True):
-    """
-    Args:
-        input_dict (dict): all the values will be reduced
-        average (bool): whether to do average or sum
-    Reduce the values in the dictionary from all processes so that all processes
-    have the averaged results. Returns a dict with the same fields as
-    input_dict, after reduction.
-    """
-    world_size = get_world_size()
-    if world_size < 2:  # 单GPU的情况
-        return input_dict
-    with torch.no_grad():  # 多GPU的情况
-        names = []
-        values = []
-        # sort the keys so that they are consistent across processes
-        for k in sorted(input_dict.keys()):
-            names.append(k)
-            values.append(input_dict[k])
-        values = torch.stack(values, dim=0)
-        dist.all_reduce(values)
-        if average:
-            values /= world_size
-
-        reduced_dict = {k: v for k, v in zip(names, values)}
-        return reduced_dict
-
-
-def _get_iou_types(model):
-    model_without_ddp = model
-    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-        model_without_ddp = model.module
-    iou_types = ["bbox"]
-    return iou_types
-
-
-def all_gather(data):
-    """
-    Run all_gather on arbitrary picklable data (not necessarily tensors)
-    Args:
-        data: any picklable object
-    Returns:
-        list[data]: list of data gathered from each rank
-    """
-    world_size = get_world_size()
-    if world_size == 1:
-        return [data]
-
-    # serialized to a Tensor
-    buffer = pickle.dumps(data)
-    storage = torch.ByteStorage.from_buffer(buffer)
-    tensor = torch.ByteTensor(storage).to("cuda")
-
-    # obtain Tensor size of each rank
-    local_size = torch.tensor([tensor.numel()], device="cuda")
-    size_list = [torch.tensor([0], device="cuda") for _ in range(world_size)]
-    dist.all_gather(size_list, local_size)
-    size_list = [int(size.item()) for size in size_list]
-    max_size = max(size_list)
-
-    # receiving Tensor from all ranks
-    # we pad the tensor because torch all_gather does not support
-    # gathering tensors of different shapes
-    tensor_list = []
-    for _ in size_list:
-        tensor_list.append(torch.empty((max_size,), dtype=torch.uint8, device="cuda"))
-    if local_size != max_size:
-        padding = torch.empty(size=(max_size - local_size,), dtype=torch.uint8, device="cuda")
-        tensor = torch.cat((tensor, padding), dim=0)
-    dist.all_gather(tensor_list, tensor)
-
-    data_list = []
-    for size, tensor in zip(size_list, tensor_list):
-        buffer = tensor.cpu().numpy().tobytes()[:size]
-        data_list.append(pickle.loads(buffer))
-
-    return data_list
+# def all_gather(data):
+#     """
+#     Run all_gather on arbitrary picklable data (not necessarily tensors)
+#     Args:
+#         data: any picklable object
+#     Returns:
+#         list[data]: list of data gathered from each rank
+#     """
+#     world_size = get_world_size()
+#     if world_size == 1:
+#         return [data]
+#
+#     # serialized to a Tensor
+#     buffer = pickle.dumps(data)
+#     storage = torch.ByteStorage.from_buffer(buffer)
+#     tensor = torch.ByteTensor(storage).to("cuda")
+#
+#     # obtain Tensor size of each rank
+#     local_size = torch.tensor([tensor.numel()], device="cuda")
+#     size_list = [torch.tensor([0], device="cuda") for _ in range(world_size)]
+#     dist.all_gather(size_list, local_size)
+#     size_list = [int(size.item()) for size in size_list]
+#     max_size = max(size_list)
+#
+#     # receiving Tensor from all ranks
+#     # we pad the tensor because torch all_gather does not support
+#     # gathering tensors of different shapes
+#     tensor_list = []
+#     for _ in size_list:
+#         tensor_list.append(torch.empty((max_size,), dtype=torch.uint8, device="cuda"))
+#     if local_size != max_size:
+#         padding = torch.empty(size=(max_size - local_size,), dtype=torch.uint8, device="cuda")
+#         tensor = torch.cat((tensor, padding), dim=0)
+#     dist.all_gather(tensor_list, tensor)
+#
+#     data_list = []
+#     for size, tensor in zip(size_list, tensor_list):
+#         buffer = tensor.cpu().numpy().tobytes()[:size]
+#         data_list.append(pickle.loads(buffer))
+#
+#     return data_list
 
 
-def setup_for_distributed(is_master):
-    """
-    This function disables when not in master process
-    """
-    import builtins as __builtin__
-    builtin_print = __builtin__.print
-
-    def print(*args, **kwargs):
-        force = kwargs.pop('force', False)
-        if is_master or force:
-            builtin_print(*args, **kwargs)
-
-    __builtin__.print = print
-
-
-def get_rank():
-    if not is_dist_avail_and_initialized():
-        return 0
-    return dist.get_rank()
+# def setup_for_distributed(is_master):
+#     """
+#     This function disables when not in master process
+#     """
+#     import builtins as __builtin__
+#     builtin_print = __builtin__.print
+#
+#     def print(*args, **kwargs):
+#         force = kwargs.pop('force', False)
+#         if is_master or force:
+#             builtin_print(*args, **kwargs)
+#
+#     __builtin__.print = print
 
 
-def is_main_process():
-    return get_rank() == 0
+# def get_rank():
+#     if not is_dist_avail_and_initialized():
+#         return 0
+#     return dist.get_rank()
 
 
-def save_on_master(*args, **kwargs):
-    if is_main_process():
-        torch.save(*args, **kwargs)
+# def is_main_process():
+#     return get_rank() == 0
 
 
-def init_distributed_mode(args):
-    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-        args.rank = int(os.environ["RANK"])
-        args.world_size = int(os.environ['WORLD_SIZE'])
-        args.gpu = int(os.environ['LOCAL_RANK'])
-    elif 'SLURM_PROCID' in os.environ:
-        args.rank = int(os.environ['SLURM_PROCID'])
-        args.gpu = args.rank % torch.cuda.device_count()
-    else:
-        print('Not using distributed mode')
-        args.distributed = False
-        return
-
-    args.distributed = True
-
-    torch.cuda.set_device(args.gpu)
-    args.dist_backend = 'nccl'
-    print('| distributed init (rank {}): {}'.format(
-        args.rank, args.dist_url), flush=True)
-    torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                         world_size=args.world_size, rank=args.rank)
-    torch.distributed.barrier()
-    setup_for_distributed(args.rank == 0)
+# def save_on_master(*args, **kwargs):
+#     if is_main_process():
+#         torch.save(*args, **kwargs)
 
 
-class CocoExport():
+# def init_distributed_mode(args):
+#     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+#         args.rank = int(os.environ["RANK"])
+#         args.world_size = int(os.environ['WORLD_SIZE'])
+#         args.gpu = int(os.environ['LOCAL_RANK'])
+#     elif 'SLURM_PROCID' in os.environ:
+#         args.rank = int(os.environ['SLURM_PROCID'])
+#         args.gpu = args.rank % torch.cuda.device_count()
+#     else:
+#         print('Not using distributed mode')
+#         args.distributed = False
+#         return
+#
+#     args.distributed = True
+#
+#     torch.cuda.set_device(args.gpu)
+#     args.dist_backend = 'nccl'
+#     print('| distributed init (rank {}): {}'.format(
+#         args.rank, args.dist_url), flush=True)
+#     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
+#                                          world_size=args.world_size, rank=args.rank)
+#     torch.distributed.barrier()
+#     setup_for_distributed(args.rank == 0)
 
-    def __init__(self, dataset) -> None:
-        super().__init__()
-        _coco_ds = COCO()
-        _coco_ds.dataset = dataset
-        _coco_ds.createIndex()
-        iou_types = ["bbox"]
-        self.coco_evaluator = CocoEvaluator(_coco_ds, iou_types)
 
-    def __call__(self, data_outputs):
-        '''
-        构造coco测试集格式
-        :param data_outputs:  list(dict{'boxes':(x,4),'labels':[x],'scores':[x]})
-        :return:
-            res={0:info1,...x:infox}
-        '''
-        cpu_device = torch.device("cpu")
-        res = dict()
-        for index, (bboxes_out, labels_out, scores_out, hw) in enumerate(data_outputs):
-            info = {
-                "boxes": bboxes_out.to(cpu_device),
-                "labels": labels_out.to(cpu_device),
-                "scores": scores_out.to(cpu_device),
-                "height_width": hw
-            }
-            res.update({index, info})
-        return res
+# class CocoExport():
+#
+#     def __init__(self, dataset) -> None:
+#         super().__init__()
+#         _coco_ds = COCO()
+#         _coco_ds.dataset = dataset
+#         _coco_ds.createIndex()
+#         iou_types = ["bbox"]
+#         self.coco_evaluator = CocoEvaluator(_coco_ds, iou_types)
+#
+#     def __call__(self, data_outputs):
+#         '''
+#         构造coco测试集格式
+#         :param data_outputs:  list(dict{'boxes':(x,4),'labels':[x],'scores':[x]})
+#         :return:
+#             res={0:info1,...x:infox}
+#         '''
+#         cpu_device = torch.device("cpu")
+#         res = dict()
+#         for index, (bboxes_out, labels_out, scores_out, hw) in enumerate(data_outputs):
+#             info = {
+#                 "boxes": bboxes_out.to(cpu_device),
+#                 "labels": labels_out.to(cpu_device),
+#                 "scores": scores_out.to(cpu_device),
+#                 "height_width": hw
+#             }
+#             res.update({index, info})
+#         return res
 
 
 if __name__ == '__main__':
     from torchvision import models
     from torch import optim
-
-    warmup_factor = 5.0 / 10000
-    warmup_iters = 5
-
-
-    def f(x):
-        """根据step数返回一个学习率倍率因子"""
-        if x >= warmup_iters:  # 当迭代数大于给定的warmup_iters时，倍率因子为1
-            return 1
-        alpha = float(x) / warmup_iters  # 随每一步变大最大1
-        # 迭代过程中倍率因子从0.006497 -> warmup_factor
-        return warmup_factor * (1 - alpha) + alpha
-
-
-    for i in range(5):
-        ret = f(i)  # 0.006497
-        print(ret)
-
-
-    def fun_loss_process(model, device, *batch_data, **kwargs):
-        # -----------------------输入模型前的数据处理------------------------
-        images, targets = batch_data
-
-        with torch.no_grad():  # np -> tensor 这里不需要求导
-            # torch.Size([8, 3, 640, 640])
-            images = Variable(torch.from_numpy(images).type(torch.float)).to(device)
-            # n,15(4+10+1)
-            targets = [Variable(torch.from_numpy(target).type(torch.float)).to(device) for target in targets]
-            # -----------------------数据组装完成------------------------
-            # ---------------模型输入输出 损失计算要变 ----------------------
-            out = model(images)  # 这里要变
-            r_loss, c_loss, landm_loss = kwargs['fun_loss'](out, kwargs['anchors'], targets, device)
-            loss_total = 2 * r_loss + c_loss + landm_loss  # 这个用于优化
-
-            # -----------------构建展示字典及返回值------------------------
-            # 多GPU时结果处理 reduce_dict 方法
-            # losses_dict_reduced = reduce_dict(losses_dict)
-            show_dict = {
-                "total_losses": loss_total,
-                "r_loss": r_loss,
-                "c_loss": c_loss,
-                "landm_loss": landm_loss,
-            }
-
-        return loss_total, show_dict
-
-
-    model = models.resnet50()
-    optimizer = optim.Adam(model.parameters(), 1e-3, weight_decay=5e-4)
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
-    device = torch.device("cpu")
-    dataloader = [1, 23, ]
-    # dataloader = iter(dataset)
-    print_freq = 50
-    epoch = 0
-    fun_loss_process_args = {
-        'anchors': 1,
-        'fun_loss': 2,
-    }
-
-    train_one_epoch(dataloader, fun_loss_process, model, optimizer, device, epoch, print_freq,
-                    ret_train_loss=None, ret_train_lr=None,
-                    **fun_loss_process_args,
-                    )
-
-    pass

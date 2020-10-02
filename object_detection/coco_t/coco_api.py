@@ -1,3 +1,4 @@
+import json
 import os
 
 from PIL import ImageFont
@@ -9,6 +10,7 @@ import pylab
 from pycocotools.cocoeval import COCOeval
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.f_general import NpEncoder
 
 
 def f查看类别():
@@ -44,7 +46,7 @@ def f查看网络图片():
     plt.show()
 
 
-def t_coco_pic(coco, path_img):
+def t_coco_pic(coco, path_img, id_img=None):
     '''
     遍历所有图片打开查看
     :param coco:
@@ -53,7 +55,10 @@ def t_coco_pic(coco, path_img):
     '''
     # id = 1
     # imgIds = coco.getImgIds(imgIds=[id])
-    ids = coco.getImgIds()
+    if not id_img:
+        ids = coco.getImgIds()
+    else:
+        ids = [id_img]
     for id in ids:
         img_info = coco.loadImgs([id])  # 这里原始返回list
         # 本地加载 h,w,c
@@ -68,7 +73,7 @@ def t_coco_pic(coco, path_img):
         plt.show()
 
 
-def f_show(img, anns):
+def t_show(img, anns):
     s = 7
     plt.figure(figsize=(4 * s, 3 * s))
     plt.subplot(1, 3, 1)
@@ -81,14 +86,28 @@ def f_show(img, anns):
     coco_kps.showAnns(annKps)
 
 
-def f评估():
-    path_res = ''
-    cocoGt = COCO(file_ann)  # 标注文件的路径及文件名，json文件形式
-    cocoDt = cocoGt.loadRes('my_result.json')  # 自己的生成的结果的路径及文件名，json文件形式
-    cocoEval = COCOeval(cocoGt, cocoDt, "bbox")  # segm表示分割  bbox目标检测 keypoints关键点检测
-    cocoEval.evaluate()
-    cocoEval.accumulate()
-    cocoEval.summarize()
+def coco_eval(coco_res_dict, coco_gt, epoch=0, mode='bbox'):
+    '''
+
+    :param coco_res_dict: coco标准的结果dict
+    :param coco_gt:
+    :param epoch:
+    :param mode:
+    :return:
+    '''
+    file = './file/coco_{}_{}.json'.format(mode, epoch)
+    # flog.debug('coco_res_dict path:%s', os.path.abspath(file))
+    with open(file, 'w', encoding='utf-8') as f:
+        json.dump(coco_res_dict, f, cls=NpEncoder, ensure_ascii=False)
+
+    coco_p = coco_gt.loadRes(os.path.abspath(file))
+    coco_eval = COCOeval(coco_gt, coco_p, mode)
+    if mode == 'keypoints':
+        coco_eval.params.kpt_oks_sigmas = coco_eval.params.kpt_oks_sigmas[:5]  # 5个关键点进行参数修正
+
+    coco_eval.evaluate()
+    coco_eval.accumulate()
+    coco_eval.summarize()
 
 
 def show_od4coco(img, target, coco):
@@ -171,11 +190,12 @@ if __name__ == '__main__':
     path_save_img = os.path.join(path_root, 'images', data_type)
     t_coco_pic(coco, path_save_img)
 
-    # f_show(img)
-
     # [Nx7] where each row contains {imageID,x1,y1,w,h,score,class}
     dataset = coco.dataset  # 获取整个标注文件
     print(dataset)
 
     '''---------------评估--------------'''
     # f评估()
+    # 原图图片
+    # _img_info = self.coco.loadImgs(image_id)[0]
+    # w, h = _img_info['width'], _img_info['height']

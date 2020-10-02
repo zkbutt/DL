@@ -1,22 +1,22 @@
-from __future__ import print_function
-
 import os
 
 import torch
 import torch.optim as optim
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.data_factory import Data_Prefetcher
 from f_tools.datas.data_pretreatment import Compose, RandomHorizontalFlip, ToTensor, Resize
-from f_tools.fits.f_lossfun import KeypointsLoss
+from f_tools.fits.f_lossfun import KeypointsLoss, PredictOutput
 from f_tools.fits.f_show import plot_loss_and_lr
-from f_tools.fits.fitting.f_fit_retinaface import train_one_epoch, evaluate
+from f_tools.fits.fitting.f_fit_retinaface import f_train_one_epoch, f_evaluate
 from f_tools.fun_od.f_anc import AnchorsFound
 from f_tools.fun_od.f_boxes import pos_match
+from object_detection.coco_t.coco_api import coco_eval
 from object_detection.coco_t.coco_dataset import CocoDataset
 from object_detection.f_fit_tools import sysconfig, load_weight, save_weight
 from object_detection.retinaface.CONFIG_RETINAFACE import PATH_SAVE_WEIGHT, PATH_DATA_ROOT, DEBUG, IMAGE_SIZE, \
     MOBILENET025, PATH_FIT_WEIGHT, NEGATIVE_RATIO, NEG_IOU_THRESHOLD, END_EPOCHS, \
-    PRINT_FREQ, BATCH_SIZE, VARIANCE, LOSS_COEFFICIENT
+    PRINT_FREQ, BATCH_SIZE, VARIANCE, LOSS_COEFFICIENT, RESNET50
 from object_detection.retinaface.nets.retinaface import RetinaFace
 
 
@@ -55,94 +55,168 @@ class LossProcess(torch.nn.Module):
         '''
            模型输出 tuple(# 预测器 框4 类别2 关键点10
                torch.Size([batch, 16800, 4]) # 框
-               torch.Size([batch, 16800, 2]) # 类别
+               torch.Size([batch, 16800, 2]) # 类别 只有一个类是没有第三维
                torch.Size([batch, 16800, 10]) # 关键点
            )
         '''
         out = self.model(images)
-        pbboxs = out[0]
-        plabels = out[1]
-        pkeypoints = out[2]
+        bboxs_p = out[0]
+        labels_p = out[1]
+        keypoints_p = out[2]
 
-        if self.training:
-            '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
-            num_batch = images.shape[0]
-            num_ancs = self.anchors.shape[0]
+        '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
+        num_batch = images.shape[0]
+        num_ancs = self.anchors.shape[0]
 
-            gbboxs = torch.Tensor(num_batch, num_ancs, 4).to(images)  # torch.Size([5, 16800, 4])
-            glabels = torch.Tensor(num_batch, num_ancs).to(images)  # 这个只会存在一维 无论多少类
-            gkeypoints = torch.Tensor(num_batch, num_ancs, 10).to(images)
-            '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
-            for index in range(num_batch):
-                bboxs = targets[index]['bboxs']  # torch.Size([40, 4])
-                labels = targets[index]['labels']  # torch.Size([40,2])
+        gbboxs = torch.Tensor(num_batch, num_ancs, 4).to(images)  # torch.Size([5, 16800, 4])
+        glabels = torch.Tensor(num_batch, num_ancs).to(images)  # 这个只会存在一维 无论多少类
+        gkeypoints = torch.Tensor(num_batch, num_ancs, 10).to(images)
+        '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
+        for index in range(num_batch):
+            bboxs = targets[index]['bboxs']  # torch.Size([40, 4])
+            labels = targets[index]['labels']  # torch.Size([40,2])
 
-                keypoints = targets[index]['keypoints']  # torch.Size([40, 10])
-                '''
-                masks: 正例的 index 布尔
-                bboxs_ids : 正例对应的bbox的index
-                '''
-                label_neg_mask, anc_bbox_ind = pos_match(self.anchors, bboxs, NEG_IOU_THRESHOLD)
+            id_ = int(targets[index]['image_id'].item())
+            info = dataset_train.coco.loadImgs(id_)[0] # 查看图片信息
+            flog.debug(info)
 
-                # new_anchors = anchors.clone().detach()
-                # 将bbox取出替换anc对应位置 ,根据 bboxs 索引list 将bboxs取出与anc 形成维度对齐 便于后面与anc修复算最终偏差 ->[anc个,4]
-                # 只计算正样本的定位损失,将正例对应到bbox标签 用于后续计算anc与bbox的差距
-                match_bboxs = bboxs[anc_bbox_ind]
-                match_keypoints = keypoints[anc_bbox_ind]
+            keypoints = targets[index]['keypoints']  # torch.Size([40, 10])
+            '''
+            masks: 正例的 index 布尔
+            bboxs_ids : 正例对应的bbox的index
+            '''
+            label_neg_mask, anc_bbox_ind = pos_match(self.anchors, bboxs, NEG_IOU_THRESHOLD)
 
-                # 构建正反例label 使原有label保持不变
-                # labels = torch.zeros(num_ancs, dtype=torch.int64)  # 标签默认为同维 类别0为负样本
-                # 正例保持原样 反例置0
-                match_labels = labels[anc_bbox_ind]
-                # match_labels[label_neg_mask] = torch.tensor(0).to(labels)
-                match_labels[label_neg_mask] = 0.  # 这里没有to设备
-                # labels[label_neg_ind] = 0 #  这是错误的用法
-                glabels[index] = match_labels
+            # new_anchors = anchors.clone().detach()
+            # 将bbox取出替换anc对应位置 ,根据 bboxs 索引list 将bboxs取出与anc 形成维度对齐 便于后面与anc修复算最终偏差 ->[anc个,4]
+            # 只计算正样本的定位损失,将正例对应到bbox标签 用于后续计算anc与bbox的差距
+            match_bboxs = bboxs[anc_bbox_ind]
+            match_keypoints = keypoints[anc_bbox_ind]
 
-                gbboxs[index] = match_bboxs
-                gkeypoints[index] = match_keypoints
-            '''---------------------与输出进行维度匹配及类别匹配  完成-------------------------'''
+            # 构建正反例label 使原有label保持不变
+            # labels = torch.zeros(num_ancs, dtype=torch.int64)  # 标签默认为同维 类别0为负样本
+            # 正例保持原样 反例置0
+            match_labels = labels[anc_bbox_ind]
+            # match_labels[label_neg_mask] = torch.tensor(0).to(labels)
+            match_labels[label_neg_mask] = 0.  # 这里没有to设备
+            # labels[label_neg_ind] = 0 #  这是错误的用法
+            glabels[index] = match_labels
 
-            # ---------------损失计算 ----------------------
-            loss_total, loss_list = self.losser(pbboxs, plabels, pkeypoints, gbboxs, glabels, gkeypoints)
+            gbboxs[index] = match_bboxs
+            gkeypoints[index] = match_keypoints
+        '''---------------------与输出进行维度匹配及类别匹配  完成-------------------------'''
 
-            loss_bboxs, loss_labels, loss_keypoints = loss_list  # 这个用于显示
+        # ---------------损失计算 ----------------------
+        # log_dict用于显示
+        loss_total, log_dict = self.losser(bboxs_p, gbboxs, labels_p, glabels, keypoints_p, gkeypoints)
 
-            # -----------------构建展示字典及返回值------------------------
-            # 多GPU时结果处理 reduce_dict 方法
-            # losses_dict_reduced = reduce_dict(losses_dict)
-            show_dict = {
-                "loss_total": loss_total.detach().item(),
-                "loss_bboxs": loss_bboxs,
-                "loss_labels": loss_labels,
-                "loss_keypoints": loss_keypoints,
-            }
-            return loss_total, show_dict
-        else:
-            # if self.device != torch.device("cpu"):
-            #     torch.cuda.synchronize(self.device)
-            # model_time = time.time()  # 开始时间
-            return self.package_res(loss_list)
+        # -----------------构建展示字典及返回值------------------------
+        # 多GPU时结果处理 reduce_dict 方法
+        # losses_dict_reduced = reduce_dict(losses_dict)
+        show_dict = {"loss_total": loss_total.detach().item(), }
+        show_dict.update(**log_dict)
+        return loss_total, show_dict
 
-    def package_res(self, loss_list):
 
-        s = {
-                "image_id": 73,
-                "category_id": 11,
-                "bbox": [
-                    61,
-                    22.75,
-                    504,
-                    609.67
-                ],
-                "score": 0.318
-            },
+class ForecastProcess(PredictOutput):
 
-        return loss_list
+    def __init__(self, model, ancs, img_size, coco, variance=(0.1, 0.2), iou_threshold=0.5, max_output=100,
+                 mode='bboxs'):
+        '''
+
+        :param model:
+        :param ancs:
+        :param img_size:
+        :param coco:
+        :param variance:
+        :param iou_threshold:
+        :param max_output:
+        :param mode: bboxs   keypoints
+        '''
+        super().__init__(ancs, img_size, variance, iou_threshold, max_output)
+        self.model = model
+        self.coco = coco
+        self.mode = mode
+
+    def forward(self, batch_data, epoch):
+        # -----------------------输入模型前的数据处理 开始------------------------
+        images, targets = batch_data
+        # -----------------------输入模型前的数据处理 完成------------------------
+
+        '''
+           模型输出 tuple(# 预测器 框4 类别2 关键点10
+               torch.Size([batch, 16800, 4]) # 框
+               torch.Size([batch, 16800]) # 类别 只有一个类是没有第三维
+               torch.Size([batch, 16800, 10]) # 关键点
+           )
+        '''
+        out = self.model(images)
+        bboxs_p = out[0]
+        labels_p = out[1]
+        keypoints_p = out[2]
+        # imgs_rets 每一个张的最终输出 ltrb  list([bboxes_out, scores_out, labels_out, other_in] * batch个 )
+        imgs_rets = super().forward(bboxs_p, labels_p, keypoints_p, mode='ltwh')
+        # 组装结果json
+        coco_json4bbox = []
+        coco_json4keypoints = []
+        '''结果要求ltwh'''
+
+        for i, ret in enumerate(imgs_rets):  # 这里遍历每一张图片
+            image_id = int(targets[i]['image_id'].cpu().item())
+
+            w, h = self.img_size  # 使用模型进入尺寸
+
+            # np高级
+            bboxs, scores, labels = ret[0], ret[1], ret[2]
+            img_size = torch.tensor((w, h)).to(bboxs)
+            bboxs = bboxs * img_size[None].repeat(1, 2)
+
+            if self.mode == 'bboxs':
+                for bbox, score, label, keypoint in zip(bboxs, scores, labels):
+                    _t_bbox = {}
+                    _t_bbox['image_id'] = image_id
+                    _t_bbox['category_id'] = label.cpu().item()
+                    _t_bbox['bbox'] = list(bbox.cpu().numpy())
+                    _t_bbox['score'] = score.cpu().item()
+                    coco_json4bbox.append(_t_bbox)
+
+                coco_eval(coco_json4bbox, self.coco, epoch, 'bbox')
+
+            elif self.mode == 'keypoints':
+                keypoints = ret[3]
+                keypoints = keypoints * img_size[None].repeat(1, 5)
+                coco_keypoints = torch.zeros(
+                    (int(keypoints.shape[0]), int(keypoints.shape[-1] / 2 + keypoints.shape[-1]))).to(keypoints)
+                coco_keypoints[:, 2::3] = 2
+                axis1, axis2 = torch.where(coco_keypoints != 2)
+                coco_keypoints[:, torch.unique(axis2)] = keypoints
+
+                # tensor也可以直接遍历
+                for bbox, score, label, keypoint in zip(bboxs, scores, labels, coco_keypoints):
+                    _t_bbox = {}
+                    _t_bbox['image_id'] = image_id
+                    _t_bbox['category_id'] = label.cpu().item()
+                    _t_bbox['bbox'] = list(bbox.cpu().numpy())
+                    _t_bbox['score'] = score.cpu().item()
+                    coco_json4bbox.append(_t_bbox)
+                    _t_keypoints = {}
+                    _t_keypoints['image_id'] = image_id
+                    _t_keypoints['category_id'] = label.cpu().item()
+                    _t_keypoints['keypoints'] = list(keypoint.cpu().numpy())
+                    _t_keypoints['score'] = score.cpu().item()
+                    coco_json4keypoints.append(_t_keypoints)
+
+                coco_eval(coco_json4bbox, self.coco, epoch, 'bbox')
+                coco_eval(coco_json4keypoints, self.coco, epoch, 'keypoints')
 
 
 if __name__ == "__main__":
+    '''
+    执行train.py报错RuntimeError: cannot perform reduction function max on tensor with no elements because the operation does not have an identity
+    '''
+
     '''------------------系统配置---------------------'''
+    # claxx = RESNET50  # 这里根据实际情况改
     claxx = MOBILENET025  # 这里根据实际情况改
     device = sysconfig(PATH_SAVE_WEIGHT)
     if DEBUG:
@@ -150,9 +224,6 @@ if __name__ == "__main__":
 
     '''---------------数据加载及处理--------------'''
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
-    data_type = 'train2017'
-    mode = 'keypoints'
-
     data_transform = {
         "train": Compose([
             Resize(IMAGE_SIZE),  # (h,w)
@@ -161,8 +232,9 @@ if __name__ == "__main__":
         ]),
         "val": Compose([ToTensor()])
     }
-    # train_dataset = CocoDataset(PATH_DATA_ROOT, mode, data_type, device, None)
-    train_dataset = CocoDataset(PATH_DATA_ROOT, mode, data_type, device, data_transform['train'])
+
+    dataset_train = CocoDataset(PATH_DATA_ROOT, 'keypoints', 'train2017', device, data_transform['train'])
+    dataset_val = CocoDataset(PATH_DATA_ROOT, 'bboxs', 'val2017', device, data_transform['train'])
 
     '''
       归一化后 toTensor
@@ -207,12 +279,24 @@ if __name__ == "__main__":
         return images, targets
 
 
-    data_loader = torch.utils.data.DataLoader(
-        train_dataset,
+    loader_train = torch.utils.data.DataLoader(
+        dataset_train,
         batch_size=BATCH_SIZE,
         num_workers=0,
-        shuffle=True,
-        pin_memory=True,  # 不使用虚拟内存
+        # shuffle=True,
+        # pin_memory=True,  # 不使用虚拟内存 GPU要报错
+        drop_last=True,  # 除于batch_size余下的数据
+        collate_fn=collate_fn,
+    )
+
+    # loader_train = Data_Prefetcher(loader_train)
+
+    loader_val = torch.utils.data.DataLoader(
+        dataset_val,
+        batch_size=BATCH_SIZE,
+        num_workers=0,
+        # shuffle=True,
+        # pin_memory=True,  # 不使用虚拟内存 GPU要报错
         drop_last=True,  # 除于batch_size余下的数据
         collate_fn=collate_fn,
     )
@@ -220,7 +304,7 @@ if __name__ == "__main__":
     # iter(data_loader).__next__()
 
     '''------------------模型定义---------------------'''
-    num_classes = len(data_loader.dataset.coco.getCatIds())  # 根据数据集取类别数
+    num_classes = len(dataset_train.coco.getCatIds())  # 根据数据集取类别数
     model = RetinaFace(claxx.MODEL_NAME,
                        claxx.PATH_MODEL_WEIGHT,
                        claxx.IN_CHANNELS, claxx.OUT_CHANNEL,
@@ -229,10 +313,11 @@ if __name__ == "__main__":
     # if torchvision._is_tracing() 判断训练模式
     # self.training 判断训练模式
     model.train()  # 启用 BatchNormalization 和 Dropout
-    model.to(device)
+    model.to(device)  # 模型装入显存
 
+    # 生成正方形anc
     anchors = AnchorsFound(IMAGE_SIZE, claxx.ANCHORS_SIZE, claxx.FEATURE_MAP_STEPS, claxx.ANCHORS_CLIP).get_anchors()
-    anchors.to(device)
+    anchors = anchors.to(device)
 
     losser = KeypointsLoss(anchors, NEGATIVE_RATIO, VARIANCE, LOSS_COEFFICIENT)
     # 权重衰减(如L2惩罚)(默认: 0)
@@ -253,29 +338,28 @@ if __name__ == "__main__":
     val_map = []
 
     for epoch in range(start_epoch, END_EPOCHS):
-        if epoch < 5:
-            # 主干网一般要冻结
-            for param in model.body.parameters():
-                param.requires_grad = False
-        else:
-            # 解冻后训练
-            for param in model.body.parameters():
-                param.requires_grad = True
-            model.train()
+        # if epoch < 5:
+        #     # 主干网一般要冻结
+        #     for param in model.body.parameters():
+        #         param.requires_grad = False
+        # else:
+        #     # 解冻后训练
+        #     for param in model.body.parameters():
+        #         param.requires_grad = True
 
         process = LossProcess(model, anchors, losser)
 
-        loss = train_one_epoch(data_loader, process, optimizer, epoch,
-                               PRINT_FREQ,
-                               ret_train_loss=train_loss, ret_train_lr=learning_rate,
-                               )
+        flog.info('训练开始 %s', epoch)
+        loss = f_train_one_epoch(loader_train, process, optimizer, epoch,
+                                 PRINT_FREQ,
+                                 ret_train_loss=train_loss, ret_train_lr=learning_rate,
+                                 )
 
         lr_scheduler.step(loss)  # 更新学习
 
         '''------------------模型验证---------------------'''
-        model.eval()
-
-        evaluate(data_loader, process, PRINT_FREQ, res=val_map)
+        forecast_process = ForecastProcess(model, anchors, IMAGE_SIZE, dataset_val.coco, 'bboxs')
+        f_evaluate(loader_val, forecast_process, epoch, PRINT_FREQ)
 
         # 每个epoch保存
         save_weight(PATH_SAVE_WEIGHT,
