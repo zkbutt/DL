@@ -15,8 +15,14 @@ def ltrb2ltwh(bboxs):
     :param bboxs:
     :return:
     '''
-    bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
-    bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
+    if bboxs.dim() == 3:
+        bboxs[:, :, 2] = bboxs[:, :, 2] - bboxs[:, :, 0]
+        bboxs[:, :, 3] = bboxs[:, :, 3] - bboxs[:, :, 1]
+    elif bboxs.dim() == 2:
+        bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
+        bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
+    else:
+        raise Exception('维度错误', bboxs.shape)
     return bboxs
 
 
@@ -184,7 +190,7 @@ def resize_boxes4tensor(boxes, original_size, new_size):
 
 
 def nms(boxes, scores, iou_threshold):
-    '''
+    ''' IOU大于0.5的抑制掉
          boxes (Tensor[N, 4])) – bounding boxes坐标. 格式：(x1, y1, x2, y2)
          scores (Tensor[N]) – bounding boxes得分
          iou_threshold (float) – IoU过滤阈值
@@ -197,9 +203,9 @@ def nms(boxes, scores, iou_threshold):
 def batched_nms(boxes, scores, idxs, iou_threshold):
     '''
 
-    :param boxes: 拉平所有类别的box重复的 n*20,4
-    :param scores:
-    :param idxs:  真实类别index
+    :param boxes: 拉平所有类别的box重复的 n*20类,4
+    :param scores: torch.Size([16766])
+    :param idxs:  真实类别index 通过手动创建匹配的 用于表示当前 nms的类别 用于统一偏移 技巧
     :param iou_threshold:
     :return:
     '''

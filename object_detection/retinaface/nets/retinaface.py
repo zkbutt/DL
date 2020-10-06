@@ -61,8 +61,8 @@ class RetinaFace(nn.Module):
         if model_name == 'mobilenet0.25':
             backbone = MobileNetV1()
             if pretrain_path and os.path.exists(pretrain_path):
-                checkpoint = torch.load(pretrain_path, map_location=torch.device('cpu'))
-                # checkpoint = torch.load(pretrain_path) # 这里不用cpu要报错
+                # checkpoint = torch.load(pretrain_path, map_location=torch.device('cpu'))
+                checkpoint = torch.load(pretrain_path)  # 这里不用cpu要报错
                 new_state_dict = OrderedDict()
                 for k, v in checkpoint['state_dict'].items():
                     name = k[7:]  # 移除后7层

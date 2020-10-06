@@ -17,7 +17,6 @@ import torch
 import xmltodict
 
 import sys
-from f_tools.f_general import get_path_root
 
 import logging
 from tqdm import trange
@@ -26,9 +25,26 @@ from tqdm import trange
 #     # do something
 #     time.sleep(0.5)
 #     pass
+import argparse
 
 from collections import OrderedDict
 
-if __name__ == '__main__':
+from f_tools.GLOBAL_LOG import flog
 
-    np.unb
+if __name__ == '__main__':
+    '''
+    usage: t001.py [-h] [--name NAME] -f FAMILY t4 integers [integers ...]
+    '''
+    # parser = argparse.ArgumentParser(description='命令行中传入一个数字')
+    # parser.add_argument('t4', type=str, help='传入数字')  # 必须填
+    # parser.add_argument('integers', type=str, nargs='+', help='传入数字')  # 至少传一个
+    # parser.add_argument('--name', type=str, help='传入姓名', )  # --表示可选参数, required必填
+    # parser.add_argument('-f', '--family', default='张三的家', type=str, help='传入姓名', required=True)  # --表示可选参数
+    # args = parser.parse_args()
+    # print(args)
+    # print(args.integers)
+    # print(args.name)
+    # print(args.family)
+    r = range(3, 6)
+    for i in r:
+        print(i)

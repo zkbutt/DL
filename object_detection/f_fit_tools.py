@@ -39,17 +39,17 @@ def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, is
     :param bbox2one:  是否gt框进行归一化
     :return:
     '''
-    if isdebug:
-        file_name = ['train_s.txt', 'val_s.txt']
-    else:
-        file_name = ['train.txt', 'val.txt']
+    num_workers = 10
+    file_name = ['train.txt', 'val.txt']
     VOC_root = os.path.join(path_data_root, 'trainval')
     # ---------------------data_set生成---------------------------
     train_data_set = VOCDataSet(
         VOC_root,
         file_name[0],  # 正式训练要改这里
         data_transform["train"],
-        bbox2one=bbox2one)
+        bbox2one=bbox2one,
+        isdebug=isdebug
+    )
     # iter(train_data_set).__next__()  # VOC2012DataSet 测试
     class_dict = train_data_set.class_dict
     flog.debug('class_dict %s', class_dict)
@@ -62,7 +62,7 @@ def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, is
         train_data_set,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0,  # windows只能为0
+        num_workers=num_workers,  # windows只能为0
         collate_fn=lambda batch: tuple(zip(*batch)),  # 输出多个时需要处理
         pin_memory=True,
     )
@@ -76,7 +76,7 @@ def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, is
         val_data_set,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=num_workers,
         collate_fn=lambda batch: tuple(zip(*batch)),  # 输出多个时需要处理
         pin_memory=True,
     )
@@ -139,6 +139,7 @@ def load_weight(path_weight, model, optimizer=None, lr_scheduler=None):
     start_epoch = 0
     if path_weight and os.path.exists(path_weight):
         checkpoint = torch.load(path_weight)
+        # model.load_state_dict(checkpoint['model'],strict=False)
         model.load_state_dict(checkpoint['model'])
         if optimizer:
             optimizer.load_state_dict(checkpoint['optimizer'])
@@ -163,13 +164,15 @@ def save_weight(path_save, model, name, optimizer=None, lr_scheduler=None, epoch
     :param epoch:
     :return:
     '''
-    sava_dict = {
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict() if optimizer else None,
-        'lr_scheduler': lr_scheduler.state_dict() if lr_scheduler else None,
-        'epoch': epoch}
-    file_weight = os.path.join(path_save, (name + '-{}.pth').format(epoch))
-    torch.save(sava_dict, file_weight)
+    if path_save and os.path.exists(path_save):
+        sava_dict = {
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict() if optimizer else None,
+            'lr_scheduler': lr_scheduler.state_dict() if lr_scheduler else None,
+            'epoch': epoch}
+        file_weight = os.path.join(path_save, (name + '-{}.pth').format(epoch + 1))
+        torch.save(sava_dict, file_weight)
+        flog.info('保存成功 %s', file_weight)
 
 
 if __name__ == '__main__':

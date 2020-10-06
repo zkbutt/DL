@@ -23,7 +23,7 @@ class VOCDataSet(Dataset):
     """读取解析PASCAL VOC2012数据集"""
 
     def __init__(self, path_data_root, path_file_txt, transforms=None,
-                 bbox2one=False):
+                 bbox2one=False, isdebug=False):
         '''
 
         :param path_data_root: voc数据集的根目录
@@ -34,6 +34,7 @@ class VOCDataSet(Dataset):
         self.path_data_root = path_data_root
         self.transforms = transforms
         self.bbox2one = bbox2one
+        self.isdebug = isdebug
 
         path_txt = os.path.join(path_data_root, path_file_txt)
         _path_xml = os.path.join(path_data_root, 'Annotations')
@@ -52,6 +53,8 @@ class VOCDataSet(Dataset):
             exit(-1)
 
     def __len__(self):
+        if self.isdebug:
+            return 50
         return len(self.xml_list)
 
     def __getitem__(self, idx):

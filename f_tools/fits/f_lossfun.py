@@ -239,6 +239,8 @@ class PredictOutput(nn.Module):
         '''
         super(PredictOutput, self).__init__()
         self.ancs = nn.Parameter(ancs.unsqueeze(dim=0), requires_grad=False)
+        # self.scale_xy = torch.tensor(float(variance[0])).type(torch.float)  # 这里是缩小
+        # self.scale_wh = torch.tensor(float(variance[0])).type(torch.float)
         self.scale_xy = variance[0]  # 这里是缩小
         self.scale_wh = variance[1]
 
@@ -280,10 +282,11 @@ class PredictOutput(nn.Module):
         if labels_p.dim() > 2:
             scores_p = F.softmax(labels_p, dim=-1)
         else:
-            scores_p = F.sigmoid(labels_p)
+            scores_p = F.softmax(labels_p, dim=-1)
+            # scores_p = F.sigmoid(labels_p)
         return bboxs_p, scores_p
 
-    def decode_single_new(self, bboxs_p, scores_p, criteria, num_output, keypoints_p=None, mode='ltrb'):
+    def decode_single_new(self, bboxs_p, scores_p, criteria, num_output, keypoints_p=None, k_type='ltrb'):
         '''
         一张图片的  修复后最终框 通过极大抑制 的 ltrb 形式
         :param bboxs_p: (Tensor 8732 x 4)
@@ -292,65 +295,65 @@ class PredictOutput(nn.Module):
             scores_p (Tensor 8732 x nitems) 多类别分数
         :param criteria: IoU threshold of bboexes IoU 超参
         :param num_output: 最大预测数 超参
-        :return: [bboxes_out, scores_out, labels_out, other_in] 最终nms出的框
+        :return: [bboxes_out, scores_out, labels_out, other_in] iou大于criteria 的num_output 个 最终nms出的框
         '''
         # type: (Tensor, Tensor, float, int)
         device = bboxs_p.device
 
         bboxs_p = bboxs_p.clamp(min=0, max=1)  # 对越界的bbox进行裁剪
 
-        '''---组装数据 按21个类拉平数据 构建labels---'''
+        '''---组装数据 按21个类拉平数据 构建labels   只有一个类特殊处理--- 每一类需进行一次nms'''
         if scores_p.dim() > 1:
             num_classes = scores_p.shape[-1]  # 取类别数 21类
             # [8732, 4] -> [8732, 21, 4] 注意内存 , np高级 复制框预测框 为21个类
             bboxs_p = bboxs_p.repeat(1, num_classes).reshape(scores_p.shape[0], -1, 4)
 
-            # 创建 21个类别 scores_p与 bboxs_p 对应 , 用于预测结果展视
-            labels = torch.arange(num_classes, device=device)
+            # 创建 21个类别 scores_p与 bboxs_p 对应 , 用于预测结果展视  用于表明nms 现在在处理第几个类型(每一类需进行一次nms)
+            idxs = torch.arange(num_classes, device=device)
             # [num_classes] -> [8732, num_classes]
-            labels = labels.view(1, -1).expand_as(scores_p)
+            idxs = idxs.view(1, -1).expand_as(scores_p)
 
             # 移除归为背景类别的概率信息
             bboxs_p = bboxs_p[:, 1:, :]  # [8732, 21, 4] -> [8732, 20, 4]
             scores_p = scores_p[:, 1:]  # [8732, 21] -> [8732, 20]
-            labels = labels[:, 1:]  # [8732, 21] -> [8732, 20]
+            idxs = idxs[:, 1:]  # [8732, 21] -> [8732, 20]
 
             # 将20个类拉平
             bboxs_p = bboxs_p.reshape(-1, 4)  # [8732, 20, 4] -> [8732x20, 4]
             scores_p = scores_p.reshape(-1)  # [8732, 20] -> [8732x20]
-            labels = labels.reshape(-1)  # [8732, 20] -> [8732x20]
+            idxs = idxs.reshape(-1)  # [8732, 20] -> [8732x20]
 
             if keypoints_p is not None:
                 # 复制 - 剔背景 - 拉平类别
                 keypoints_p = keypoints_p.repeat(1, num_classes).reshape(keypoints_p.shape[0], -1,
                                                                          keypoints_p.shape[-1])
                 keypoints_p = keypoints_p[:, 1:, :]  # [8732, 21, 10] -> [8732, 20, 10]
-                keypoints_p = keypoints_p.reshape(-1, 4)
+                keypoints_p = keypoints_p.reshape(-1, 4)  # [8732, 20, 10] ->[8732 * 20, 10]
         else:
-            # 组装 labels 按scores_p 进行匹配
-            labels = torch.tensor([1], device=device)
-            labels = labels.expand_as(scores_p)
+            # 组装 labels 按scores_p 进行匹配 只有一个类不用拉平  这里是一维
+            idxs = torch.tensor([1], device=device)
+            idxs = idxs.expand_as(scores_p)  # 一维直接全1匹配  保持与多类结构一致
 
-        # 过滤...移除低概率目标，self.scores_thresh=0.05
-        inds = torch.nonzero(scores_p > self.scores_threshold, as_tuple=False).squeeze(1)
-        bboxs_p, scores_p, labels = bboxs_p[inds, :], scores_p[inds], labels[inds]
+        # 过滤...移除低概率目标，self.scores_thresh=0.05    16800->16736
+        # inds = torch.nonzero(scores_p > self.scores_threshold, as_tuple=False).squeeze(1)
+        # bboxs_p, scores_p, idxs = bboxs_p[inds, :], scores_p[inds], idxs[inds]
 
-        # remove empty boxes 面积小的
+        # remove empty boxes 面积小的   ---长宽归一化值 小于一长宽分之一的不要
         ws, hs = bboxs_p[:, 2] - bboxs_p[:, 0], bboxs_p[:, 3] - bboxs_p[:, 1]
         keep = (ws >= 1. / self.img_size[0]) & (hs >= 1. / self.img_size[1])  # 目标大于1个像素的
         keep = keep.nonzero(as_tuple=False).squeeze(1)
-        bboxs_p, scores_p, labels = bboxs_p[keep], scores_p[keep], labels[keep]
+        bboxs_p, scores_p, idxs = bboxs_p[keep], scores_p[keep], idxs[keep]
 
-        # non-maximum suppression 将所有类别拉伸后
-        keep = batched_nms(bboxs_p, scores_p, labels, iou_threshold=criteria)
+        # non-maximum suppression 将所有类别拉伸后 16736->8635
+        keep = batched_nms(bboxs_p, scores_p, idxs, iou_threshold=criteria)  # criteria按iou进行选取
 
         # keep only topk scoring predictions
         keep = keep[:num_output]  # 最大100个目标
         bboxes_out = bboxs_p[keep, :]
         scores_out = scores_p[keep]
-        labels_out = labels[keep]
+        labels_out = idxs[keep]
 
-        if mode == 'ltwh':
+        if k_type == 'ltwh':  # 默认ltrb
             ltrb2ltwh(bboxes_out)
 
         ret = [bboxes_out, scores_out, labels_out]
@@ -358,13 +361,13 @@ class PredictOutput(nn.Module):
             ret.append(keypoints_p[keep, :].clamp(min=0, max=1))
         return ret
 
-    def forward(self, bboxs_p, labels_p, keypoints_p=None, mode='ltrb'):
+    def forward(self, bboxs_p, labels_p, keypoints_p=None, ktype='ltrb'):
         '''
         将预测回归参数叠加到default box上得到最终预测box，并执行非极大值抑制虑除重叠框
         :param bboxs_p: 预测出的框 偏移量 torch.Size([1, 4, 8732])
-        :param labels_p: 预测所属类别的分数 torch.Size([1, 21, 8732])
+        :param labels_p: 预测所属类别的分数 torch.Size([1, 21, 8732])   只有一个类
         :param keypoints_p:
-        :param mode:ltrb  ltwh用于coco
+        :param ktype:ltrb  ltwh用于coco
         :return: imgs_rets 每一个张的最终输出 ltrb
             [bboxes_out, scores_out, labels_out, other_in]
         '''
@@ -374,21 +377,22 @@ class PredictOutput(nn.Module):
         # imgs_rets = torch.jit.annotate(List[Tuple[Tensor, Tensor, Tensor]], [])
         imgs_rets = []
 
-        # bboxes: [batch, 8732, 4] 0维分割 得每一个图片
+        # bboxes: [batch, 8732, 4] 0维分割 得每一个图片的框 zip[list(bboxe),list(prob)]
         _zip = [bboxes.split(1, 0), probs.split(split_size=1, dim=0)]
-        if keypoints_p is not None:
+
+        if keypoints_p is not None:  # keypoints_p 特殊处理
             _zip = [bboxes.split(1, 0), probs.split(split_size=1, dim=0), keypoints_p.split(1, 0)]
 
         # 遍历一个batch中的每张image数据
         for index in range(bboxes.shape[0]):
             # bbox_p, prob, keypoints_p
             bbox_p = _zip[0][index]
-            bbox_p = bbox_p.squeeze(0)
+            bbox_p = bbox_p.squeeze(0)  # 降维
 
             prob = _zip[1][index]
             prob = prob.squeeze(0)
 
-            if len(_zip) == 2:
+            if len(_zip) == 2:  # 为keypoints_p 特殊 处理
                 # _zip[0][index]
                 imgs_rets.append(
                     self.decode_single_new(
@@ -397,7 +401,7 @@ class PredictOutput(nn.Module):
                         self.iou_threshold,
                         self.max_output,
                         None,
-                        mode
+                        ktype
                     ))
             else:
                 keypoints_p = _zip[2][index]
@@ -410,7 +414,7 @@ class PredictOutput(nn.Module):
                         self.iou_threshold,
                         self.max_output,
                         keypoints_p,
-                        mode
+                        ktype
                     ))
         return imgs_rets
 

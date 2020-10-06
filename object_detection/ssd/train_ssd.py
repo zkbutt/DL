@@ -1,8 +1,8 @@
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_show import plot_loss_and_lr, plot_map
 from object_detection.f_fit_tools import load_data4voc, sysconfig, save_weight, load_weight
-from object_detection.ssd.CONFIG_SSD import NUM_CLASSES, PATH_FIT_WEIGHT, PATH_DATA_ROOT, BATCH_SIZE, PATH_SAVE_WEIGHT, \
-    PATH_MODEL_WEIGHT, END_EPOCHS, PRINT_FREQ, PATH_SSD_WEIGHT
+from object_detection.ssd.CONFIG_SSD import NUM_CLASSES, PATH_FIT_WEIGHT, PATH_DATA_ROOT, BATCH_SIZE, \
+    END_EPOCHS, PRINT_FREQ, PATH_SSD_WEIGHT, DEBUG, PATH_SAVE_WEIGHT, PATH_MODEL_WEIGHT
 from object_detection.ssd.src.ssd_model import SSD300, Backbone
 import torch
 from object_detection.ssd import p_transform4ssd
@@ -40,9 +40,6 @@ def create_model(num_classes, device, weight_backbone=None, weight_ssd=None):
 
 
 def main():
-    '''------------------系统配置---------------------'''
-    device = sysconfig(PATH_SAVE_WEIGHT)
-
     '''---------------数据加载及处理--------------'''
     data_transform = {
         "train": p_transform4ssd.Compose([p_transform4ssd.SSDCropping(),
@@ -61,6 +58,7 @@ def main():
                                                            PATH_DATA_ROOT,
                                                            BATCH_SIZE,
                                                            bbox2one=True,
+                                                           isdebug=DEBUG
                                                            )
 
     # 预处理通过GPU
@@ -94,30 +92,31 @@ def main():
     learning_rate = []
     val_map = []
 
-    flog.debug('---训练开始---start_epoch %s', start_epoch)
+    flog.debug('---训练开始---start_epoch %s', start_epoch + 1)
     # 如果电脑内存充裕，可提前加载验证集数据，以免每次验证时都要重新加载一次数据，节省时间
     # val_data = get_coco_api_from_dataset(train_data_loader.dataset)
     for epoch in range(start_epoch, END_EPOCHS):
-        # utils.train_one_epoch(model=model, optimizer=optimizer,
-        #                       data_loader=train_data_loader,
-        #                       device=device, epoch=epoch,
-        #                       print_freq=PRINT_FREQ,
-        #                       train_loss=train_loss,
-        #                       train_lr=learning_rate)
-        #
-        # lr_scheduler.step()  # 更新学习
+        utils.train_one_epoch(model=model, optimizer=optimizer,
+                              data_loader=train_data_loader,
+                              device=device, epoch=epoch,
+                              print_freq=PRINT_FREQ,
+                              train_loss=train_loss,
+                              train_lr=learning_rate)
+
+        lr_scheduler.step()  # 更新学习
 
         utils.evaluate(model=model, data_loader=val_data_set_loader,
                        device=device, data_set=None,
                        mAP_list=val_map)
 
         # 每个epoch保存
-        save_weight(PATH_SAVE_WEIGHT,
-                    model,
-                    'ssd300',
-                    optimizer,
-                    lr_scheduler,
-                    epoch)
+        save_weight(
+            path_save=PATH_SAVE_WEIGHT,
+            model=model,
+            name=os.path.basename(__file__),
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            epoch=epoch)
 
     '''-------------结果可视化-----------------'''
     if len(train_loss) != 0 and len(learning_rate) != 0:
@@ -130,6 +129,34 @@ def main():
 
 
 if __name__ == '__main__':
+    '''
+    total_losses: 2.4886 (2.6816)  time: 0.7638  data: 0.0004 cpu 33-4.8G  GPU 6211-71C
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.507
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.742
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.561
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.079
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.387
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.573
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.502
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.600
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.607
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.205
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.518
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.659
+    0:07:01
+    '''
+    '''------------------系统配置---------------------'''
+    torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
+    device = sysconfig(PATH_SAVE_WEIGHT)
+
+    if DEBUG:
+        # device = torch.device("cpu")
+        PRINT_FREQ = 1
+        PATH_SAVE_WEIGHT = None
+        PATH_FIT_WEIGHT = None
+        # BATCH_SIZE = 10
+        pass
+
     import argparse
 
     parser = argparse.ArgumentParser(

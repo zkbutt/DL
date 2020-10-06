@@ -13,6 +13,15 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import NpEncoder
 
 
+# class FCOCO(COCO):
+#
+#     def __init__(self, annotation_file=None):
+#         super(FCOCO, self).__init__(annotation_file)
+#
+#     def loadRes(self, resFile):
+#         return super().loadRes(resFile)
+
+
 def f查看类别():
     '''返回类别信息'''
     # 获取指定名称的类别序号（找category name为 x 的 category id）
@@ -95,12 +104,15 @@ def coco_eval(coco_res_dict, coco_gt, epoch=0, mode='bbox'):
     :param mode:
     :return:
     '''
-    file = './file/coco_{}_{}.json'.format(mode, epoch)
-    # flog.debug('coco_res_dict path:%s', os.path.abspath(file))
-    with open(file, 'w', encoding='utf-8') as f:
-        json.dump(coco_res_dict, f, cls=NpEncoder, ensure_ascii=False)
+    # file = './file/coco_{}_{}.json'.format(mode, epoch)
+    # # flog.debug('coco_res_dict path:%s', os.path.abspath(file))
+    # with open(file, 'w', encoding='utf-8') as f:
+    #     json.dump(coco_res_dict, f, cls=NpEncoder, ensure_ascii=False)
+    if coco_res_dict is None or len(coco_res_dict) == 0:
+        flog.error('出错拉 coco_res_dict:%s coco_gt:%s epoch:%s ', coco_res_dict, coco_gt, epoch)
+        return
 
-    coco_p = coco_gt.loadRes(os.path.abspath(file))
+    coco_p = coco_gt.loadRes(coco_res_dict)
     coco_eval = COCOeval(coco_gt, coco_p, mode)
     if mode == 'keypoints':
         coco_eval.params.kpt_oks_sigmas = coco_eval.params.kpt_oks_sigmas[:5]  # 5个关键点进行参数修正

@@ -8,9 +8,10 @@ import torch.distributed as dist
 from torch.cuda.amp import GradScaler, autocast
 
 from f_tools.GLOBAL_LOG import flog
+from object_detection.coco_t.coco_api import coco_eval
 
 
-def f_train_one_epoch(data_loader, loss_process, optimizer, epoch,
+def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                       print_freq=60, lr_scheduler=None,
                       ret_train_loss=None, ret_train_lr=None):
     '''
@@ -27,7 +28,7 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch,
     '''
     metric_logger = MetricLogger(delimiter="  ")  # 日志记录器
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    header = 'Epoch: [{}]'.format(epoch)
+    header = 'Epoch: [{}/{}]'.format(epoch + 1, end_epoch)
 
     # ---半精度训练1---
     scaler = GradScaler()
@@ -68,24 +69,29 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch,
 
 
 @torch.no_grad()
-def f_evaluate(data_loader, forecast_process, epoch, print_freq):
+def f_evaluate(data_loader, forecast_process, epoch, coco_res_bboxs, coco_res_keypoints=None):
     '''
 
     :param data_loader:
     :param forecast_process:
     :param epoch:
-    :param print_freq:
     :return:
     '''
     metric_logger = MetricLogger(delimiter="  ")
     header = "Test: "
+    print_freq = max(int(len(data_loader) / 5), 1)
 
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
-        evaluator_time = time.time()
-        forecast_process(batch_data, epoch)
+        evaluator_time = time.time() # 139911109878320
+        forecast_process(batch_data, epoch, coco_res_bboxs, coco_res_keypoints=coco_res_keypoints)
 
         eval_time = time.time() - evaluator_time
-        metric_logger.update(eval_time=eval_time)  # 这个填字典 添加的字段
+        metric_logger.update(eval_time=eval_time, coco_size=len(coco_res_bboxs))  # 这个填字典 添加的字段
+
+    # 总输出
+    coco_eval(coco_res_bboxs, forecast_process.coco, epoch, 'bbox')
+    if forecast_process.eval_mode == 'keypoints':
+        coco_eval(coco_res_keypoints, forecast_process.coco, epoch, 'keypoints')
 
 
 class SmoothedValue(object):
@@ -430,3 +436,4 @@ class MetricLogger(object):
 if __name__ == '__main__':
     from torchvision import models
     from torch import optim
+    SmoothedValue

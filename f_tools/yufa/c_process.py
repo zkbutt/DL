@@ -1,6 +1,8 @@
 from multiprocessing import Process, Pool, Lock
 import time, os
 
+import psutil
+
 '''多进程---CPU密集型：程序需要占用CPU进行大量的运算和数据处理；'''
 '''多线程---I/O密集型：程序中需要频繁的进行I/O操作；例如网络中socket数据传输和读取等；'''
 
@@ -59,14 +61,16 @@ def 类进程():
 
 if __name__ == '__main__':
     print("父进程启动...--getpid:%s--getppid:%s" % (os.getpid(), os.getppid()))
+    psutil.Process(os.getppid())  # 父进程
+    psutil.Process(os.getpid())  # 字进程名
     普通子进程()
 
     pp = Pool(2)
     for i in range(10):
         # 创建进程,放入进程池统一管理
         pp.apply_async(func, args=(i, i + 1))
-        # 在调用join之前必须先关掉进程池
-        # 进程池一旦关闭  就不能再添加新的进程了
+    # 在调用join之前必须先关掉进程池
+    # 进程池一旦关闭  就不能再添加新的进程了
     pp.close()
     # 进程池对象调用join,会等待进程池中所有的子进程结束之后再结束父进程
     print('准备等待')

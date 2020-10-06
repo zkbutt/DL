@@ -11,7 +11,8 @@ from object_detection.coco_t.coco_api import t_coco_pic, show_od4coco
 
 
 class CocoDataset(Dataset):
-    def __init__(self, path_root, mode, data_type, device=torch.device("cpu"), transform=None, out='ts'):
+    def __init__(self, path_root, mode, data_type, device=torch.device("cpu"), transform=None, out='ts',
+                 is_debug=False):
         '''
 
         :param path_root:
@@ -38,6 +39,7 @@ class CocoDataset(Dataset):
         self.image_ids = self.coco.getImgIds()  # 所有图片的id
 
         self._load_classes()
+        self.is_debug=is_debug
 
     def _load_classes(self):
         '''
@@ -66,6 +68,9 @@ class CocoDataset(Dataset):
             self.ids_classes[v] = k
 
     def __len__(self):
+        # flog.debug('__len__ %s', )
+        if self.is_debug:
+            return 90
         return len(self.image_ids)
 
     def __getitem__(self, index):
@@ -114,9 +119,10 @@ class CocoDataset(Dataset):
 
         if self.out == 'ts':
             # target['image_id'] = torch.tensor(image_id)
-            img = img.to(self.device)
+            # img = img.to(self.device)
             for key, val in target.items():
-                target[key] = torch.tensor(val, device=self.device).type(torch.float)
+                target[key] = torch.tensor(val).type(torch.float)
+                # target[key] = torch.tensor(val).type(torch.float).to(self.device)
 
         return img, target
 
@@ -198,7 +204,7 @@ if __name__ == '__main__':
     # dataset = CoCoDataset(path_root, mode, data_type, transform=data_transform['train'])
     # plt.imshow(sample['img'])
     coco = dataset.coco
-    flog.debug(coco.loadCats(coco.getCatIds())) # 获取数据集类别数
+    flog.debug(coco.loadCats(coco.getCatIds()))  # 获取数据集类别数
     path_save_img = os.path.join(dataset.path_root, 'images', dataset.data_type)
 
     t_coco_pic(coco, path_save_img)
