@@ -595,5 +595,6 @@ class PostProcess(nn.Module):
             # bbox: [1, 8732, 4]
             bbox = bbox.squeeze(0)  # anc+预测偏移 = 修复后anc 的 ltrb 形式
             prob = prob.squeeze(0)
+            # 修复后最终框 通过极大抑制
             outputs.append(self.decode_single_new(bbox, prob, self.criteria, self.max_output))
         return outputs

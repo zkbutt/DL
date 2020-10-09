@@ -145,7 +145,7 @@ def evaluate(model, data_loader, device, data_set=None, mAP_list=None):
             torch.cuda.synchronize(device)
 
         model_time = time.time()  # 开始时间
-        #  list((bboxes_out, labels_out, scores_out), ...)
+        #  模型输出 list((bboxes_out, labels_out, scores_out), ...)
         results = model(images, targets)
 
         # 多outputs数据组装 个结果切换到CPU
@@ -156,6 +156,7 @@ def evaluate(model, data_loader, device, data_set=None, mAP_list=None):
                     "scores": scores_out.to(cpu_device),
                     "height_width": targets[index]["height_width"]}
             outputs.append(info)
+
         # outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
 
         model_time = time.time() - model_time  # 结束时间

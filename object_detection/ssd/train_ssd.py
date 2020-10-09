@@ -2,7 +2,8 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_show import plot_loss_and_lr, plot_map
 from object_detection.f_fit_tools import load_data4voc, sysconfig, save_weight, load_weight
 from object_detection.ssd.CONFIG_SSD import NUM_CLASSES, PATH_FIT_WEIGHT, PATH_DATA_ROOT, BATCH_SIZE, \
-    END_EPOCHS, PRINT_FREQ, PATH_SSD_WEIGHT, DEBUG, PATH_SAVE_WEIGHT, PATH_MODEL_WEIGHT
+    END_EPOCHS, PRINT_FREQ, PATH_SSD_WEIGHT, DEBUG, PATH_SAVE_WEIGHT, PATH_MODEL_WEIGHT, DATA_NUM_WORKERS, IS_TRAIN, \
+    IS_EVAL
 from object_detection.ssd.src.ssd_model import SSD300, Backbone
 import torch
 from object_detection.ssd import p_transform4ssd
@@ -58,7 +59,9 @@ def main():
                                                            PATH_DATA_ROOT,
                                                            BATCH_SIZE,
                                                            bbox2one=True,
-                                                           isdebug=DEBUG
+                                                           isdebug=DEBUG,
+                                                           data_num_workers=DATA_NUM_WORKERS
+
                                                            )
 
     # 预处理通过GPU
@@ -92,31 +95,34 @@ def main():
     learning_rate = []
     val_map = []
 
-    flog.debug('---训练开始---start_epoch %s', start_epoch + 1)
     # 如果电脑内存充裕，可提前加载验证集数据，以免每次验证时都要重新加载一次数据，节省时间
     # val_data = get_coco_api_from_dataset(train_data_loader.dataset)
     for epoch in range(start_epoch, END_EPOCHS):
-        utils.train_one_epoch(model=model, optimizer=optimizer,
-                              data_loader=train_data_loader,
-                              device=device, epoch=epoch,
-                              print_freq=PRINT_FREQ,
-                              train_loss=train_loss,
-                              train_lr=learning_rate)
+        if IS_TRAIN:
+            flog.debug('---训练开始---epoch %s', epoch + 1)
+            utils.train_one_epoch(model=model, optimizer=optimizer,
+                                  data_loader=train_data_loader,
+                                  device=device, epoch=epoch,
+                                  print_freq=PRINT_FREQ,
+                                  train_loss=train_loss,
+                                  train_lr=learning_rate)
 
-        lr_scheduler.step()  # 更新学习
+            lr_scheduler.step()  # 更新学习
 
-        utils.evaluate(model=model, data_loader=val_data_set_loader,
-                       device=device, data_set=None,
-                       mAP_list=val_map)
+            # 每个epoch保存
+            save_weight(
+                path_save=PATH_SAVE_WEIGHT,
+                model=model,
+                name=os.path.basename(__file__),
+                optimizer=optimizer,
+                lr_scheduler=lr_scheduler,
+                epoch=epoch)
 
-        # 每个epoch保存
-        save_weight(
-            path_save=PATH_SAVE_WEIGHT,
-            model=model,
-            name=os.path.basename(__file__),
-            optimizer=optimizer,
-            lr_scheduler=lr_scheduler,
-            epoch=epoch)
+        if IS_EVAL:
+            flog.debug('---验证开始---epoch %s', epoch + 1)
+            utils.evaluate(model=model, data_loader=val_data_set_loader,
+                           device=device, data_set=None,
+                           mAP_list=val_map)
 
     '''-------------结果可视化-----------------'''
     if len(train_loss) != 0 and len(learning_rate) != 0:
@@ -150,11 +156,14 @@ if __name__ == '__main__':
     device = sysconfig(PATH_SAVE_WEIGHT)
 
     if DEBUG:
-        # device = torch.device("cpu")
         PRINT_FREQ = 1
         PATH_SAVE_WEIGHT = None
-        PATH_FIT_WEIGHT = None
-        # BATCH_SIZE = 10
+        # PATH_FIT_WEIGHT = None
+        BATCH_SIZE = 10
+        # device = torch.device("cpu") # 强制CPU
+
+        # WIN10
+        DATA_NUM_WORKERS = 0
         pass
 
     import argparse

@@ -1,20 +1,27 @@
-DEBUG = False
+DEBUG = True
+# PATH_ROOT = '/home/bak3t/bak299g/'
+PATH_ROOT = 'M:/'
 
 '''样本'''
-PATH_DATA_ROOT = r'/home/bak3t/bak299g/AI/datas/VOC2012'
+DATA_NUM_WORKERS = 10
+PATH_DATA_ROOT = PATH_ROOT + 'AI/datas/VOC2012'
+NUM_CLASSES = 21
+
+'''训练'''
+IS_TRAIN = False
+IS_EVAL = True
 BATCH_SIZE = 30  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
 PRINT_FREQ = 50  # 每50批打印一次
-NUM_CLASSES = 21
 NEG_RATIO = 3  # POS正例比例
 
 '''模型权重'''
-# PATH_MODEL_WEIGHT = r'/home/bak3t/bak299g/AI/weights/pytorch/resnet50-19c8e357.pth'
+# PATH_MODEL_WEIGHT = PATH_ROOT+'AI/weights/pytorch/resnet50-19c8e357.pth'
 PATH_MODEL_WEIGHT = None
-# PATH_SSD_WEIGHT = r'/home/bak3t/bak299g/AI/weights/nvidia/ssd_nvidia_ssdpyt_amp_200703.pt'
+# PATH_SSD_WEIGHT = PATH_ROOT+'AI/weights/nvidia/ssd_nvidia_ssdpyt_amp_200703.pt'
 PATH_SSD_WEIGHT = None
-# PATH_FIT_WEIGHT = r'/home/bak3t/bak299g/AI/weights/feadre/ssd300-0.pth'
-PATH_SAVE_WEIGHT = r'/home/bak3t/bak299g/AI/weights/feadre'
-PATH_FIT_WEIGHT = r'/home/bak3t/bak299g/AI/weights/feadre/train_ssd.py-13.pth'
+# PATH_FIT_WEIGHT = PATH_ROOT+'AI/weights/feadre/ssd300-0.pth'
+PATH_SAVE_WEIGHT = PATH_ROOT + 'AI/weights/feadre'
+PATH_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_ssd.py-13.pth'
 END_EPOCHS = 14
 
 '''模型参数'''
