@@ -54,7 +54,7 @@ class VOCDataSet(Dataset):
 
     def __len__(self):
         if self.isdebug:
-            return 50
+            return 15
         return len(self.xml_list)
 
     def __getitem__(self, idx):
@@ -110,9 +110,9 @@ class VOCDataSet(Dataset):
         iscrowd = torch.as_tensor(iscrowd, dtype=torch.int64)
         image_id = torch.tensor([idx])  # 这是第几张图的target
 
-        _h = boxes[:, 3] - boxes[:, 1]
+        _h = boxes[:, 3] - boxes[:, 1]  # ltrb -> ltwh
         _w = boxes[:, 2] - boxes[:, 0]
-        area = (_h) * (_w)
+        area = (_h) * (_w)  # 面积也是归一化的
 
         target = {}
         target["boxes"] = boxes  # 输出左上右下
@@ -123,7 +123,7 @@ class VOCDataSet(Dataset):
         target["iscrowd"] = iscrowd
 
         if self.transforms is not None:  # 这里是预处理
-            image, target = self.transforms(image, target)
+            image, target = self.transforms(image, target) # 这里返回的是匹配后的bbox
 
         # show_od4boxs(image, target['boxes'], is_tensor=True)  # 预处理图片测试
         return image, target

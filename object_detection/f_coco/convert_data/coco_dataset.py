@@ -11,7 +11,11 @@ from object_detection.coco_t.coco_api import t_coco_pic, show_od4coco
 
 
 class CocoDataset(Dataset):
-    def __init__(self, path_root, mode, data_type, device=torch.device("cpu"), transform=None, out='ts',
+    '''
+    未完成
+    '''
+
+    def __init__(self, path_root=None, mode=None, data_type=None, device=torch.device("cpu"), transform=None, out='ts',
                  is_debug=False):
         '''
 
@@ -39,7 +43,7 @@ class CocoDataset(Dataset):
         self.image_ids = self.coco.getImgIds()  # 所有图片的id
 
         self._load_classes()
-        self.is_debug=is_debug
+        self.is_debug = is_debug
 
     def _load_classes(self):
         '''

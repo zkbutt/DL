@@ -10,7 +10,7 @@ import torchvision
 if __name__ == '__main__':
     '''
     CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2  --master_port 29501  t_multi_gpu_DDP.py
-    CUDA_VISIBLE_DEVICES=2,1,0 python -m torch.distributed.launch --nproc_per_node=3  t_multi_gpu_DDP.py
+    CUDA_VISIBLE_DEVICES=2,1,0 python -m torch.distributed.launch --nproc_per_node=3  /home/fast120/ai_code/DL/tmp/pycharm_project_243/f_pytorch/t_multi_gpu_DDP.py
     python -m torch.distributed.launch --nproc_per_node=3 t_multi_gpu_DDP.py
         torch.distributed.launch根据GPU数量触发 n个进程
             --nproc_per_node=2 launch要求必须传

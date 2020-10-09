@@ -1,15 +1,16 @@
 DEBUG = True
+PATH_ROOT = 'M:/'
 
 '''样本及预处理'''
 DATA_NUM_WORKERS = 10
-PATH_DATA_ROOT = r'/home/bak3t/bak299g/AI/datas/widerface/coco'
+PATH_DATA_ROOT = PATH_ROOT + 'AI/datas/widerface/coco'
 IMAGE_SIZE = (640, 640)  # 预处理 统一尺寸
 BATCH_SIZE = 48  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
 # NUM_CLASSES = 2  # 模型分类数 人脸只有1 0 影响类别输出   -----这个要根据样本改----
 rgb_mean = (104, 117, 123)  # 图片的RGB偏差
 
 '''模型权重'''
-PATH_SAVE_WEIGHT = r'/home/bak3t/bak299g/AI/weights/feadre'
+PATH_SAVE_WEIGHT = PATH_ROOT + 'AI/weights/feadre'
 # loss_total: 13.1264 (16.0534)  loss_bboxs: 0.9631 (1.2294)  loss_labels: 2.2601 (2.2723)  loss_keypoints: 8.3139 (11.3223)
 # loss_total: 12.3518 (12.9931)  loss_bboxs: 0.8875 (1.0694)  loss_labels: 2.2473 (2.2477)  loss_keypoints: 8.2336 (8.6065)
 PATH_FIT_WEIGHT = '/home/bak3t/bak299g/AI/weights/feadre/train_retinaface4mobilenet025.py-10.pth'
@@ -39,7 +40,7 @@ class MOBILENET025:
     ANCHOR_NUM = 2
 
     '''模型参数'''
-    FILE_WEIGHT = r'/home/bak3t/bak299g/AI/weights/retinaface/mobilenetV1X0.25_pretrain.tar'
+    FILE_WEIGHT = PATH_ROOT + 'AI/weights/retinaface/mobilenetV1X0.25_pretrain.tar'
 
     IN_CHANNELS = 32  # in_channels 用于设置 FPN的输入
     #    in_channels_fpn = [
@@ -65,7 +66,7 @@ class RESNET50:
     ANCHOR_NUM = 2
 
     '''模型参数'''
-    FILE_WEIGHT = r'/home/bak3t/bak299g/AI/weights/pytorch/fasterrcnn_resnet50_fpn_coco-258fb6c6.pth'
+    FILE_WEIGHT = PATH_ROOT + 'AI/weights/pytorch/fasterrcnn_resnet50_fpn_coco-258fb6c6.pth'
 
     IN_CHANNELS = [64, 128, 256]  # 对应RETURN_LAYERS
     IN_CHANNEL = 256

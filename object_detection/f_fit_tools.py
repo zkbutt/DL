@@ -6,6 +6,8 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import VOCDataSet, WiderfaceDataSet
 import numpy as np
 
+from object_detection.ssd.train_utils.coco_utils import get_coco_api_from_dataset
+
 
 def sysconfig(path_save_weight, device=None):
     '''
@@ -30,7 +32,7 @@ def sysconfig(path_save_weight, device=None):
     return device
 
 
-def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, isdebug=False):
+def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, isdebug=False, data_num_workers=0):
     '''
 
     :param data_transform:
@@ -39,7 +41,7 @@ def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, is
     :param bbox2one:  是否gt框进行归一化
     :return:
     '''
-    num_workers = 10
+    num_workers = data_num_workers
     file_name = ['train.txt', 'val.txt']
     VOC_root = os.path.join(path_data_root, 'trainval')
     # ---------------------data_set生成---------------------------
@@ -50,6 +52,7 @@ def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, is
         bbox2one=bbox2one,
         isdebug=isdebug
     )
+
     # iter(train_data_set).__next__()  # VOC2012DataSet 测试
     class_dict = train_data_set.class_dict
     flog.debug('class_dict %s', class_dict)
@@ -138,7 +141,8 @@ def load_data4widerface(path_data_root, img_size_in, batch_size, mode='train', i
 def load_weight(path_weight, model, optimizer=None, lr_scheduler=None):
     start_epoch = 0
     if path_weight and os.path.exists(path_weight):
-        checkpoint = torch.load(path_weight)
+        # checkpoint = torch.load(path_weight)
+        checkpoint = torch.load(path_weight, map_location=torch.device('cpu'))
         # model.load_state_dict(checkpoint['model'],strict=False)
         model.load_state_dict(checkpoint['model'])
         if optimizer:
