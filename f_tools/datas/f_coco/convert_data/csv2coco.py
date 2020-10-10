@@ -284,26 +284,22 @@ def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
 
 
 if __name__ == '__main__':
+    '''
+    
+    '''
     np.random.seed(20200925)
-    # 0为背景
-    path_classname = './_file/classes_bboxs.json'
+
+    path_classname = '../_file/classes_ids_voc.json'  # 0为背景
+    file_csv = "../_file/csv_labels_voc.csv"
+    type = 'val2017'  # train2017
+    # path_img = r'M:\AI\datas\widerface\val\images'  # 真实图片路径
+    path_img = r'M:\AI\datas\widerface\val\images'  # 真实图片路径
+    mode = 'bboxs'  # 'keypoints'  # 'bboxs':
+    path_coco_save = r"M:\AI\datas\widerface"  # 这个是生成的根
 
     with open(path_classname, 'r', encoding='utf-8') as f:
         classname_to_id = json.load(f)  # 文件转dict 或list
 
-    # type = 'train2017'
-    # path_img = r'M:\AI\datas\widerface\train\images'  # 真实图片路径
-    # file_csv = "./_file/csv_labels_keypoints.csv"
-    # mode = 'keypoints'  # 'bboxs':
-
-    type = 'val2017'
-    path_img = r'M:\AI\datas\widerface\val\images'  # 真实图片路径
-    file_csv = "./_file/csv_labels_bboxs.csv"
-    mode = 'bboxs'
-
-    # path_coco_save = "d:/t001/"  # 这个是生成的根
-    path_coco_save = r"M:\AI\datas\widerface"
-
-    to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode, is_copy=True, is_move=True, type=type)
+    to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode, is_copy=True, is_move=False, type=type)
 
     flog.info('数据生成成功 %s', )

@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 
+import xmltodict
 from tqdm import tqdm
 
 from f_tools.GLOBAL_LOG import flog
@@ -88,7 +89,7 @@ class Widerface2Csv:
                 _file_dst = os.path.join(path_dst, file)
 
                 if os.path.exists(_file_dst):
-                    flog.warning('文件已复制 %s',_file_dst)
+                    flog.warning('文件已复制 %s', _file_dst)
                     continue
                 if is_copy:
                     fun_copy(path_src, path_dst)
@@ -150,19 +151,88 @@ class Widerface2Csv:
             csv_labels.close()
 
 
-if __name__ == '__main__':
-    '''
-    将文件进行重新标注 并 重构到一个文件夹中  选框为 ltrb 可选复制或移动
-    搜 # ---类别--- 写死
-    '''
+def handler_widerface():
     # 标注文件
     mode = 'train'  # val  test
     # mode = 'val'
     path_root = os.path.join('M:\AI\datas\widerface', mode)
     file_txt = 'label.txt'
-
     # widerface_csv = Widerface2Csv(path_root, file_txt, 'bboxs')
     widerface_csv = Widerface2Csv(path_root, file_txt, 'keypoints')
-
     path_dst = os.path.join(path_root, 'images')  # 图片移动到此处
     widerface_csv.to_csv(True, path_dst, is_move=True)
+
+
+def hadler_voc():
+    path_data_root = r'M:\AI\datas\VOC2012\trainval'
+    path_file_txt = 'train.txt'
+    path_txt = os.path.join(path_data_root, path_file_txt)
+    path_xml = os.path.join(path_data_root, 'Annotations')
+    with open(path_txt) as read:
+        # 读每一行加上路径和扩展名---完整路径
+        xml_list = [os.path.join(path_xml, line.strip() + ".xml")
+                    for line in read.readlines()]
+    # try:
+    #     # {"类别1": 1, "类别2":2}
+    #     path_classes = os.path.join(r'D:\tb\tb\ai_code\DL\f_tools\datas\f_coco\_file', 'classes_ids_voc.json')
+    #     json_file = open(path_classes, 'r')
+    #     class_dict = json.load(json_file)
+    # except Exception as e:
+    #     flog.error(e)
+    #     exit(-1)
+
+    rets = []
+    for file_xml in xml_list:
+        with open(file_xml) as file:
+            str_xml = file.read()
+        doc = xmltodict.parse(str_xml)
+        filename = doc['annotation']['filename']
+
+        ret = []
+        objs = doc['annotation']['object']
+        if isinstance(objs, dict):
+            xmin = str(float(objs['bndbox']['xmin']))
+            ymin = str(float(objs['bndbox']['ymin']))
+            xmax = str(float(objs['bndbox']['xmax']))
+            ymax = str(float(objs['bndbox']['ymax']))
+            ret.append(filename)
+            ret.extend([xmin, ymin, xmax, ymax])
+            ret.append(objs['name'])
+            rets.append(ret)
+        else:
+            for obj in objs:
+                # 可能有多个目标
+                xmin = str(float(obj['bndbox']['xmin']))
+                ymin = str(float(obj['bndbox']['ymin']))
+                xmax = str(float(obj['bndbox']['xmax']))
+                ymax = str(float(obj['bndbox']['ymax']))
+                ret.append(filename)
+                ret.extend([xmin, ymin, xmax, ymax])
+                ret.append(obj['name'])
+                rets.append(ret.copy())
+                ret.clear()
+
+    print(rets)
+    infos = rets
+    path_csv = '../_file/csv_labels_' + 'voc' + '.csv'
+    with open(path_csv, "w") as csv_labels:
+        for info in infos:
+            s_ = ','.join(info) + '\n'  # ---类别---
+            csv_labels.write(s_)
+        csv_labels.close()
+
+
+if __name__ == '__main__':
+    '''
+    将文件进行重新标注 并 重构到一个文件夹中  选框为 ltrb 可选复制或移动
+    搜 # ---类别--- 写死
+    
+    
+    
+    1、文件名,bbox,类别名
+        0_Parade_marchingband_1_465.jpg,345,211,349,215,human_face 
+    2、图片移到一个文件夹
+    
+    '''
+    # handler_widerface()
+    hadler_voc()

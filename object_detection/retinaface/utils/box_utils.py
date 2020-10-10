@@ -179,7 +179,7 @@ def log_sum_exp(x):
 
 def decode(loc, priors, variances):
     '''
-    调整预测框并转换为ltrb 输入支持(xxx,4) xywh
+    anc的使用loc进行调整,调整预测框并转换为ltrb 输入支持(xxx,4) xywh
     :param loc:  回归系数 torch.Size([37840, 4])
     :param priors: 这个就是 anchors 调整比例 x y w h
     :param variances: 限制调整在网格内

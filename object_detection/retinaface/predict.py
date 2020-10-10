@@ -51,7 +51,10 @@ if __name__ == '__main__':
     model = RetinaFace(claxx.MODEL_NAME,
                        None,
                        claxx.IN_CHANNELS, claxx.OUT_CHANNEL,
-                       claxx.RETURN_LAYERS)
+                       claxx.RETURN_LAYERS,
+                       anchor_num=claxx.ANCHOR_NUM,
+                       num_classes=1
+                       )
     start_epoch = load_weight(PATH_FIT_WEIGHT, model)
     model.to(device)
 
@@ -67,7 +70,7 @@ if __name__ == '__main__':
         #       关键点 torch.Size([batch, 16800, 10])
         loc, conf, landms = model(image)
 
-        # 用于还原归一化的框
+        # 用于还原归一化的框(使用原图尺寸)
         scale = torch.Tensor([im_width, im_height] * 2)
         scale_for_landmarks = torch.Tensor([im_width, im_height] * 5)
 
@@ -83,11 +86,13 @@ if __name__ == '__main__':
         # landms = landms.cpu().numpy()
 
         # 取其中index1  得一维数组 取出人脸概率  index0为背景 index1为人脸
-        conf = conf.data.squeeze(0)[:, 1:2]
+        # conf = conf.data.squeeze(0)[:, 1:2]
+        # conf = conf.data.squeeze(0)[:, None]  # torch.Size([1, 37840]) -> torch.Size([37840,1 ])
+        conf = conf.reshape(-1, 1)  # torch.Size([1, 37840]) -> torch.Size([37840,1 ])
 
-        # 最后一维连接
+        # 最后一维连接 torch.Size([37840, 4])  torch.Size([1, 37840])  torch.Size([37840, 10])
         # boxes_conf_landms = np.concatenate([boxes, conf, landms], -1)
-        boxes_conf_landms = torch.cat([boxes, conf, landms], -1)
+        boxes_conf_landms = torch.cat([boxes, conf, landms], dim=-1)
 
         flog.debug('共有 %s', boxes_conf_landms.shape[0])
         mask = boxes_conf_landms[:, 4] >= 0.5  # 分类得分

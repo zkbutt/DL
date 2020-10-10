@@ -1,6 +1,6 @@
 from f_tools.datas.data_factory import VOCDataSet
-from object_detection.f_coco.coco_eval import CocoEvaluator
-from object_detection.f_coco.convert_data.voc_dataset2coco_obj import voc2coco
+from f_tools.datas.f_coco.coco_eval import CocoEvaluator
+from f_tools.datas.f_coco.convert_data.voc_dataset2coco_obj import voc2coco
 
 
 def prepare_for_coco_detection(self, predictions):

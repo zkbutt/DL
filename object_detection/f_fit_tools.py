@@ -140,6 +140,7 @@ def load_data4widerface(path_data_root, img_size_in, batch_size, mode='train', i
 
 def load_weight(path_weight, model, optimizer=None, lr_scheduler=None):
     start_epoch = 0
+    # model_dict = model.state_dict() # 获取模型每层的参数阵
     if path_weight and os.path.exists(path_weight):
         # checkpoint = torch.load(path_weight)
         checkpoint = torch.load(path_weight, map_location=torch.device('cpu'))

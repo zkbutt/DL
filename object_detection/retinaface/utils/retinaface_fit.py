@@ -5,7 +5,6 @@ import torch
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_lossfun import PredictOutput
 from f_tools.fun_od.f_boxes import pos_match
-from object_detection.coco_t.coco_api import coco_eval
 
 
 def preprocessing_data(batch_data, device):

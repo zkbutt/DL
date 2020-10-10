@@ -9,12 +9,12 @@ from f_tools.fits.f_lossfun import KeypointsLoss
 from f_tools.fits.f_show import plot_loss_and_lr
 from f_tools.fits.fitting.f_fit_retinaface import f_train_one_epoch, f_evaluate
 from f_tools.fun_od.f_anc import AnchorsFound
+from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 
-from object_detection.coco_t.coco_dataset import CocoDataset
 from object_detection.f_fit_tools import sysconfig, load_weight, save_weight
 from object_detection.retinaface.CONFIG_RETINAFACE import PATH_SAVE_WEIGHT, PATH_DATA_ROOT, DEBUG, IMAGE_SIZE, \
     MOBILENET025, PATH_FIT_WEIGHT, NEGATIVE_RATIO, NEG_IOU_THRESHOLD, END_EPOCH, \
-    PRINT_FREQ, BATCH_SIZE, VARIANCE, LOSS_COEFFICIENT, RESNET50, DATA_NUM_WORKERS, IS_EVAL, IS_TRAIN
+    PRINT_FREQ, BATCH_SIZE, VARIANCE, LOSS_COEFFICIENT, DATA_NUM_WORKERS, IS_EVAL, IS_TRAIN
 from object_detection.retinaface.nets.retinaface import RetinaFace
 from object_detection.retinaface.utils.retinaface_fit import LossProcess, ForecastProcess
 
