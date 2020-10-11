@@ -142,10 +142,19 @@ def load_weight(path_weight, model, optimizer=None, lr_scheduler=None, device=to
     start_epoch = 0
     # model_dict = model.state_dict() # 获取模型每层的参数阵
     if path_weight and os.path.exists(path_weight):
-        # checkpoint = torch.load(path_weight)
         checkpoint = torch.load(path_weight, map_location=device)
-        # model.load_state_dict(checkpoint['model'],strict=False)
-        model.load_state_dict(checkpoint['model'])
+        # 特殊处理
+        # if False:
+        #     # del checkpoint['model']['ClassHead.0.conv1x1.weight']
+        #     # del checkpoint['model']['ClassHead.0.conv1x1.bias']
+        #     # del checkpoint['model']['ClassHead.1.conv1x1.weight']
+        #     # del checkpoint['model']['ClassHead.1.conv1x1.bias']
+        #     # del checkpoint['model']['ClassHead.2.conv1x1.weight']
+        #     # del checkpoint['model']['ClassHead.2.conv1x1.bias']
+        #     model.load_state_dict(checkpoint['model'], strict=False)
+        missing_keys, unexpected_keys = model.load_state_dict(checkpoint['model'])
+        flog.debug('missing_keys %s', missing_keys)
+        flog.debug('unexpected_keys %s', unexpected_keys)
         if optimizer:
             optimizer.load_state_dict(checkpoint['optimizer'])
         if lr_scheduler:

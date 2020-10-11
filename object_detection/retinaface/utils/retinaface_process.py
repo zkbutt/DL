@@ -72,28 +72,28 @@ class LossProcess(FitBase):
         out = self.model(images)
         p_bboxs = out[0]  # (batch,16800,4)
         p_labels = out[1]  # (batch,16800,10)
-        p_keypoints = out[2]  # (batch,16800)
+        p_keypoints = out[2]  # (batch,16800,2)
 
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
         num_batch = images.shape[0]
         num_ancs = self.anchors.shape[0]
 
-        gbboxs = torch.Tensor(num_batch, num_ancs, 4).to(images)  # torch.Size([batch, 16800, 4])
-        glabels = torch.Tensor(num_batch, num_ancs).to(images)  # 计算损失只会存在一维 无论多少类
-        gkeypoints = torch.Tensor(num_batch, num_ancs, 10).to(images)
+        gbboxs = torch.Tensor(*p_bboxs.shape).to(images)  # torch.Size([batch, 16800, 4])
+        glabels = torch.Tensor(num_batch, num_ancs).to(images)  # 计算损失只会存在一维 无论多少类 标签只有一类
+        gkeypoints = torch.Tensor(*p_keypoints.shape).to(images)  # 相当于empty
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
         for index in range(num_batch):
-            bboxs = targets[index]['bboxs']  # torch.Size([40, 4])
-            labels = targets[index]['labels']  # torch.Size([40,2])
+            bboxs = targets[index]['bboxs']  # torch.Size([batch, 4])
+            labels = targets[index]['labels']  # torch.Size([batch])
 
             # id_ = int(targets[index]['image_id'].item())
             # info = dataset_train.coco.loadImgs(id_)[0]  # 查看图片信息
             # flog.debug(info)
 
-            keypoints = targets[index]['keypoints']  # torch.Size([40, 10])
+            keypoints = targets[index]['keypoints']  # torch.Size([batch, 10])
             '''
-            masks: 正例的 index 布尔
-            bboxs_ids : 正例对应的bbox的index
+            label_neg_mask: 反例的  布尔 torch.Size([16800]) 一维
+            anc_bbox_ind : 正例对应的bbox的index  torch.Size([16800]) 一维
             '''
             label_neg_mask, anc_bbox_ind = pos_match(self.anchors, bboxs, self.neg_iou_threshold)
 

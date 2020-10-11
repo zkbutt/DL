@@ -11,12 +11,12 @@ from f_tools.fits.f_lossfun import KeypointsLoss
 from f_tools.fits.f_show import plot_loss_and_lr
 from f_tools.fits.fitting.f_fit_retinaface import f_train_one_epoch, f_evaluate
 from f_tools.fun_od.f_anc import AnchorsFound
-from object_detection.f_fit_tools import save_weight
+from object_detection.f_fit_tools import save_weight, load_weight
 from object_detection.retinaface.nets.retinaface import RetinaFace
-from object_detection.retinaface.utils.retinaface_fit import LossProcess, ForecastProcess
 from object_detection.retinaface.CONFIG_RETINAFACE import PATH_SAVE_WEIGHT, PATH_DATA_ROOT, DEBUG, IMAGE_SIZE, \
     MOBILENET025, PATH_FIT_WEIGHT, NEGATIVE_RATIO, NEG_IOU_THRESHOLD, END_EPOCH, \
-    PRINT_FREQ, BATCH_SIZE, VARIANCE, LOSS_COEFFICIENT, DATA_NUM_WORKERS, IS_EVAL, IS_TRAIN
+    PRINT_FREQ, BATCH_SIZE, VARIANCE, LOSS_COEFFICIENT, DATA_NUM_WORKERS, IS_EVAL, IS_TRAIN, NUM_CLASSES
+from object_detection.retinaface.utils.retinaface_process import LossProcess, ForecastProcess
 
 if DEBUG:
     # device = torch.device("cpu")
@@ -125,12 +125,11 @@ def data_loader(device):
 
 def model_init(claxx, device):
     # num_classes = len(dataset_train.coco.getCatIds())  # 根据数据集取类别数
-    num_classes = 1  # 人脸只有一类
     model = RetinaFace(claxx.MODEL_NAME,
                        claxx.FILE_WEIGHT,
                        claxx.IN_CHANNELS, claxx.OUT_CHANNEL,
                        claxx.RETURN_LAYERS, claxx.ANCHOR_NUM,
-                       num_classes)
+                       NUM_CLASSES)
     # if torchvision._is_tracing() 判断训练模式
     # self.training 判断训练模式
     model.train()  # 启用 BatchNormalization 和 Dropout
@@ -143,18 +142,20 @@ def model_init(claxx, device):
     optimizer = optim.Adam(model.parameters(), 1e-3, weight_decay=5e-4)
     # 在发现loss不再降低或者acc不再提高之后，降低学习率
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
-    # feadre权重加载
+
+    # --------feadre权重加载-----------
     # 重新训练代码
-    checkpoint = torch.load(PATH_FIT_WEIGHT, map_location=device)
-    del checkpoint['ClassHead.0.conv1x1.weight']
-    del checkpoint['ClassHead.0.conv1x1.bias']
-    del checkpoint['ClassHead.1.conv1x1.weight']
-    del checkpoint['ClassHead.1.conv1x1.bias']
-    del checkpoint['ClassHead.2.conv1x1.weight']
-    del checkpoint['ClassHead.2.conv1x1.bias']
-    model.load_state_dict(checkpoint, strict=False)  # 定制一个后面改
-    start_epoch = 0
-    # start_epoch = load_weight(PATH_FIT_WEIGHT, model, optimizer, lr_scheduler, device)
+    # checkpoint = torch.load(PATH_FIT_WEIGHT, map_location=device)
+    # del checkpoint['ClassHead.0.conv1x1.weight']
+    # del checkpoint['ClassHead.0.conv1x1.bias']
+    # del checkpoint['ClassHead.1.conv1x1.weight']
+    # del checkpoint['ClassHead.1.conv1x1.bias']
+    # del checkpoint['ClassHead.2.conv1x1.weight']
+    # del checkpoint['ClassHead.2.conv1x1.bias']
+    # model.load_state_dict(checkpoint, strict=False)  # 定制一个后面改
+    # start_epoch = 0
+
+    start_epoch = load_weight(PATH_FIT_WEIGHT, model, optimizer, lr_scheduler, device)
     # 单层修改学习率
     # optimizer.param_groups[0]['lr'] = 1e-5
     # 多层
@@ -169,14 +170,14 @@ def trainning(start_epoch, model, device, anchors, losser, optimizer, lr_schedul
     train_loss = []
     learning_rate = []
     for epoch in range(start_epoch, END_EPOCH):
-        if epoch < 5:
-            # 主干网一般要冻结
-            for param in model.body.parameters():
-                param.requires_grad = False
-        else:
-            # 解冻后训练
-            for param in model.body.parameters():
-                param.requires_grad = True
+        # if epoch < 5:
+        #     # 主干网一般要冻结
+        #     for param in model.body.parameters():
+        #         param.requires_grad = False
+        # else:
+        #     # 解冻后训练
+        #     for param in model.body.parameters():
+        #         param.requires_grad = True
         if IS_TRAIN:
             process = LossProcess(model, device, anchors, losser, NEG_IOU_THRESHOLD)
 

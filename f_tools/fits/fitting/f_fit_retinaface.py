@@ -81,7 +81,7 @@ def f_evaluate(data_loader, forecast_process, epoch, coco_res_bboxs, coco_res_ke
     header = "Test: "
     print_freq = max(int(len(data_loader) / 5), 1)
 
-    coco_evaluator = CocoEvaluator(data_loader.dataset.coco, 'bbox')
+    coco_evaluator = CocoEvaluator(data_loader.dataset.coco, ['bbox'])
 
     outputs = []
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
@@ -99,6 +99,7 @@ def f_evaluate(data_loader, forecast_process, epoch, coco_res_bboxs, coco_res_ke
     voc_map = print_txt[1]
     if coco_res_bboxs:
         coco_res_bboxs.append(coco_map)
+
 
 class SmoothedValue(object):
     """
@@ -244,203 +245,29 @@ class MetricLogger(object):
                 eta_second = iter_time.global_avg * (len(iterable) - i)
                 eta_string = str(datetime.timedelta(seconds=eta_second))
                 if torch.cuda.is_available():
-                    print(log_msg.format(i + 1, len(iterable),
-                                         eta=eta_string,
-                                         meters=str(self),
-                                         time=str(iter_time),  # 模型迭代时间(含数据加载) SmoothedValue对象
-                                         data=str(data_time),  # 取数据时间 SmoothedValue对象
-                                         r_time=str(int(iter_time.value * (len(iterable) - i))),
-                                         memory=torch.cuda.max_memory_allocated() / MB))
+                    flog.debug(log_msg.format(i + 1, len(iterable),
+                                              eta=eta_string,
+                                              meters=str(self),
+                                              time=str(iter_time),  # 模型迭代时间(含数据加载) SmoothedValue对象
+                                              data=str(data_time),  # 取数据时间 SmoothedValue对象
+                                              r_time=str(int(iter_time.value * (len(iterable) - i))),
+                                              memory=torch.cuda.max_memory_allocated() / MB))
                 else:
-                    print(log_msg.format(i, len(iterable),
-                                         eta=eta_string,
-                                         meters=str(self),
-                                         time=str(iter_time),
-                                         r_time=str(int(iter_time.value * (len(iterable) - i))),
-                                         data=str(data_time)))
+                    flog.debug(log_msg.format(i, len(iterable),
+                                              eta=eta_string,
+                                              meters=str(self),
+                                              time=str(iter_time),
+                                              r_time=str(int(iter_time.value * (len(iterable) - i))),
+                                              data=str(data_time)))
             i += 1
             end = time.time()
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         # 每批时间
-        print('{} Total time: {} ({:.4f} s / it)'.format(header,
-                                                         total_time_str,
-                                                         total_time / len(iterable)))
-
-
-#
-# def get_world_size():
-#     if not is_dist_avail_and_initialized():
-#         return 1
-#     return dist.get_world_size()
-
-
-# def reduce_dict(input_dict, average=True):
-#     """
-#     Args:
-#         input_dict (dict): all the values will be reduced
-#         average (bool): whether to do average or sum
-#     Reduce the values in the dictionary from all processes so that all processes
-#     have the averaged results. Returns a dict with the same fields as
-#     input_dict, after reduction.
-#     """
-#     world_size = get_world_size()
-#     if world_size < 2:  # 单GPU的情况
-#         return input_dict
-#     with torch.no_grad():  # 多GPU的情况
-#         names = []
-#         values = []
-#         # sort the keys so that they are consistent across processes
-#         for k in sorted(input_dict.keys()):
-#             names.append(k)
-#             values.append(input_dict[k])
-#         values = torch.stack(values, dim=0)
-#         dist.all_reduce(values)
-#         if average:
-#             values /= world_size
-#
-#         reduced_dict = {k: v for k, v in zip(names, values)}
-#         return reduced_dict
-
-
-# def _get_iou_types(model):
-#     model_without_ddp = model
-#     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-#         model_without_ddp = model.module
-#     iou_types = ["bbox"]
-#     return iou_types
-
-
-# def all_gather(data):
-#     """
-#     Run all_gather on arbitrary picklable data (not necessarily tensors)
-#     Args:
-#         data: any picklable object
-#     Returns:
-#         list[data]: list of data gathered from each rank
-#     """
-#     world_size = get_world_size()
-#     if world_size == 1:
-#         return [data]
-#
-#     # serialized to a Tensor
-#     buffer = pickle.dumps(data)
-#     storage = torch.ByteStorage.from_buffer(buffer)
-#     tensor = torch.ByteTensor(storage).to("cuda")
-#
-#     # obtain Tensor size of each rank
-#     local_size = torch.tensor([tensor.numel()], device="cuda")
-#     size_list = [torch.tensor([0], device="cuda") for _ in range(world_size)]
-#     dist.all_gather(size_list, local_size)
-#     size_list = [int(size.item()) for size in size_list]
-#     max_size = max(size_list)
-#
-#     # receiving Tensor from all ranks
-#     # we pad the tensor because torch all_gather does not support
-#     # gathering tensors of different shapes
-#     tensor_list = []
-#     for _ in size_list:
-#         tensor_list.append(torch.empty((max_size,), dtype=torch.uint8, device="cuda"))
-#     if local_size != max_size:
-#         padding = torch.empty(size=(max_size - local_size,), dtype=torch.uint8, device="cuda")
-#         tensor = torch.cat((tensor, padding), dim=0)
-#     dist.all_gather(tensor_list, tensor)
-#
-#     data_list = []
-#     for size, tensor in zip(size_list, tensor_list):
-#         buffer = tensor.cpu().numpy().tobytes()[:size]
-#         data_list.append(pickle.loads(buffer))
-#
-#     return data_list
-
-
-# def setup_for_distributed(is_master):
-#     """
-#     This function disables when not in master process
-#     """
-#     import builtins as __builtin__
-#     builtin_print = __builtin__.print
-#
-#     def print(*args, **kwargs):
-#         force = kwargs.pop('force', False)
-#         if is_master or force:
-#             builtin_print(*args, **kwargs)
-#
-#     __builtin__.print = print
-
-
-# def get_rank():
-#     if not is_dist_avail_and_initialized():
-#         return 0
-#     return dist.get_rank()
-
-
-# def is_main_process():
-#     return get_rank() == 0
-
-
-# def save_on_master(*args, **kwargs):
-#     if is_main_process():
-#         torch.save(*args, **kwargs)
-
-
-# def init_distributed_mode(args):
-#     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-#         args.rank = int(os.environ["RANK"])
-#         args.world_size = int(os.environ['WORLD_SIZE'])
-#         args.gpu = int(os.environ['LOCAL_RANK'])
-#     elif 'SLURM_PROCID' in os.environ:
-#         args.rank = int(os.environ['SLURM_PROCID'])
-#         args.gpu = args.rank % torch.cuda.device_count()
-#     else:
-#         print('Not using distributed mode')
-#         args.distributed = False
-#         return
-#
-#     args.distributed = True
-#
-#     torch.cuda.set_device(args.gpu)
-#     args.dist_backend = 'nccl'
-#     print('| distributed init (rank {}): {}'.format(
-#         args.rank, args.dist_url), flush=True)
-#     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-#                                          world_size=args.world_size, rank=args.rank)
-#     torch.distributed.barrier()
-#     setup_for_distributed(args.rank == 0)
-
-
-# class CocoExport():
-#
-#     def __init__(self, dataset) -> None:
-#         super().__init__()
-#         _coco_ds = COCO()
-#         _coco_ds.dataset = dataset
-#         _coco_ds.createIndex()
-#         iou_types = ["bbox"]
-#         self.coco_evaluator = CocoEvaluator(_coco_ds, iou_types)
-#
-#     def __call__(self, data_outputs):
-#         '''
-#         构造coco测试集格式
-#         :param data_outputs:  list(dict{'boxes':(x,4),'labels':[x],'scores':[x]})
-#         :return:
-#             res={0:info1,...x:infox}
-#         '''
-#         cpu_device = torch.device("cpu")
-#         res = dict()
-#         for index, (bboxes_out, labels_out, scores_out, hw) in enumerate(data_outputs):
-#             info = {
-#                 "boxes": bboxes_out.to(cpu_device),
-#                 "labels": labels_out.to(cpu_device),
-#                 "scores": scores_out.to(cpu_device),
-#                 "height_width": hw
-#             }
-#             res.update({index, info})
-#         return res
+        flog.debug('{} Total time: {} ({:.4f} s / it)'.format(header,
+                                                              total_time_str,
+                                                              total_time / len(iterable)))
 
 
 if __name__ == '__main__':
-    from torchvision import models
-    from torch import optim
-
-    SmoothedValue
+    pass

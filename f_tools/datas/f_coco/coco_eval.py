@@ -23,7 +23,7 @@ class CocoEvaluator(object):
         '''
 
         :param coco_gt:
-        :param iou_types: [bbox, segm, keypoints]
+        :param iou_types: 这个要传数组 [bbox, segm, keypoints]
         '''
         assert isinstance(iou_types, (list, tuple))
         coco_gt = copy.deepcopy(coco_gt)

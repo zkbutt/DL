@@ -267,7 +267,7 @@ class Loss(nn.Module):
         # -------------计算分类损失------------------正样本很少
         con = self.confidence_loss(plabel, glabel)  # Tenosr: [N, 8732]
         # 负样本选取  选损失最大的
-        con_neg = con.clone()
+        con_neg = con.clone() # 得到 (batch,8732)
         con_neg[mask] = torch.tensor(0.0).to(con)  # 正样本先置0 使其独立
 
         # 按照confidence_loss降序排列 con_idx(Tensor: [N, 8732])
@@ -287,7 +287,7 @@ class Loss(nn.Module):
         # 没有正样本的图像不计算分类损失  pos_num是每一张图片的正例个数 eg. [15, 3, 5, 0] -> [1.0, 1.0, 1.0, 0.0]
         num_mask = (pos_num > 0).float()  # 统计一个batch中的每张图像中是否存在正样本
         pos_num = pos_num.float().clamp(min=torch.finfo(torch.float).eps)
-        # 每个图片平均一下
+        # 每个正例平均下
         ret = (total_loss * num_mask / pos_num).mean(dim=0)
         return ret
 

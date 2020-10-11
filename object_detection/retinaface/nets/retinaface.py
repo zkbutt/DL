@@ -132,7 +132,7 @@ class RetinaFace(nn.Module):
         bbox_regressions = torch.cat([self.BboxHead[i](feature) for i, feature in enumerate(features)], dim=1)
         # torch.Size([8, 8400, 2]) 这里可以优化成一个值
         classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(features)], dim=1)
-        classifications = classifications.reshape((classifications.shape[0], -1))
+        # classifications = classifications.reshape((classifications.shape[0], -1))
         # torch.Size([8, 16800, 10])
         ldm_regressions = torch.cat([self.LandmarkHead[i](feature) for i, feature in enumerate(features)], dim=1)
 

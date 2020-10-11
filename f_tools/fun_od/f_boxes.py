@@ -179,7 +179,7 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
     :param boxes: 拉平所有类别的box重复的 n*20类,4
     :param scores: torch.Size([16766])
     :param idxs:  真实类别index 通过手动创建匹配的 用于表示当前 nms的类别 用于统一偏移 技巧
-    :param iou_threshold:
+    :param iou_threshold:float 0.5
     :return:
     '''
     # type: (Tensor, Tensor, Tensor, float) -> Tensor
@@ -208,7 +208,7 @@ def pos_match(ancs, bboxs, criteria):
     :param criteria: 小于等于0.35的反例
     :return:
         label_neg_mask: 返回反例的布尔索引
-        anc_bbox_ind : anc对应的bbox的index 用于提出标签
+        anc_bbox_ind : anc对应的bbox的index 用于提出标签  与anc对应
     '''
     # (bboxs个,anc个)
     iou = calc_iou4ts(bboxs, ancs)

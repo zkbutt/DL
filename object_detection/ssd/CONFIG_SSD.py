@@ -8,7 +8,7 @@ PATH_DATA_ROOT = PATH_ROOT + 'AI/datas/VOC2012'
 NUM_CLASSES = 21
 
 '''训练'''
-IS_TRAIN = False
+IS_TRAIN = True
 IS_EVAL = True
 BATCH_SIZE = 30  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
 PRINT_FREQ = 50  # 每50批打印一次

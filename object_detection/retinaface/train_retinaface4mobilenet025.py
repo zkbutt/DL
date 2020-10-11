@@ -21,7 +21,7 @@ if __name__ == "__main__":
     
     双gpu 5327
     time: 0.9763  data: 0.0006
-    0:04:43
+    Total time: 0:04:40 
     
     
     '''

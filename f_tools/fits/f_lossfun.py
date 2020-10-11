@@ -66,9 +66,9 @@ class ObjectDetectionLoss(nn.Module):
         # [num_anchors, 4] ->  [1, num_anchors, 4]
         self.ancs = nn.Parameter(ancs.unsqueeze(dim=0), requires_grad=False)
 
-        # self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
+        self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
         # self.confidence_loss = nn.BCELoss(reduction='none')
-        self.confidence_loss = nn.BCEWithLogitsLoss(reduction='none')
+        # self.confidence_loss = nn.BCEWithLogitsLoss(reduction='none')
 
     def _bbox_anc_diff(self, g_bboxs):
         '''
@@ -92,7 +92,7 @@ class ObjectDetectionLoss(nn.Module):
         # 计算差异
         diff = self._bbox_anc_diff(g_bboxs)
         # 计算损失 [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
-        loss_bboxs = self.location_loss(p_bboxs, diff).sum(dim=-1) # smooth_l1_loss
+        loss_bboxs = self.location_loss(p_bboxs, diff).sum(dim=-1)  # smooth_l1_loss
         # 正例损失过滤
         loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)
         return loss_bboxs
@@ -107,15 +107,18 @@ class ObjectDetectionLoss(nn.Module):
         :return:
         '''
         # -------------计算分类损失------------------正样本很少
+        # p_labels = F.softmax(p_labels, dim=-1)
         # if labels_p.shape[-1]>1:
-        #     labels_p = F.softmax(labels_p, dim=-1)
         # else:
         #     labels_p = F.sigmoid(labels_p)
         # p_labels = F.softmax(p_labels, dim=-1)  # 预测值转 正数 加合为1
         # loss_labels = F.binary_cross_entropy(F.sigmoid(p_labels), g_labels, reduction='none')
         # loss_labels = F.binary_cross_entropy_with_logits(p_labels, g_labels, reduction='none')
-        loss_labels = self.confidence_loss(p_labels, g_labels)  # [batch, 16800] 得同维每一个元素的损失
+        # one_hot = F.one_hot(masks, num_classes=args.num_classes)
 
+        p_labels = p_labels.permute(0, 2, 1)  # (batch,16800,2) -> (batch,2,16800)
+        loss_labels = self.confidence_loss(p_labels, g_labels.long())  # (batch,2,16800)^[batch, 16800] ->[batch, 16800] 得同维每一个元素的损失
+        # F.cross_entropy(p_labels, g_labels)
         # 分类损失 - 负样本选取  选损失最大的
         labels_neg = loss_labels.clone()
         labels_neg[mask_pos] = torch.tensor(0.0).to(loss_labels)  # 正样本先置0 使其独立 排除正样本,选最大的
@@ -172,7 +175,7 @@ class ObjectDetectionLoss(nn.Module):
         num_mask = (pos_num > 0).float()  # 统计一个batch中的每张图像中是否存在正样本
         pos_num = pos_num.float().clamp(min=torch.finfo(torch.float).eps)  # 求平均 排除有0的情况取类型最小值
 
-        # 总损失为[n] 加上超参系数
+        # 计算总损失平均值 /正样本数量 [n] 加上超参系数
         _s = self.loss_coefficient
         loss_total = 0
         log_dict = {}
@@ -295,8 +298,8 @@ class PredictOutput(nn.Module):
         if labels_p.dim() > 2:
             scores_p = F.softmax(labels_p, dim=-1)
         else:
-            scores_p = F.softmax(labels_p, dim=-1)
-            # scores_p = F.sigmoid(labels_p)
+            # scores_p = F.softmax(labels_p, dim=-1)
+            scores_p = F.sigmoid(labels_p)
         return bboxs_p, scores_p
 
     def decode_single_new(self, bboxs_p, scores_p, criteria, num_output, keypoints_p=None, k_type='ltrb'):
@@ -432,19 +435,24 @@ class PredictOutput(nn.Module):
         return imgs_rets
 
 
-if __name__ == '__main__':
-    import numpy as np
-
-    '''-------------多分类损失------------'''
-    # 多分类输入 (3,5)
-    input = torch.randn(3, 5, requires_grad=True)
+def t多分类():
+    # 2维
+    input = torch.randn(2, 5, requires_grad=True)  # (batch,类别值)
     # 多分类标签 (3)
-    target = torch.randint(5, (3,), dtype=torch.int64)
-    loss = F.cross_entropy(input, target)
+    target = torch.randint(3, 5, (2,), dtype=torch.int64)  # (batch)  值是3~4
+    loss = F.cross_entropy(input, target, reduction='none')  # 二维需要拉平
+    print(loss)
+    # 多维
+    input = torch.randn(2, 7, 5, requires_grad=True)  # (batch,类别值,框)
+    # # 多分类标签 (3)
+    target = torch.randint(3, 5, (2, 5,), dtype=torch.int64)  # (batch,框)
+    loss = F.cross_entropy(input, target, reduction='none')  # 二维需要拉平
     print(loss)
     # loss.backward()
 
-    '''---------------二分类损失----------------'''
+
+def t二分类():
+    pass
     size = (2, 1000)  # 同维比较
     input = torch.randn(*size, requires_grad=True)
     # input = F.softmax(input,dim=-1)
@@ -461,3 +469,13 @@ if __name__ == '__main__':
     # print(loss)
     print(loss)
     # loss.backward()
+
+
+if __name__ == '__main__':
+    import numpy as np
+
+    '''-------------多分类损失------------'''
+    # t多分类()
+
+    '''---------------二分类损失----------------'''
+    t二分类()
