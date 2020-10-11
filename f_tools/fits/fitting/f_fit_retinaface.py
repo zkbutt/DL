@@ -37,7 +37,7 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
             #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
             loss_total, log_dict = loss_process(batch_data)
 
-            if isinstance(ret_train_loss, list):
+            if ret_train_loss:
                 ret_train_loss.append(loss_total.detach())
 
             if not math.isfinite(loss_total):  # 当计算的损失为无穷大时停止训练
@@ -64,7 +64,7 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
         metric_logger.update(lr=now_lr)
         if isinstance(ret_train_lr, list):
             ret_train_lr.append(now_lr)  # 这个是返回值
-    return metric_logger.meters['total_losses'].avg  # 默认这epoch使用平均值
+    return metric_logger.meters['loss_total'].avg  # 默认这epoch使用平均值
 
 
 @torch.no_grad()
@@ -81,7 +81,7 @@ def f_evaluate(data_loader, forecast_process, epoch, coco_res_bboxs, coco_res_ke
     print_freq = max(int(len(data_loader) / 5), 1)
 
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
-        evaluator_time = time.time() # 139911109878320
+        evaluator_time = time.time()  # 139911109878320
         forecast_process(batch_data, epoch, coco_res_bboxs, coco_res_keypoints=coco_res_keypoints)
 
         eval_time = time.time() - evaluator_time
@@ -237,7 +237,7 @@ class MetricLogger(object):
                 eta_second = iter_time.global_avg * (len(iterable) - i)
                 eta_string = str(datetime.timedelta(seconds=eta_second))
                 if torch.cuda.is_available():
-                    print(log_msg.format(i, len(iterable),
+                    print(log_msg.format(i + 1, len(iterable),
                                          eta=eta_string,
                                          meters=str(self),
                                          time=str(iter_time),  # 模型迭代时间(含数据加载) SmoothedValue对象
@@ -435,4 +435,5 @@ class MetricLogger(object):
 if __name__ == '__main__':
     from torchvision import models
     from torch import optim
+
     SmoothedValue

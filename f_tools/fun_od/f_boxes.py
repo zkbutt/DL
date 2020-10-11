@@ -162,33 +162,6 @@ def calc_iou4ts(boxes1, boxes2):
     return iou
 
 
-def resize_boxes4tensor(boxes, original_size, new_size):
-    '''
-    用于预处理 和 最后的测试(预测还原)
-    :param boxes: 输入多个
-    :param original_size: 图像缩放前的尺寸
-    :param new_size: 图像缩放后的尺寸
-    :return:
-    '''
-    # type: (Tensor, List[int], List[int]) -> Tensor
-    # 输出数组   新尺寸 /旧尺寸 = 对应 h w 的缩放因子
-    ratios = [
-        torch.tensor(s_new, dtype=torch.float32, device=boxes.device)
-        / torch.tensor(s_orig, dtype=torch.float32, device=boxes.device)
-        for s_new, s_orig in zip(new_size, original_size)
-    ]
-
-    ratios_height, ratios_width = ratios
-    # Removes a tensor dimension, boxes [minibatch, 4]
-    # Returns a tuple of all slices along a given dimension, already without it.
-    xmin, ymin, xmax, ymax = boxes.unbind(dim=1)  # 分列
-    xmin = xmin * ratios_width
-    xmax = xmax * ratios_width
-    ymin = ymin * ratios_height
-    ymax = ymax * ratios_height
-    return torch.stack((xmin, ymin, xmax, ymax), dim=1)
-
-
 def nms(boxes, scores, iou_threshold):
     ''' IOU大于0.5的抑制掉
          boxes (Tensor[N, 4])) – bounding boxes坐标. 格式：(x1, y1, x2, y2)

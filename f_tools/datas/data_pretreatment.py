@@ -6,6 +6,7 @@ import torchvision.transforms
 from torchvision.transforms import functional as F
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.pic.size_handler import resize_img_keep_np, resize_boxes4np
 
 
 class Compose(object):
@@ -20,6 +21,31 @@ class Compose(object):
         return image, target
 
 
+class ResizeKeep():
+    def __init__(self, newsize):
+        '''
+
+        :param newsize: (h, w)
+        '''
+        self.newsize = newsize
+
+    def __call__(self, image, target):
+        '''
+
+        :param image: PIL图片
+        :param target:
+        :return:
+        '''
+        img_np = np.array(image)
+        img_np, old_size, _ = resize_img_keep_np(img_np, self.newsize)
+        img_pil = Image.fromarray(img_np, mode="RGB")
+
+        bbox = target["bboxs"]
+        resize_boxes4np(bbox, old_size, self.newsize)
+
+        return img_pil, target
+
+
 class Resize(object):
     """对图像进行 resize 处理 比例要变"""
 
@@ -28,7 +54,7 @@ class Resize(object):
 
         :param size: (h, w)
         '''
-        self.resize = torchvision.transforms.Resize(size)  # 保持
+        self.resize = torchvision.transforms.Resize(size)
 
     def __call__(self, image, target):
         w, h = image.size  # PIL wh
@@ -45,7 +71,25 @@ class Resize(object):
         return image, target
 
 
-class RandomHorizontalFlip(object):
+class RandomHorizontalFlip4TS(object):
+    """随机水平翻转图像以及bboxes,该方法应放在ToTensor后"""
+
+    def __init__(self, prob=0.5):
+        self.prob = prob
+
+    def __call__(self, image, target):
+        if random.random() < self.prob:
+            # height, width = image.shape[-2:]
+            image = image.flip(-1)  # 水平翻转图片
+            bbox = target["bboxs"]
+            # bbox: xmin, ymin, xmax, ymax
+            # bbox[:, [0, 2]] = width - bbox[:, [2, 0]]  # 翻转对应bbox坐标信息
+            bbox[:, [0, 2]] = 1.0 - bbox[:, [2, 0]]  # 翻转对应bbox坐标信息
+            target["bboxs"] = bbox
+        return image, target
+
+
+class RandomHorizontalFlip4PIL(object):
     """
     图片增强---PIL图像
     随机水平翻转图像以及bboxes
@@ -117,4 +161,15 @@ class Normalization(object):
 
     def __call__(self, image, target):
         image = self.normalize(image)
+        return image, target
+
+
+class ColorJitter(object):
+    """对图像颜色信息进行随机调整,该方法应放在ToTensor前"""
+
+    def __init__(self, brightness=0.125, contrast=0.5, saturation=0.5, hue=0.05):
+        self.trans = torchvision.transforms.ColorJitter(brightness, contrast, saturation, hue)
+
+    def __call__(self, image, target):
+        image = self.trans(image)
         return image, target

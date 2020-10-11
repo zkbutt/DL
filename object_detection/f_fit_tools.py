@@ -138,12 +138,12 @@ def load_data4widerface(path_data_root, img_size_in, batch_size, mode='train', i
     return data_loader
 
 
-def load_weight(path_weight, model, optimizer=None, lr_scheduler=None):
+def load_weight(path_weight, model, optimizer=None, lr_scheduler=None, device=torch.device('cpu')):
     start_epoch = 0
     # model_dict = model.state_dict() # 获取模型每层的参数阵
     if path_weight and os.path.exists(path_weight):
         # checkpoint = torch.load(path_weight)
-        checkpoint = torch.load(path_weight, map_location=torch.device('cpu'))
+        checkpoint = torch.load(path_weight, map_location=device)
         # model.load_state_dict(checkpoint['model'],strict=False)
         model.load_state_dict(checkpoint['model'])
         if optimizer:
@@ -158,7 +158,7 @@ def load_weight(path_weight, model, optimizer=None, lr_scheduler=None):
     return start_epoch
 
 
-def save_weight(path_save, model, name, optimizer=None, lr_scheduler=None, epoch=0):
+def save_weight(path_save, model, name, loss=None, optimizer=None, lr_scheduler=None, epoch=0):
     '''
 
     :param path_save: 前面检查以防止后来保存不起
@@ -175,7 +175,7 @@ def save_weight(path_save, model, name, optimizer=None, lr_scheduler=None, epoch
             'optimizer': optimizer.state_dict() if optimizer else None,
             'lr_scheduler': lr_scheduler.state_dict() if lr_scheduler else None,
             'epoch': epoch}
-        file_weight = os.path.join(path_save, (name + '-{}.pth').format(epoch + 1))
+        file_weight = os.path.join(path_save, (name + '-{}_{}.pth').format(epoch + 1, loss))
         torch.save(sava_dict, file_weight)
         flog.info('保存成功 %s', file_weight)
 

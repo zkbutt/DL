@@ -36,8 +36,11 @@ if __name__ == '__main__':
     
     gpux    66  9线程 锁页8.9   54.59   4.7 4.4*2 
     
+    23秒一轮
+    
     CUDA_VISIBLE_DEVICES=2,1,0 python -m torch.distributed.launch --nproc_per_node=3  /home/fast120/ai_code/DL/tmp/pycharm_project_243/f_pytorch/Test5_resnet/train4DDP.py
-    CUDA_VISIBLE_DEVICES=2,0 python -m torch.distributed.launch --nproc_per_node=2  train4DDP.py
+    python -m torch.distributed.launch --nproc_per_node=2  /home/win10_sys/tmp/pycharm_project_243/f_pytorch/Test5_resnet/train4DDP.py
+    
     '''
     batch_size = 66
 

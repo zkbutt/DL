@@ -53,7 +53,7 @@ class ObjectDetectionLoss(nn.Module):
         :param variance:  用于控制预测值缩放(0.1, 0.2)  预测值需限制缩小
         '''
         super(ObjectDetectionLoss, self).__init__()
-        self.loss_coefficient = loss_coefficient
+        self.loss_coefficient = loss_coefficient  # 损失系数
         self.neg_ratio = neg_ratio
         # Two factor are from following links
         # http://jany.st/post/2017-11-05-single-shot-detector-ssd-from-scratch-in-tensorflow.html
@@ -67,51 +67,64 @@ class ObjectDetectionLoss(nn.Module):
         self.ancs = nn.Parameter(ancs.unsqueeze(dim=0), requires_grad=False)
 
         # self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
+        # self.confidence_loss = nn.BCELoss(reduction='none')
         self.confidence_loss = nn.BCEWithLogitsLoss(reduction='none')
 
-    def _bbox_anc_diff(self, bboxs_p):
+    def _bbox_anc_diff(self, g_bboxs):
         '''
         计算ground truth相对anchors的回归参数
             self.dboxes 是def 是xywh self.dboxes
             两个参数只有前面几个用GT替代了的不一样 其它一个值 这里是稀疏
-        :param bboxs_p: 已完成 正例匹配 torch.Size([3, 8732, 4])
+        :param g_bboxs: 已完成 正例匹配 torch.Size([3, 8732, 4])
         :return:
             返回 ground truth相对anchors的回归参数 这里是稀疏
         '''
         # type: (Tensor)
         # 用anc 和 gt比较时需要放大差异
         # 这里 scale_xy 是乘10   scale_xy * (bbox_xy - anc_xy )/ anc_wh
-        gxy = self.scale_xy * (bboxs_p[:, :, :2] - self.ancs[:, :, :2]) / self.ancs[:, :, 2:]
+        gxy = self.scale_xy * (g_bboxs[:, :, :2] - self.ancs[:, :, :2]) / self.ancs[:, :, 2:]
         # 这里 scale_xy 是乘5   scale_wh * (bbox_wh - anc_wh ).log()
-        gwh = self.scale_wh * (bboxs_p[:, :, 2:] / self.ancs[:, :, 2:]).log()
+        gwh = self.scale_wh * (g_bboxs[:, :, 2:] / self.ancs[:, :, 2:]).log()
         return torch.cat((gxy, gwh), dim=-1).contiguous()
 
-    def bboxs_loss(self, bboxs_p, bboxs_g, mask_pos):
+    def bboxs_loss(self, p_bboxs, g_bboxs, mask_pos):
         # -------------计算定位损失------------------(只有正样本) 很多0
         # 计算差异
-        diff = self._bbox_anc_diff(bboxs_g)
+        diff = self._bbox_anc_diff(g_bboxs)
         # 计算损失 [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
-        loss_bboxs = self.location_loss(bboxs_p, diff).sum(dim=-1)
+        loss_bboxs = self.location_loss(p_bboxs, diff).sum(dim=-1)
         # 正例损失过滤
         loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)
         return loss_bboxs
 
-    def labels_loss(self, labels_p, labels_g, mask_pos, pos_num):
+    def labels_loss(self, p_labels, g_labels, mask_pos, pos_num):
+        '''
+
+        :param p_labels:
+        :param g_labels:
+        :param mask_pos: 正样本标签布尔索引 [batch, 16800] 根据gt算出来的
+        :param pos_num: [batch]
+        :return:
+        '''
         # -------------计算分类损失------------------正样本很少
         # if labels_p.shape[-1]>1:
         #     labels_p = F.softmax(labels_p, dim=-1)
         # else:
         #     labels_p = F.sigmoid(labels_p)
-        loss_labels = self.confidence_loss(labels_p, labels_g)  # [batch, 16800]
+        # p_labels = F.softmax(p_labels, dim=-1)  # 预测值转 正数 加合为1
+        # loss_labels = F.binary_cross_entropy(F.sigmoid(p_labels), g_labels, reduction='none')
+        # loss_labels = F.binary_cross_entropy_with_logits(p_labels, g_labels, reduction='none')
+        loss_labels = self.confidence_loss(p_labels, g_labels)  # [batch, 16800] 得同维每一个元素的损失
 
         # 分类损失 - 负样本选取  选损失最大的
         labels_neg = loss_labels.clone()
-        labels_neg[mask_pos] = torch.tensor(0.0).to(loss_labels)  # 正样本先置0 使其独立
+        labels_neg[mask_pos] = torch.tensor(0.0).to(loss_labels)  # 正样本先置0 使其独立 排除正样本,选最大的
 
-        # 按照 损失 降序排列 con_idx(Tensor: [N, 8732])
+        # 输入数组 选出最大的N个 [33,11,55] -> 降[2,0,1] ->升[1,2,0] < 2 -> [T,F,T] con_idx(Tensor: [N, 8732])
         _, labels_idx = labels_neg.sort(dim=1, descending=True)  # descending 倒序
+        # 得每一个图片batch个 最大值索引排序
         _, labels_rank = labels_idx.sort(dim=1)  # 两次索引排序 用于取最大的n个布尔索引
-        # 计算每一层的反例数   [batch] -> [batch,1]  限制正样本3倍不能超过负样本的总个数
+        # 计算每一层的反例数   [batch] -> [batch,1]  限制正样本3倍不能超过负样本的总个数  基本不可能超过总数
         neg_num = torch.clamp(self.neg_ratio * pos_num, max=mask_pos.size(1)).unsqueeze(-1)
         mask_neg = labels_rank < neg_num  # 选出最大的n个的mask  Tensor [batch, 8732]
 
@@ -128,7 +141,7 @@ class ObjectDetectionLoss(nn.Module):
         :param bboxs_g: 匹配的 xywh  torch.Size([batch, 16800, 4])
         :param labels_p:
         :param labels_g:匹配的 torch.Size([batch, 16800])
-        :param mask_pos: 正样本标签布尔索引 [batch, 16800]
+        :param mask_pos: 正样本标签布尔索引 [batch, 16800] 根据gt算出来的
         :param pos_num: 每一个图片的正样本个数  Tensor[batch] 1维降维
         :param args:用于添加其它损失项
         :return:
@@ -138,22 +151,22 @@ class ObjectDetectionLoss(nn.Module):
         ret.append(self.labels_loss(labels_p, labels_g, mask_pos, pos_num))
         return ret
 
-    def forward(self, bboxs_p, bboxs_g, labels_p, labels_g, *args):
+    def forward(self, p_bboxs, g_bboxs, p_labels, g_labels, *args):
         '''
 
-        :param bboxs_p: 预测的 xywh  torch.Size([batch, 16800, 4])
-        :param bboxs_g: 匹配的 xywh  torch.Size([batch, 16800, 4])
-        :param labels_p:
-        :param labels_g:匹配的 torch.Size([batch, 16800])
+        :param p_bboxs: 预测的 xywh  torch.Size([batch, 16800, 4])
+        :param g_bboxs: 匹配的 xywh  torch.Size([batch, 16800, 4])
+        :param p_labels:
+        :param g_labels:匹配的 torch.Size([batch, 16800])
         :param args:用于添加其它损失项
         :return:
         '''
         # 正样本标签布尔索引 [batch, 16800]
-        mask_pos = labels_g > 0
-        # 每一个图片的正样本个数  Tensor[batch] 1维降维
-        pos_num = mask_pos.sum(dim=1)  # 这个用于batch中1个图没有正例不算损失和计算反例数
+        mask_pos = g_labels > 0
+        # 每一个图片的正样本个数  Tensor[batch] 数据1维降维
+        pos_num = mask_pos.sum(dim=1)  # [batch] 这个用于batch中1个图没有正例不算损失和计算反例数
 
-        loss_list = self.get_loss_list(bboxs_p, bboxs_g, labels_p, labels_g, mask_pos, pos_num, *args)
+        loss_list = self.get_loss_list(p_bboxs, g_bboxs, p_labels, g_labels, mask_pos, pos_num, *args)
 
         # 没有正样本的图像不计算分类损失  pos_num是每一张图片的正例个数 eg. [15, 3, 5, 0] -> [1.0, 1.0, 1.0, 0.0]
         num_mask = (pos_num > 0).float()  # 统计一个batch中的每张图像中是否存在正样本
@@ -335,8 +348,8 @@ class PredictOutput(nn.Module):
             idxs = idxs.expand_as(scores_p)  # 一维直接全1匹配  保持与多类结构一致
 
         # 过滤...移除低概率目标，self.scores_thresh=0.05    16800->16736
-        # inds = torch.nonzero(scores_p > self.scores_threshold, as_tuple=False).squeeze(1)
-        # bboxs_p, scores_p, idxs = bboxs_p[inds, :], scores_p[inds], idxs[inds]
+        inds = torch.nonzero(scores_p > self.scores_threshold, as_tuple=False).squeeze(1)
+        bboxs_p, scores_p, idxs = bboxs_p[inds, :], scores_p[inds], idxs[inds]
 
         # remove empty boxes 面积小的   ---长宽归一化值 小于一长宽分之一的不要
         ws, hs = bboxs_p[:, 2] - bboxs_p[:, 0], bboxs_p[:, 3] - bboxs_p[:, 1]
@@ -387,10 +400,10 @@ class PredictOutput(nn.Module):
         for index in range(bboxes.shape[0]):
             # bbox_p, prob, keypoints_p
             bbox_p = _zip[0][index]
-            bbox_p = bbox_p.squeeze(0)  # 降维
+            bbox_p = bbox_p.squeeze(0)  # 降维 每一张的
 
             prob = _zip[1][index]
-            prob = prob.squeeze(0)
+            prob = prob.squeeze(0)  # 每一张的
 
             if len(_zip) == 2:  # 为keypoints_p 特殊 处理
                 # _zip[0][index]
@@ -420,16 +433,31 @@ class PredictOutput(nn.Module):
 
 
 if __name__ == '__main__':
-    model = nn.Linear(10, 1)
-    # reduction 默认是取均值
-    criterion = nn.BCEWithLogitsLoss()  # 输入值无要求 自动加sigmoid
-    criterion = nn.BCELoss(reduction='none')  # 输入值必须在0~1之间 否则报错
+    import numpy as np
 
-    x = torch.randn(16, 10)
-    y = torch.empty(16).random_(2)  # 随机int 0 1
-
-    out = model(x)  # (16, 1)
-    out = out.squeeze(dim=-1)  # (16, 1) ->(16, )
-
-    loss = criterion(out, y)
+    '''-------------多分类损失------------'''
+    # 多分类输入 (3,5)
+    input = torch.randn(3, 5, requires_grad=True)
+    # 多分类标签 (3)
+    target = torch.randint(5, (3,), dtype=torch.int64)
+    loss = F.cross_entropy(input, target)
     print(loss)
+    # loss.backward()
+
+    '''---------------二分类损失----------------'''
+    size = (2, 1000)  # 同维比较
+    input = torch.randn(*size, requires_grad=True)
+    # input = F.softmax(input,dim=-1)
+    target = torch.tensor(np.random.randint(0, 2, size), dtype=torch.float)
+    # loss = F.binary_cross_entropy(input, target, reduction='none')  # input不为1要报错
+    loss = F.binary_cross_entropy(F.sigmoid(input), target, reduction='none')
+    # loss = F.binary_cross_entropy_with_logits(input, target, reduction='none')
+
+    # loss.backward()
+
+    # loss = F.binary_cross_entropy(F.sigmoid(input), target, reduction='none')
+    # loss = F.binary_cross_entropy_with_logits(predict, label, reduction='none')  #
+
+    # print(loss)
+    print(loss)
+    # loss.backward()

@@ -74,7 +74,7 @@ class CocoDataset(Dataset):
     def __len__(self):
         # flog.debug('__len__ %s', )
         if self.is_debug:
-            return 90
+            return 10
         return len(self.image_ids)
 
     def __getitem__(self, index):
@@ -139,7 +139,7 @@ class CocoDataset(Dataset):
         image_info = self.coco.loadImgs(self.image_ids[index])[0]
         path_img = os.path.join(self.path_root, 'images', self.data_type,
                                 image_info['file_name'])
-        img = Image.open(path_img)  # 原图数据
+        img = Image.open(path_img).convert('RGB')  # 原图数据
         return img
 
     def load_anns(self, index):
@@ -197,10 +197,10 @@ if __name__ == '__main__':
     data_type = 'train2017'
     mode = 'keypoints'
 
-    from f_tools.datas.data_pretreatment import Compose, RandomHorizontalFlip, ToTensor
+    from f_tools.datas.data_pretreatment import Compose, RandomHorizontalFlip4PIL, ToTensor
 
     data_transform = {
-        "train": Compose([RandomHorizontalFlip(1)]),
+        "train": Compose([RandomHorizontalFlip4PIL(1)]),
         "val": Compose([ToTensor()])
     }
 

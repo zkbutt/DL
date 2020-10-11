@@ -1,4 +1,14 @@
 import os
+import sys
+
+# 加入根目录避免找不到包
+curPath = os.path.abspath(os.path.dirname(__file__))
+rootPath = os.path.split(curPath)[0]
+PathProject = os.path.split(rootPath)[0]
+sys.path.append(rootPath)
+sys.path.append(PathProject)
+
+import argparse
 
 import torch
 import torch.optim as optim
@@ -58,34 +68,29 @@ def collate_fn(batch_datas):
 
 if __name__ == "__main__":
     '''
-    BATCH_SIZE = 48
-    cpu 10 进程 41% 11g  data: 0.0002
-    GPU1: 5445MiB
-    time: 0.5639  data: 0.0002
-    Total time: 0:03:16 第二轮0:02:37
-    
-    GPU2: 4805
-    0.5534  data: 0.0002 
-    
-    双gpu 5327
-    time: 0.9763  data: 0.0006
-    0:04:43
-    
-    
+    CUDA_VISIBLE_DEVICES=2,1,0 python -m torch.distributed.launch --nproc_per_node=3  /home/fast120/ai_code/DL/tmp/pycharm_project_243/f_pytorch/t_multi_gpu_DDP.py
+    python -m torch.distributed.launch --nproc_per_node=2  /home/win10_sys/tmp/pycharm_project_243/object_detection/retinaface/train_retinaface4mobilenet025_DDP.py
+
     '''
-
     '''------------------系统配置---------------------'''
-    device = sysconfig(PATH_SAVE_WEIGHT)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--local_rank', default=0, type=int, help='node rank for distributed training')
+    args = parser.parse_args()
+    torch.cuda.set_device(args.local_rank)
+    device = torch.device("cuda", args.local_rank)  # 设置单一显卡
+    torch.distributed.init_process_group(backend="nccl", init_method="env://")
 
-    if DEBUG:
-        # device = torch.device("cpu")
-        PRINT_FREQ = 1
-        PATH_SAVE_WEIGHT = None
-        BATCH_SIZE = 2
-        DATA_NUM_WORKERS = 1
-        pass
-    else:
-        torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
+    if (int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1) < 2:
+        raise Exception('请查询GPU数据', os.environ["WORLD_SIZE"])
+    print('当前 GPU', torch.cuda.get_device_name(args.local_rank),
+          args.local_rank,  # 进程变量 GPU号 进程号
+          '总GPU个数', os.environ["WORLD_SIZE"],  # 这个变量是共享的
+          "ppid:%s ...pid: %s" % (os.getppid(), os.getpid())
+          )
+
+    DATA_NUM_WORKERS = 5
+
+    torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
 
     # claxx = RESNET50  # 这里根据实际情况改
     claxx = MOBILENET025  # 这里根据实际情况改
@@ -181,12 +186,12 @@ if __name__ == "__main__":
     start_epoch = 0
 
     # start_epoch = load_weight(PATH_FIT_WEIGHT, model, optimizer, lr_scheduler, device)
-    # 单层修改学习率
-    # optimizer.param_groups[0]['lr'] = 1e-5
-    # 多层
-    # for param_group in optimizer.param_groups:
-    #     param_group['lr'] = 1e-1
 
+    model = torch.nn.parallel.DistributedDataParallel(
+        model, device_ids=[args.local_rank], output_device=args.local_rank,
+        # this should be removed if we update BatchNorm stats
+        broadcast_buffers=True,
+    )
     '''------------------模型训练---------------------'''
 
     # 返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数
@@ -220,7 +225,6 @@ if __name__ == "__main__":
                 path_save=PATH_SAVE_WEIGHT,
                 model=model,
                 name=os.path.basename(__file__),
-                loss=loss,
                 optimizer=optimizer,
                 lr_scheduler=lr_scheduler,
                 epoch=epoch)

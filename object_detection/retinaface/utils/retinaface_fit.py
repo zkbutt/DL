@@ -70,16 +70,16 @@ class LossProcess(FitBase):
            )
         '''
         out = self.model(images)
-        bboxs_p = out[0]
-        labels_p = out[1]
-        keypoints_p = out[2]
+        p_bboxs = out[0]  # (batch,16800,4)
+        p_labels = out[1]  # (batch,16800,10)
+        p_keypoints = out[2]  # (batch,16800)
 
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
         num_batch = images.shape[0]
         num_ancs = self.anchors.shape[0]
 
-        gbboxs = torch.Tensor(num_batch, num_ancs, 4).to(images)  # torch.Size([5, 16800, 4])
-        glabels = torch.Tensor(num_batch, num_ancs).to(images)  # 这个只会存在一维 无论多少类
+        gbboxs = torch.Tensor(num_batch, num_ancs, 4).to(images)  # torch.Size([batch, 16800, 4])
+        glabels = torch.Tensor(num_batch, num_ancs).to(images)  # 计算损失只会存在一维 无论多少类
         gkeypoints = torch.Tensor(num_batch, num_ancs, 10).to(images)
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
         for index in range(num_batch):
@@ -118,7 +118,7 @@ class LossProcess(FitBase):
 
         # ---------------损失计算 ----------------------
         # log_dict用于显示
-        loss_total, log_dict = self.losser(bboxs_p, gbboxs, labels_p, glabels, keypoints_p, gkeypoints)
+        loss_total, log_dict = self.losser(p_bboxs, gbboxs, p_labels, glabels, p_keypoints, gkeypoints)
 
         # -----------------构建展示字典及返回值------------------------
         # 多GPU时结果处理 reduce_dict 方法

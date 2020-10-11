@@ -1,28 +1,32 @@
 DEBUG = True
-PATH_ROOT = 'M:/'
+# PATH_ROOT = 'M:/'
+PATH_ROOT = '/home/bak3t/bak299g/'
 
 '''样本及预处理'''
 DATA_NUM_WORKERS = 10
 PATH_DATA_ROOT = PATH_ROOT + 'AI/datas/widerface/coco'
-IMAGE_SIZE = (640, 640)  # 预处理 统一尺寸
+IMAGE_SIZE = (640, 640)  # hw 预处理 统一尺寸
 BATCH_SIZE = 48  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
 # NUM_CLASSES = 2  # 模型分类数 人脸只有1 0 影响类别输出   -----这个要根据样本改----
-rgb_mean = (104, 117, 123)  # 图片的RGB偏差
+# rgb_mean = (104, 117, 123)  # 图片的RGB偏差
 
 '''模型权重'''
 PATH_SAVE_WEIGHT = PATH_ROOT + 'AI/weights/feadre'
 # loss_total: 13.1264 (16.0534)  loss_bboxs: 0.9631 (1.2294)  loss_labels: 2.2601 (2.2723)  loss_keypoints: 8.3139 (11.3223)
 # loss_total: 12.3518 (12.9931)  loss_bboxs: 0.8875 (1.0694)  loss_labels: 2.2473 (2.2477)  loss_keypoints: 8.2336 (8.6065)
-PATH_FIT_WEIGHT = '/home/bak3t/bak299g/AI/weights/feadre/train_retinaface4mobilenet025.py-10.pth'
+# PATH_FIT_WEIGHT = '/home/bak3t/bak299g/AI/weights/feadre/train_retinaface4mobilenet025.py-23.pth'
+PATH_FIT_WEIGHT = '/home/win10_sys/tmp/pycharm_project_243/object_detection/retinaface/file/Retinaface_mobilenet0.25.pth'
 
 '''训练'''
 IS_TRAIN = True
-IS_EVAL = True
+# IS_TRAIN = False
+# IS_EVAL = True
+IS_EVAL = False
 PRINT_FREQ = 50  # 每50批打印一次
-END_EPOCH = 15
+END_EPOCH = 30
 OUT_CHANNEL = 64  # FPN的输出 与SSH输出一致
 VARIANCE = [0.1, 0.2]  # 框修正限制
-LOSS_COEFFICIENT = [2, 1, 1]  # 损失系数 用于  loss_bboxs loss_labels  loss_keypoints
+LOSS_COEFFICIENT = [1, 2, 1]  # 损失系数 用于  loss_bboxs loss_labels  loss_keypoints
 
 '''Loss参数'''
 PREDICT_IOU_THRESHOLD = 0.3  # 用于预测的阀值
