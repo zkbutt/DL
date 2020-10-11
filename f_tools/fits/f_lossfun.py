@@ -92,7 +92,7 @@ class ObjectDetectionLoss(nn.Module):
         # 计算差异
         diff = self._bbox_anc_diff(g_bboxs)
         # 计算损失 [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
-        loss_bboxs = self.location_loss(p_bboxs, diff).sum(dim=-1)
+        loss_bboxs = self.location_loss(p_bboxs, diff).sum(dim=-1) # smooth_l1_loss
         # 正例损失过滤
         loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)
         return loss_bboxs
@@ -212,7 +212,7 @@ class KeypointsLoss(ObjectDetectionLoss):
         # -------------关键点损失------------------(只有正样本) 全0要剔除
         # 计算差异[batch, 16800, 10]
         diff = self._keypoints_anc_diff(gkeypoints)
-        # 计算损失
+        # 计算损失 smooth_l1_loss
         loss_keypoints = self.location_loss(pkeypoints, diff).sum(dim=-1)
         # 正例计算损失 (全0及反例过滤)
         __mask_pos = (mask_pos) * torch.all(gkeypoints > 0, 2)  # and一下 将全0的剔除

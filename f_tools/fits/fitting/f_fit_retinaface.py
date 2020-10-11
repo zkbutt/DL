@@ -8,6 +8,7 @@ import torch.distributed as dist
 from torch.cuda.amp import GradScaler, autocast
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.f_coco.coco_eval import CocoEvaluator
 
 
 def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
@@ -80,6 +81,9 @@ def f_evaluate(data_loader, forecast_process, epoch, coco_res_bboxs, coco_res_ke
     header = "Test: "
     print_freq = max(int(len(data_loader) / 5), 1)
 
+    coco_evaluator = CocoEvaluator(data_loader.dataset.coco, 'bbox')
+
+    outputs = []
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
         evaluator_time = time.time()  # 139911109878320
         forecast_process(batch_data, epoch, coco_res_bboxs, coco_res_keypoints=coco_res_keypoints)
@@ -88,10 +92,13 @@ def f_evaluate(data_loader, forecast_process, epoch, coco_res_bboxs, coco_res_ke
         metric_logger.update(eval_time=eval_time, coco_size=len(coco_res_bboxs))  # 这个填字典 添加的字段
 
     # 总输出
-    coco_eval(coco_res_bboxs, forecast_process.coco, epoch, 'bbox')
-    if forecast_process.eval_mode == 'keypoints':
-        coco_eval(coco_res_keypoints, forecast_process.coco, epoch, 'keypoints')
-
+    coco_evaluator.accumulate()  # 计算
+    coco_evaluator.summarize()  # 输出指标
+    print_txt = coco_evaluator.coco_eval[iou_types[0]].stats
+    coco_map = print_txt[0]  # 取出指标
+    voc_map = print_txt[1]
+    if coco_res_bboxs:
+        coco_res_bboxs.append(coco_map)
 
 class SmoothedValue(object):
     """

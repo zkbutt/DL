@@ -1,4 +1,4 @@
-DEBUG = True
+DEBUG = False
 # PATH_ROOT = 'M:/'
 PATH_ROOT = '/home/bak3t/bak299g/'
 
@@ -14,8 +14,8 @@ BATCH_SIZE = 48  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
 PATH_SAVE_WEIGHT = PATH_ROOT + 'AI/weights/feadre'
 # loss_total: 13.1264 (16.0534)  loss_bboxs: 0.9631 (1.2294)  loss_labels: 2.2601 (2.2723)  loss_keypoints: 8.3139 (11.3223)
 # loss_total: 12.3518 (12.9931)  loss_bboxs: 0.8875 (1.0694)  loss_labels: 2.2473 (2.2477)  loss_keypoints: 8.2336 (8.6065)
-# PATH_FIT_WEIGHT = '/home/bak3t/bak299g/AI/weights/feadre/train_retinaface4mobilenet025.py-23.pth'
-PATH_FIT_WEIGHT = '/home/win10_sys/tmp/pycharm_project_243/object_detection/retinaface/file/Retinaface_mobilenet0.25.pth'
+PATH_FIT_WEIGHT = '/home/bak3t/bak299g/AI/weights/feadre/train_retinaface4mobilenet025.py-22_19.469783782958984.pth'
+# PATH_FIT_WEIGHT = '/home/win10_sys/tmp/pycharm_project_243/object_detection/retinaface/file/Retinaface_mobilenet0.25.pth'
 
 '''训练'''
 IS_TRAIN = True
