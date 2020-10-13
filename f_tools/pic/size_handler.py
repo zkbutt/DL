@@ -5,6 +5,15 @@ import numpy as np
 from f_tools.GLOBAL_LOG import flog
 
 
+def resize_keypoints4ratio(keypoints, ratio):
+    print(keypoints)
+    return keypoints
+
+def resize_boxes4ratio(boxes, ratio):
+    boxes[:, ::2] = boxes[:, ::2] * ratio
+    boxes[:, 1::2] = boxes[:, 1::2] * ratio
+    return boxes
+
 def resize_boxes4np(boxes, original_size, new_size):
     '''
     用于预处理 和 最后的测试(预测还原) ltrb
@@ -86,7 +95,7 @@ def resize_img_keep_np(img_np, new_size, mode='lt', fill_color=(0, 0, 0)):
         bottom = _pad_h
 
     img_np = cv2.copyMakeBorder(img_np, top, bottom, left, right, cv2.BORDER_CONSTANT, None, fill_color)
-    return img_np, old_size, (top, bottom, left, right)
+    return img_np, ratio, old_size, (top, bottom, left, right)
 
 
 def resize_img_tensor(image, new_size):

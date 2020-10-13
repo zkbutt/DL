@@ -80,7 +80,7 @@ def draw_text(draw, box_to_display_str_map, box, left, right, top, bottom, color
 
 
 def draw_box(image, boxes, classes, scores, category_index, thresh=0.5, line_thickness=8):
-    flog.debug('最终额 %s 个目标框 ', (scores>thresh).sum())
+    flog.debug('最终额 %s 个目标框 ', (scores > thresh).sum())
     box_to_display_str_map = collections.defaultdict(list)
     box_to_color_map = collections.defaultdict(str)
 

@@ -32,29 +32,77 @@ def xywh2ltrb(bboxs):
     :param bboxs: [N, 4, 8732]
     :return:
     '''
-    l = bboxs[:, :, 0] - 0.5 * bboxs[:, :, 2]
-    t = bboxs[:, :, 1] - 0.5 * bboxs[:, :, 3]
-    r = bboxs[:, :, 0] + 0.5 * bboxs[:, :, 2]
-    b = bboxs[:, :, 1] + 0.5 * bboxs[:, :, 3]
-    bboxs[:, :, 0] = l  # xmin
-    bboxs[:, :, 1] = t  # ymin
-    bboxs[:, :, 2] = r  # xmax
-    bboxs[:, :, 3] = b  # ymax
+    if len(bboxs.shape) == 2:
+        l = bboxs[:, 0] - 0.5 * bboxs[:, 2]
+        t = bboxs[:, 1] - 0.5 * bboxs[:, 3]
+        r = bboxs[:, 0] + 0.5 * bboxs[:, 2]
+        b = bboxs[:, 1] + 0.5 * bboxs[:, 3]
+        bboxs[:, 0] = l  # xmin
+        bboxs[:, 1] = t  # ymin
+        bboxs[:, 2] = r  # xmax
+        bboxs[:, 3] = b  # ymax
+    elif len(bboxs.shape) == 3:
+        l = bboxs[:, :, 0] - 0.5 * bboxs[:, :, 2]
+        t = bboxs[:, :, 1] - 0.5 * bboxs[:, :, 3]
+        r = bboxs[:, :, 0] + 0.5 * bboxs[:, :, 2]
+        b = bboxs[:, :, 1] + 0.5 * bboxs[:, :, 3]
+        bboxs[:, :, 0] = l  # xmin
+        bboxs[:, :, 1] = t  # ymin
+        bboxs[:, :, 2] = r  # xmax
+        bboxs[:, :, 3] = b  # ymax
+    else:
+        raise Exception('维度错误', bboxs.shape)
     return bboxs
 
 
-def fix_anc4p(bboxs, loc, variances=(0.1, 0.2)):
+def diff_keypoints(anc, g_keypoints, variances=(0.1, 0.2)):
+    ancs_xy = anc[:, :2].repeat(1, 5)
+    ancs_wh = anc[:, 2:].repeat(1, 5)
+    _t = (g_keypoints - ancs_xy) / variances[0] / ancs_wh
+    return _t
+
+
+def diff_bbox(anc, g_bbox, variances=(0.1, 0.2)):
     '''
-    用于预测时
-    :param bboxs: y,x,h,w
-    :param loc: 修正系数
-    :return: 中心点和 宽高的调整系数
+    用预测的loc 和 anc得到 修复后的框
+    :param anc: xywh  (nn,4)
+    :param p_loc: 修正系数 (nn,4)
+    :return: 修复后的框
+    '''
+    _a = (g_bbox[:, :2] - anc[:, :2]) / variances[0] / anc[:, 2:]
+    _b = (g_bbox[:, 2:] / anc[:, 2:]).log() / variances[1]
+    _t = torch.cat([_a, _b], dim=1)
+    return _t
+
+
+def fix_bbox(anc, p_loc, variances=(0.1, 0.2)):
+    '''
+    用预测的loc 和 anc得到 修复后的框
+    :param anc: xywh  (nn,4)
+    :param p_loc: 修正系数 (nn,4)
+    :return: 修复后的框
     '''
     # 坐标移动
-    bboxs[:, :2] = bboxs[:, :2] + loc[:, :2] * variances[0] * bboxs[:, :2]
+    _a = anc[:, :2] + p_loc[:, :2] * variances[0] * anc[:, 2:]
     # 宽高缩放
-    bboxs[:, 2:] = bboxs[:, 2:] * torch.exp(loc[:, 2:] * variances[1])
-    return bboxs
+    _b = anc[:, 2:] * torch.exp(p_loc[:, 2:] * variances[1])
+    _t = torch.cat([_a, _b], dim=1)
+    return _t
+
+
+def fix_keypoints(anc, p_keypoints, variances=(0.1, 0.2)):
+    '''
+    可以不用返回值
+    :param anc:
+    :param p_keypoints:
+    :param variances:
+    :return:
+    '''
+    # [anc个, 4] ->  [anc个, 2] -> [anc个, 2*5]
+    ancs_xy = anc[:, :2].repeat(1, 5)
+    ancs_wh = anc[:, 2:].repeat(1, 5)
+    _t = ancs_xy + p_keypoints * variances[0] * ancs_wh
+    return _t
 
 
 def bbox_iou4np(bbox_a, bbox_b):

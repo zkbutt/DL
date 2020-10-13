@@ -19,6 +19,10 @@ from PIL import Image, ImageDraw
 from f_tools.GLOBAL_LOG import flog
 
 
+def _rand(a=0., b=1.):
+    return np.random.rand() * (b - a) + a
+
+
 class VOCDataSet(Dataset):
     """读取解析PASCAL VOC2012数据集"""
 
@@ -123,7 +127,7 @@ class VOCDataSet(Dataset):
         target["iscrowd"] = iscrowd
 
         if self.transforms is not None:  # 这里是预处理
-            image, target = self.transforms(image, target) # 这里返回的是匹配后的bbox
+            image, target = self.transforms(image, target)  # 这里返回的是匹配后的bbox
 
         # show_od4boxs(image, target['boxes'], is_tensor=True)  # 预处理图片测试
         return image, target
@@ -166,10 +170,6 @@ class VOCDataSet(Dataset):
             str_xml = file.read()
         doc = xmltodict.parse(str_xml)
         return doc
-
-
-def _rand(a=0., b=1.):
-    return np.random.rand() * (b - a) + a
 
 
 class WiderfaceDataSet(Dataset):
@@ -462,6 +462,112 @@ class Data_Prefetcher():
             self.start_thread()
 
         return input, target
+
+
+def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, isdebug=False, data_num_workers=0):
+    '''
+
+    :param data_transform:
+    :param path_data_root:
+    :param batch_size:
+    :param bbox2one:  是否gt框进行归一化
+    :return:
+    '''
+    num_workers = data_num_workers
+    file_name = ['train.txt', 'val.txt']
+    VOC_root = os.path.join(path_data_root, 'trainval')
+    # ---------------------data_set生成---------------------------
+    train_data_set = VOCDataSet(
+        VOC_root,
+        file_name[0],  # 正式训练要改这里
+        data_transform["train"],
+        bbox2one=bbox2one,
+        isdebug=isdebug
+    )
+
+    # iter(train_data_set).__next__()  # VOC2012DataSet 测试
+    class_dict = train_data_set.class_dict
+    flog.debug('class_dict %s', class_dict)
+
+    # 默认通过 torch.stack() 进行拼接
+    '''
+    一次两张图片使用3504的显存
+    '''
+    train_data_loader = torch.utils.data.DataLoader(
+        train_data_set,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,  # windows只能为0
+        collate_fn=lambda batch: tuple(zip(*batch)),  # 输出多个时需要处理
+        pin_memory=True,
+    )
+
+    val_data_set = VOCDataSet(
+        VOC_root, file_name[1],
+        data_transform["val"],
+        bbox2one=bbox2one,
+    )
+    val_data_set_loader = torch.utils.data.DataLoader(
+        val_data_set,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        collate_fn=lambda batch: tuple(zip(*batch)),  # 输出多个时需要处理
+        pin_memory=True,
+    )
+    # images, targets = iter(train_data_loader).__next__()
+    # show_pic_ts(images[0], targets[0]['labels'], classes=class_dict)
+
+    return train_data_loader, val_data_set_loader
+
+
+def load_data4widerface(path_data_root, img_size_in, batch_size, mode='train', isdebug=False, look=False):
+    '''
+
+    :param path_data_root:
+    :param img_size_in:
+    :param batch_size:
+    :param mode:  train val test 暂时debug只支持 train
+    :param isdebug:
+    :param look:
+    :return:
+        images: np(batch,(3,640,640))
+        targets: np(batch,(x个选框,15维))  4+1+10
+    '''
+
+    def detection_collate(batch):
+        '''
+
+        :param batch: list(batch,(tuple((3,640,640),(x个选框,15维))...))
+        :return:
+            images: <class 'tuple'>: (batch, 3, 640, 640)
+            targets: list[batch,(23,15)]
+        '''
+        images = []
+        targets = []
+        for img, box in batch:
+            if len(box) == 0:
+                continue
+            images.append(img)
+            targets.append(box)
+        images = np.array(images)
+        targets = np.array(targets)
+        return images, targets
+
+    train_dataset = WiderfaceDataSet(path_data_root, img_size_in, mode=mode, isdebug=isdebug, look=look)
+    # iter(train_dataset).__next__()
+    data_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        num_workers=0,
+        shuffle=True,
+        pin_memory=True,  # 不使用虚拟内存
+        drop_last=True,  # 除于batch_size余下的数据
+        collate_fn=detection_collate,
+    )
+    # 数据查看
+    # iter(data_loader).__next__()
+    return data_loader
 
 
 if __name__ == '__main__':

@@ -3,10 +3,8 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_factory import VOCDataSet, WiderfaceDataSet
 import numpy as np
 
-from object_detection.ssd.train_utils.coco_utils import get_coco_api_from_dataset
 
 
 def sysconfig(path_save_weight, device=None):
@@ -32,119 +30,33 @@ def sysconfig(path_save_weight, device=None):
     return device
 
 
-def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, isdebug=False, data_num_workers=0):
-    '''
 
-    :param data_transform:
-    :param path_data_root:
-    :param batch_size:
-    :param bbox2one:  是否gt框进行归一化
-    :return:
-    '''
-    num_workers = data_num_workers
-    file_name = ['train.txt', 'val.txt']
-    VOC_root = os.path.join(path_data_root, 'trainval')
-    # ---------------------data_set生成---------------------------
-    train_data_set = VOCDataSet(
-        VOC_root,
-        file_name[0],  # 正式训练要改这里
-        data_transform["train"],
-        bbox2one=bbox2one,
-        isdebug=isdebug
-    )
-
-    # iter(train_data_set).__next__()  # VOC2012DataSet 测试
-    class_dict = train_data_set.class_dict
-    flog.debug('class_dict %s', class_dict)
-
-    # 默认通过 torch.stack() 进行拼接
-    '''
-    一次两张图片使用3504的显存
-    '''
-    train_data_loader = torch.utils.data.DataLoader(
-        train_data_set,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,  # windows只能为0
-        collate_fn=lambda batch: tuple(zip(*batch)),  # 输出多个时需要处理
-        pin_memory=True,
-    )
-
-    val_data_set = VOCDataSet(
-        VOC_root, file_name[1],
-        data_transform["val"],
-        bbox2one=bbox2one,
-    )
-    val_data_set_loader = torch.utils.data.DataLoader(
-        val_data_set,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        collate_fn=lambda batch: tuple(zip(*batch)),  # 输出多个时需要处理
-        pin_memory=True,
-    )
-    # images, targets = iter(train_data_loader).__next__()
-    # show_pic_ts(images[0], targets[0]['labels'], classes=class_dict)
-
-    return train_data_loader, val_data_set_loader
-
-
-def load_data4widerface(path_data_root, img_size_in, batch_size, mode='train', isdebug=False, look=False):
-    '''
-
-    :param path_data_root:
-    :param img_size_in:
-    :param batch_size:
-    :param mode:  train val test 暂时debug只支持 train
-    :param isdebug:
-    :param look:
-    :return:
-        images: np(batch,(3,640,640))
-        targets: np(batch,(x个选框,15维))  4+1+10
-    '''
-
-    def detection_collate(batch):
-        '''
-
-        :param batch: list(batch,(tuple((3,640,640),(x个选框,15维))...))
-        :return:
-            images: <class 'tuple'>: (batch, 3, 640, 640)
-            targets: list[batch,(23,15)]
-        '''
-        images = []
-        targets = []
-        for img, box in batch:
-            if len(box) == 0:
-                continue
-            images.append(img)
-            targets.append(box)
-        images = np.array(images)
-        targets = np.array(targets)
-        return images, targets
-
-    train_dataset = WiderfaceDataSet(path_data_root, img_size_in, mode=mode, isdebug=isdebug, look=look)
-    # iter(train_dataset).__next__()
-    data_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        num_workers=0,
-        shuffle=True,
-        pin_memory=True,  # 不使用虚拟内存
-        drop_last=True,  # 除于batch_size余下的数据
-        collate_fn=detection_collate,
-    )
-    # 数据查看
-    # iter(data_loader).__next__()
-    return data_loader
-
-
-def load_weight(path_weight, model, optimizer=None, lr_scheduler=None, device=torch.device('cpu')):
+def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=torch.device('cpu')):
     start_epoch = 0
+
     # model_dict = model.state_dict() # 获取模型每层的参数阵
-    if path_weight and os.path.exists(path_weight):
-        checkpoint = torch.load(path_weight, map_location=device)
+    # if True:
+    #     model_dict = model.state_dict()
+    #     pretrained_dict = torch.load(file_weight, map_location=device)
+    #     dd = {}
+    #     for k, v in pretrained_dict.items():
+    #         if model_dict[k].shape == v.shape:
+    #             dd[k] = v
+    #     model_dict.update(dd)
+    #     model.load_state_dict(model_dict)
+    #     flog.warning('手动加载完成:%s',file_weight)
+    #     return start_epoch
+
+    if file_weight and os.path.exists(file_weight):
+        checkpoint = torch.load(file_weight, map_location=device)
+
+        '''对多gpu的k进行修复'''
+        pretrained_dict = checkpoint['model']
+        dd = {}
+        for k, v in pretrained_dict.items():
+            dd[k.replace('module.', '')] = v
         # 特殊处理
-        # if False:
+        # if True:
         #     # del checkpoint['model']['ClassHead.0.conv1x1.weight']
         #     # del checkpoint['model']['ClassHead.0.conv1x1.bias']
         #     # del checkpoint['model']['ClassHead.1.conv1x1.weight']
@@ -152,18 +64,19 @@ def load_weight(path_weight, model, optimizer=None, lr_scheduler=None, device=to
         #     # del checkpoint['model']['ClassHead.2.conv1x1.weight']
         #     # del checkpoint['model']['ClassHead.2.conv1x1.bias']
         #     model.load_state_dict(checkpoint['model'], strict=False)
-        missing_keys, unexpected_keys = model.load_state_dict(checkpoint['model'])
-        flog.debug('missing_keys %s', missing_keys)
-        flog.debug('unexpected_keys %s', unexpected_keys)
+        keys_missing, keys_unexpected = model.load_state_dict(dd, strict=False)
+        if len(keys_missing) > 0 or len(keys_unexpected):
+            flog.error('missing_keys %s', keys_missing)
+            flog.error('unexpected_keys %s', keys_unexpected)
         if optimizer:
             optimizer.load_state_dict(checkpoint['optimizer'])
         if lr_scheduler:
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         start_epoch = checkpoint['epoch'] + 1
-        flog.warning('已加载 feadre 权重文件为 %s', path_weight)
+        flog.warning('已加载 feadre 权重文件为 %s', file_weight)
     else:
         # raise Exception(' 未加载 feadre权重文件 ')
-        flog.warning(' 未加载 feadre权重文件 %s', path_weight)
+        flog.warning(' 未加载 feadre权重文件 %s', file_weight)
     return start_epoch
 
 

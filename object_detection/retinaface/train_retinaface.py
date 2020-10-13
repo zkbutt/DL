@@ -8,7 +8,7 @@ from f_tools.datas.data_pretreatment import Compose, ToTensor, Resize, Normaliza
     ColorJitter, RandomHorizontalFlip4TS, ResizeKeep
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 from f_tools.fits.f_lossfun import KeypointsLoss
-from f_tools.fits.f_show import plot_loss_and_lr
+from f_tools.fits.f_show_fit_res import plot_loss_and_lr
 from f_tools.fits.fitting.f_fit_retinaface import f_train_one_epoch, f_evaluate
 from f_tools.fun_od.f_anc import AnchorsFound
 from object_detection.f_fit_tools import save_weight, load_weight

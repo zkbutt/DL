@@ -2,6 +2,7 @@ import torch
 import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.fun_od.f_boxes import nms
 
 
 def xywh2ltrb(boxes):
@@ -109,7 +110,7 @@ def match(bboxs, labels, keypoints, anc, idx, loc_t, conf_t, landm_t,
         anc_bbox_ind[bbox_anc_ind[j]] = j
 
     # [anc个,4] 根据 anc个bbox索引 让bbox与anc同维便于后面运算
-    matches_bbox = bboxs[anc_bbox_ind] # 这里有问题? anc_bbox_ind这个还未进行阀值筛选
+    matches_bbox = bboxs[anc_bbox_ind]  # 这里有问题? anc_bbox_ind这个还未进行阀值筛选
     # [anc个] 取出每一个anchor对应的label 同上
     conf = labels[anc_bbox_ind]
     # [anc个,10] 取出每一个anchor对应的landms
@@ -177,7 +178,7 @@ def log_sum_exp(x):
     return torch.log(torch.sum(torch.exp(x - x_max), 1, keepdim=True)) + x_max
 
 
-def decode(loc, priors, variances):
+def decode(loc, priors, variances=(0.1, 0.2)):
     '''
     anc的使用loc进行调整,调整预测框并转换为ltrb 输入支持(xxx,4) xywh
     :param loc:  回归系数 torch.Size([37840, 4])
@@ -187,13 +188,13 @@ def decode(loc, priors, variances):
     '''
     boxes = torch.cat((priors[:, :2] + loc[:, :2] * variances[0] * priors[:, 2:],
                        priors[:, 2:] * torch.exp(loc[:, 2:] * variances[1])), 1)
-    # x y w h -> ltrb
+    # xywh -> ltrb
     boxes[:, :2] -= boxes[:, 2:] / 2  # 中点移左上
     boxes[:, 2:] += boxes[:, :2]
     return boxes
 
 
-def decode_landm(pre, priors, variances):
+def decode_landm(pre, priors, variances=(0.1, 0.2)):
     # 关键点解码
     landms = torch.cat((priors[:, :2] + pre[:, :2] * variances[0] * priors[:, 2:],
                         priors[:, :2] + pre[:, 2:4] * variances[0] * priors[:, 2:],
@@ -204,37 +205,28 @@ def decode_landm(pre, priors, variances):
     return landms
 
 
-def non_max_suppression(boxes, conf_thres=0.5, nms_thres=0.3):
+def non_max_suppression(detection, conf_thres=0.5, nms_thres=0.3):
     '''
     输入左上右下
     :param boxes: # 已连接的 <class 'tuple'>: (37840, 15) 4+1+10
     :param conf_thres: 类别得分阀值
-    :param nms_thres:
+    :param nms_thres: nms分数
     :return:
     '''
-    detection = boxes
     # 1 . 选出得分大于 0.5 的行
     mask = detection[:, 4] >= conf_thres
     detection = detection[mask]
-    if not np.shape(detection)[0]:
+    if detection.shape[0] == 0:
         flog.warning('第一级 conf_thres 没有目标 %s', conf_thres)
         return []
-
-    best_box = []
-    scores = detection[:, 4]  # 降一维 (18920)
+    else:
+        flog.debug('过滤后有 %s 个', detection.shape[0])
+    scores = detection[:, 4]
+    bbox = detection[:, :4]
     # 2 . 根据得分对框进行从大到小排序。
-    arg_sort = torch.argsort(scores, descending=True)  # np反序索引
-    detection = detection[arg_sort]  # 行重组 <class 'tuple'>: (18920, 15)
+    keep = nms(bbox, scores, nms_thres)
 
-    while detection.shape[0] > 0:  # 按分数遍历
-        # 3、每次取出得分最大的框，计算其与其它所有预测框的重合程度，重合程度过大的则剔除。
-        best_box.append(detection[0])
-        if len(detection) == 1:
-            break
-        ious = jaccard(best_box[-1][None], detection[1:])  # 最后最新的一个,增加一维
-        detection = detection[1:][ious < nms_thres]  # 面积大于阀值说明是同类不要
-
-    return best_box
+    return detection[keep]
 
 # def iou(b1, b2):
 #     '''

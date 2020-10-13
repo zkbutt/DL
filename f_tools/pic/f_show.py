@@ -1,6 +1,7 @@
 import collections
 import random
 
+import cv2
 import pylab
 import torch
 import torchvision
@@ -133,23 +134,46 @@ def show_od4dataet(train_data_set, num=5):
         plt.show()
 
 
+def show_od_keypoints4np(img_np, bboxs, keypoints, scores):
+    if isinstance(bboxs, torch.Tensor):
+        bboxs = bboxs.numpy()
+        keypoints = keypoints.numpy()
+        scores = scores.numpy()
+    for b, k, s in zip(bboxs, keypoints, scores):
+        b = b.astype(np.int)
+        k = k.astype(np.int)
+        text = "{:.4f}".format(s)
+        cv2.rectangle(img_np, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)
+        cx = b[0]
+        cy = b[1] + 12
+        cv2.putText(img_np, text, (cx, cy), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
+
+        cv2.circle(img_np, (k[0], k[1]), 1, (0, 0, 255), 4)
+        cv2.circle(img_np, (k[2], k[3]), 1, (0, 255, 255), 4)
+        cv2.circle(img_np, (k[4], k[5]), 1, (255, 0, 255), 4)
+        cv2.circle(img_np, (k[6], k[7]), 1, (0, 255, 0), 4)
+        cv2.circle(img_np, (k[8], k[9]), 1, (255, 0, 0), 4)
+    # 远程无法显示
+    # img_pil = Image.fromarray(img_np, mode="RGB")  # h,w,c
+    # img_pil.show()
+    show_image = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    cv2.imshow("after", show_image)
+    cv2.waitKey(0)
 
 
-def show_od4boxs(img, boxs, labels=None, is_tensor=False):
+def show_od4pil(img_pil, boxs, labels=None):
     '''
 
-    :param img: tensor
+    :param img_np: tensor 或 img_pil
     :param boxs: np
     :return:
     '''
     if labels:
         flog.info('show_od4boxs %s', labels)
     # ----------恢复原图-------ToTensor
-    if is_tensor:
-        img = transforms.ToPILImage()(img)
-        # img = Image.fromarray(img.astype('uint8')).convert('RGB')
-    draw = ImageDraw.Draw(img)
-    im_width, im_height = img.size
+    draw = ImageDraw.Draw(img_pil)
+    im_width, im_height = img_pil.size
+    print(im_width, im_height)
     for box in boxs:
         xmin, ymin, xmax, ymax = box
         (left, right, top, bottom) = (xmin * 1, xmax * 1,
@@ -158,7 +182,7 @@ def show_od4boxs(img, boxs, labels=None, is_tensor=False):
                    (right, top), (left, top)], width=4,
                   fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)])
         # _draw_text(draw, box_to_display_str_map, box, left, right, top, bottom, color)
-    plt.imshow(img)
+    plt.imshow(img_pil)
     plt.show()
 
 

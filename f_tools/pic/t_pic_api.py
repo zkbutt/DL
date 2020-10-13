@@ -61,6 +61,10 @@ def f转换():
     # ---------PIL2numpy---------
     img_np = np.array(img_pil)
 
+    # ---------ts2numpy---------
+    img_pil = transforms.ToPILImage()(img_ts)
+    img_np = Image.fromarray(img_pil.astype('uint8')).convert('RGB')
+
 
 if __name__ == '__main__':
     # f转换()

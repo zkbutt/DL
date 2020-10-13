@@ -1,10 +1,92 @@
-from typing import List, Tuple
-
 import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
 
-from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh
+from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints
+
+
+class LossOD_K(nn.Module):
+
+    def __init__(self, anc, loss_weight=(1., 1., 1.)):
+        '''
+
+        :param anc:
+        :param loss_weight:
+        '''
+        super().__init__()
+        self.location_loss = nn.SmoothL1Loss(reduction='none')
+        self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
+        self.anc = anc
+        self.loss_weight = loss_weight
+
+    def forward(self, p_bboxs, g_bboxs, p_labels, g_labels, p_keypoints, g_keypoints):
+        '''
+
+        :param p_bboxs: torch.Size([batch, 16800, 4])
+        :param g_bboxs:
+        :param p_labels:
+        :param g_labels: torch.Size([batch, 16800])
+        :param p_keypoints:
+        :param g_keypoints:
+        :return:
+        '''
+        # 正样本标签布尔索引 [batch, 16800]
+        mask_pos = g_labels > 0
+        # 每一个图片的正样本个数  Tensor[batch] 数据1维降维
+        pos_num = mask_pos.sum(dim=1)  # [batch] 这个用于batch中1个图没有正例不算损失和计算反例数
+
+        '''-----------bboxs 损失处理-----------'''
+        # 计算损失 [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
+        d_bboxs = diff_bbox(self.anc, g_bboxs)
+        loss_bboxs = self.location_loss(p_bboxs, d_bboxs).sum(dim=-1)  # smooth_l1_loss
+        loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)  # 正例损失过滤
+
+        '''-----------keypoints 损失处理-----------'''
+        d_keypoints = diff_keypoints(self.anc, g_keypoints)
+        loss_keypoints = self.location_loss(p_keypoints, d_keypoints).sum(dim=-1)
+        # 全0的不计算损失 与正例的布尔索引取交集
+        _mask = (mask_pos) * torch.all(g_keypoints > 0, dim=2)  # and一下 将全0的剔除
+        loss_keypoints = (_mask.float() * loss_keypoints).sum(dim=1)
+
+        '''-----------labels 损失处理-----------'''
+        # 移到中间才能计算
+        p_labels = p_labels.permute(0, 2, 1)  # (batch,16800,2) -> (batch,2,16800)
+        # (batch,2,16800)^[batch, 16800] ->[batch, 16800] 得同维每一个元素的损失
+        loss_labels = self.confidence_loss(p_labels, g_labels.long())
+        # 分类损失 - 负样本选取  选损失最大的
+        labels_neg = loss_labels.clone()
+        labels_neg[mask_pos] = torch.tensor(0.0).to(loss_labels)  # 正样本先置0 使其独立 排除正样本,选最大的
+
+        # 输入数组 选出反倒损失最大的N个 [33,11,55] -> 降[2,0,1] ->升[1,2,0] < 2 -> [T,F,T] con_idx(Tensor: [N, 8732])
+        _, labels_idx = labels_neg.sort(dim=1, descending=True)  # descending 倒序
+        # 得每一个图片batch个 最大值索引排序
+        _, labels_rank = labels_idx.sort(dim=1)  # 两次索引排序 用于取最大的n个布尔索引
+        # 计算每一层的反例数   [batch] -> [batch,1]  限制正样本3倍不能超过负样本的总个数  基本不可能超过总数
+        neg_num = torch.clamp(self.neg_ratio * pos_num, max=mask_pos.size(1)).unsqueeze(-1)
+        mask_neg = labels_rank < neg_num  # 选出最大的n个的mask  Tensor [batch, 8732]
+        # 正例索引 + 反例索引 得1 0 索引用于乘积筛选
+        mask_z = mask_pos.float() + mask_neg.float()
+        loss_labels = (loss_labels * (mask_z)).sum(dim=1)
+
+        '''-----------损失合并处理-----------'''
+        # 没有正样本的图像不计算分类损失  pos_num是每一张图片的正例个数 eg. [15, 3, 5, 0] -> [1.0, 1.0, 1.0, 0.0]
+        num_mask = (pos_num > 0).float()  # 统计一个batch中的每张图像中是否存在正样本
+        pos_num = pos_num.float().clamp(min=torch.finfo(torch.float).eps)  # 求平均 排除有0的情况取类型最小值
+
+        # 计算总损失平均值 /正样本数量 [n] 加上超参系数
+        loss_bboxs = (loss_bboxs * num_mask / pos_num).mean(dim=0)
+        loss_labels = (loss_labels * num_mask / pos_num).mean(dim=0)
+        loss_keypoints = (loss_keypoints * num_mask / pos_num).mean(dim=0)
+
+        loss_total = self.loss_total[0] * loss_bboxs \
+                     + self.loss_total[1] * loss_labels \
+                     + self.loss_total[2] * loss_keypoints
+
+        log_dict = {}
+        log_dict['loss_bboxs'] = loss_bboxs.item()
+        log_dict['loss_labels'] = loss_labels.item()
+        log_dict['loss_keypoints'] = loss_keypoints.item()
+        return loss_total, log_dict
 
 
 class MoreLabelsNumLossFun(nn.Module):
@@ -117,7 +199,8 @@ class ObjectDetectionLoss(nn.Module):
         # one_hot = F.one_hot(masks, num_classes=args.num_classes)
 
         p_labels = p_labels.permute(0, 2, 1)  # (batch,16800,2) -> (batch,2,16800)
-        loss_labels = self.confidence_loss(p_labels, g_labels.long())  # (batch,2,16800)^[batch, 16800] ->[batch, 16800] 得同维每一个元素的损失
+        loss_labels = self.confidence_loss(p_labels,
+                                           g_labels.long())  # (batch,2,16800)^[batch, 16800] ->[batch, 16800] 得同维每一个元素的损失
         # F.cross_entropy(p_labels, g_labels)
         # 分类损失 - 负样本选取  选损失最大的
         labels_neg = loss_labels.clone()
@@ -192,12 +275,12 @@ class KeypointsLoss(ObjectDetectionLoss):
     def __init__(self, ancs, neg_ratio, variance, loss_coefficient):
         super().__init__(ancs, neg_ratio, variance, loss_coefficient)
 
-    def _keypoints_anc_diff(self, pkeypoints):
+    def _keypoints_anc_diff(self, gkeypoints):
         '''
         计算pkeypoints相对anchors的回归参数
             anc [1, num_anchors, 4]
             只计算中心点损失, 但有宽高
-        :param pkeypoints: 已完成 正例匹配 torch.Size([batch, 16800, 10])
+        :param gkeypoints: 已完成 正例匹配 torch.Size([batch, 16800, 10])
         :return:
             返回 ground truth相对anchors的回归参数 这里是稀疏
         '''
@@ -208,7 +291,7 @@ class KeypointsLoss(ObjectDetectionLoss):
         ancs_wh = ancs_.repeat(1, 5)[None]
 
         # 这里 scale_xy 是乘10 0维自动广播[batch, 16800, 10]/torch.Size([1, 16800, 10])
-        gxy = self.scale_xy * (pkeypoints - ancs_xy) / ancs_wh
+        gxy = self.scale_xy * (gkeypoints - ancs_xy) / ancs_wh
         return gxy
 
     def keypoints_loss(self, pkeypoints, gkeypoints, mask_pos):
@@ -243,14 +326,14 @@ class KeypointsLoss(ObjectDetectionLoss):
 
 
 class PredictOutput(nn.Module):
-    def __init__(self, ancs, img_size, variance=(0.1, 0.2), scores_threshold=0.05, iou_threshold=0.5, max_output=100):
+    def __init__(self, ancs, img_size, variance=(0.1, 0.2), scores_threshold=0.5, iou_threshold=0.5, max_output=100):
         '''
 
         :param ancs: 生成的基础ancs  xywh  只有一张图  (m*w*h,4)
         :param img_size: 输入尺寸 (300, 300) (w, h)
         :param variance: 用于控制预测值
         :param iou_threshold: iou阀值
-        :param scores_threshold: scores分数过小剔除
+        :param scores_threshold: scores 分数小于0.5的不要
         :param max_output: 最大预测数
         '''
         super(PredictOutput, self).__init__()
@@ -329,7 +412,7 @@ class PredictOutput(nn.Module):
             # [num_classes] -> [8732, num_classes]
             idxs = idxs.view(1, -1).expand_as(scores_p)
 
-            # 移除归为背景类别的概率信息
+            # 移除归为背景类别的概率信息 不要背景
             bboxs_p = bboxs_p[:, 1:, :]  # [8732, 21, 4] -> [8732, 20, 4]
             scores_p = scores_p[:, 1:]  # [8732, 21] -> [8732, 20]
             idxs = idxs[:, 1:]  # [8732, 21] -> [8732, 20]
@@ -356,7 +439,7 @@ class PredictOutput(nn.Module):
 
         # remove empty boxes 面积小的   ---长宽归一化值 小于一长宽分之一的不要
         ws, hs = bboxs_p[:, 2] - bboxs_p[:, 0], bboxs_p[:, 3] - bboxs_p[:, 1]
-        keep = (ws >= 1. / self.img_size[0]) & (hs >= 1. / self.img_size[1])  # 目标大于1个像素的
+        keep = (ws >= 1. / self.img_size[0]) & (hs >= 1. / self.img_size[1])  # 目标大于1个像素的不要
         keep = keep.nonzero(as_tuple=False).squeeze(1)
         bboxs_p, scores_p, idxs = bboxs_p[keep], scores_p[keep], idxs[keep]
 

@@ -3,7 +3,7 @@ from itertools import product as product
 import numpy as np
 from math import ceil
 
-from f_tools.fun_od.f_boxes import fix_anc4p
+from f_tools.fun_od.f_boxes import fix_bbox
 
 
 class AnchorsFound(object):
@@ -105,7 +105,7 @@ if __name__ == '__main__':
     # xs=[0.1, 0.2]
 
     '''核心 box 修复'''
-    fix_anc4p(anchors, mbox_loc, (1, 1))
+    fix_bbox(anchors, mbox_loc, (1, 1))
 
     # --------------anchors 转换画图--------------
     __anchors = anchors.clone()

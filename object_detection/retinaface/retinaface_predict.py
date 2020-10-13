@@ -17,6 +17,10 @@ def preprocess_input(image):
 
 class Retinaface(object):
 
+    def __init__(self, model) -> None:
+        super().__init__()
+        self.model = model
+
     def detect_image(self, image):
         '''
         检测图片
@@ -63,6 +67,7 @@ class Retinaface(object):
             conf = conf.data.squeeze(0)[:, 1:2].cpu().numpy()  # 取出人脸概率  index0为背景 index1为人脸
 
             # 元素横叠(行方向)
+            cat = torch.cat([boxes, conf, landms], dim=-1)
             boxes_conf_landms = np.concatenate([boxes, conf, landms], -1)
             # 同一类型,分数排序, iou大于某阀值的 全部剔除, 然后继续
             boxes_conf_landms = non_max_suppression(boxes_conf_landms, self.confidence)

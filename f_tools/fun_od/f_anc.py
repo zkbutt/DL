@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from f_tools.fun_od.f_boxes import ltrb2xywh, ltrb2ltwh, fix_anc4p
+from f_tools.fun_od.f_boxes import ltrb2xywh, ltrb2ltwh, fix_bbox
 
 cor_names = {
     'aliceblue': '#F0F8FF',
@@ -459,6 +459,7 @@ class AnchorsFound(object):
         '''
         super(AnchorsFound, self).__init__()
         # 定义对应3个特征的尺寸 [[16, 32], [64, 128], [256, 512]] 这里是框正方形
+        # 这个尺寸是640上面的尺寸
         self.anchors_size = anchors_size  # 这个定义一个特图有多少个Anchors
         # 特征层对应的步距   [8, 16, 32] 原图size/特图size = images/feature_maps = steps
         self.feature_map_steps = feature_map_steps  # 这个定义特图下采样比例
@@ -542,7 +543,7 @@ def __t_anc4found():
     mbox_ldm = torch.rand(2, 10)
     # xs=[0.1, 0.2]
     '''核心 box 修复'''
-    fix_anc4p(anchors, mbox_loc, (1, 1))
+    fix_bbox(anchors, mbox_loc, (1, 1))
     # --------------anchors 转换画图--------------
     __anchors = anchors.clone()
     __anchors[:, [0, 2]] = __anchors[:, [0, 2]] * size[0]

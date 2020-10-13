@@ -47,8 +47,7 @@ class LandmarkHead(nn.Module):
 
 
 class RetinaFace(nn.Module):
-    def __init__(self, model_name, pretrain_path,
-                 in_channels, out_channel, return_layers, anchor_num, num_classes):
+    def __init__(self, backbone, in_channels, out_channel, return_layers, anchor_num, num_classes):
         '''
 
         :param in_channels: fpn的输入通道维度 数组对应输
@@ -58,21 +57,6 @@ class RetinaFace(nn.Module):
         :param num_classes: 样本的类别数  输出类别数
         '''
         super(RetinaFace, self).__init__()
-        if model_name == 'mobilenet0.25':
-            backbone = MobileNetV1()
-            if pretrain_path and os.path.exists(pretrain_path):
-                checkpoint = torch.load(pretrain_path, map_location=torch.device('cpu'))
-                # checkpoint = torch.load(pretrain_path)  # 这里不用cpu要报错
-                new_state_dict = OrderedDict()
-                for k, v in checkpoint['state_dict'].items():
-                    name = k[7:]  # 移除后7层
-                    new_state_dict[name] = v
-                # load params
-                backbone.load_state_dict(new_state_dict)
-                flog.debug('backbone  权重加载成功 %s', pretrain_path)
-        elif model_name == 'Resnet50':
-            backbone = models.resnet50()
-
         # ---根据字典抽取结构输出---
         # import torchvision.models._utils as _utils
         # self.body = _utils.IntermediateLayerGetter(backbone, {'stage1': 1, 'stage2': 2, 'stage3': 3})
@@ -116,6 +100,7 @@ class RetinaFace(nn.Module):
 
         :param inputs: tensor(batch,c,h,w)
         :return:
+
         '''
         out = self.body(inputs)  # 输出字典 {1:层1输出,2:层2输出,3:层2输出}
 
@@ -138,11 +123,6 @@ class RetinaFace(nn.Module):
 
         # if torchvision._is_tracing():  #预测模式 训练时是不会满足的 训练和预测进行不同的处理
         output = (bbox_regressions, classifications, ldm_regressions)
-
-        # if self.training:
-        # else:
-        #     # 预测时归一化
-        #     output = (bbox_regressions, F.softmax(classifications, dim=-1), ldm_regressions)
         return output
 
 

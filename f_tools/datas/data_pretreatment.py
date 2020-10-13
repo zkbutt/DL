@@ -6,7 +6,8 @@ import torchvision.transforms
 from torchvision.transforms import functional as F
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.pic.size_handler import resize_img_keep_np, resize_boxes4np
+from f_tools.pic.f_show import show_od4pil, show_od_keypoints4np
+from f_tools.pic.size_handler import resize_img_keep_np, resize_boxes4np, resize_boxes4ratio, resize_keypoints4ratio
 
 
 class Compose(object):
@@ -15,7 +16,7 @@ class Compose(object):
     def __init__(self, transforms):
         self.transforms = transforms
 
-    def __call__(self, image, target):
+    def __call__(self, image, target=None):
         for t in self.transforms:
             image, target = t(image, target)
         return image, target
@@ -37,12 +38,14 @@ class ResizeKeep():
         :return:
         '''
         img_np = np.array(image)
-        img_np, old_size, _ = resize_img_keep_np(img_np, self.newsize)
+        img_np, ratio, old_size, _ = resize_img_keep_np(img_np, self.newsize)
         img_pil = Image.fromarray(img_np, mode="RGB")
 
-        bbox = target["bboxs"]
-        resize_boxes4np(bbox, old_size, self.newsize)
+        if target:
+            target["bboxs"] = target["bboxs"] * ratio
+            target['keypoints'] = target['keypoints'] * ratio
 
+        # show_od_keypoints4np(img_np, target["bboxs"], target['keypoints'], target['labels'])
         return img_pil, target
 
 
@@ -60,14 +63,16 @@ class Resize(object):
         w, h = image.size  # PIL wh
         h_ratio, w_ratio = np.array([h, w]) / self.resize.size  # hw
         image = self.resize(image)
-        bbox = target["bboxs"]
-        bbox[:, [0, 2]] = bbox[:, [0, 2]] / w_ratio
-        bbox[:, [1, 3]] = bbox[:, [1, 3]] / h_ratio
 
-        if 'keypoints' in target:
-            keypoints = target['keypoints']
-            keypoints[:, ::2] = keypoints[:, ::2] / w_ratio
-            keypoints[:, 1::2] = keypoints[:, 1::2] / h_ratio
+        if target:
+            bbox = target["bboxs"]
+            bbox[:, [0, 2]] = bbox[:, [0, 2]] / w_ratio
+            bbox[:, [1, 3]] = bbox[:, [1, 3]] / h_ratio
+
+            if 'keypoints' in target:
+                keypoints = target['keypoints']
+                keypoints[:, ::2] = keypoints[:, ::2] / w_ratio
+                keypoints[:, 1::2] = keypoints[:, 1::2] / h_ratio
         return image, target
 
 
@@ -81,11 +86,13 @@ class RandomHorizontalFlip4TS(object):
         if random.random() < self.prob:
             # height, width = image.shape[-2:]
             image = image.flip(-1)  # 水平翻转图片
-            bbox = target["bboxs"]
-            # bbox: xmin, ymin, xmax, ymax
-            # bbox[:, [0, 2]] = width - bbox[:, [2, 0]]  # 翻转对应bbox坐标信息
-            bbox[:, [0, 2]] = 1.0 - bbox[:, [2, 0]]  # 翻转对应bbox坐标信息
-            target["bboxs"] = bbox
+
+            if target:
+                bbox = target["bboxs"]
+                # bbox: xmin, ymin, xmax, ymax
+                # bbox[:, [0, 2]] = width - bbox[:, [2, 0]]  # 翻转对应bbox坐标信息
+                bbox[:, [0, 2]] = 1.0 - bbox[:, [2, 0]]  # 翻转对应bbox坐标信息
+                target["bboxs"] = bbox
         return image, target
 
 
@@ -114,16 +121,17 @@ class RandomHorizontalFlip4PIL(object):
             # flog.debug('width,height %s,%s', width, height)
             image = image.transpose(Image.FLIP_LEFT_RIGHT)  # 水平翻转图片
 
-            bbox = target["bboxs"]
-            # bbox: ltrb
-            bbox[:, [0, 2]] = width - bbox[:, [2, 0]]  # 翻转对应bbox坐标信息
+            if target:
+                bbox = target["bboxs"]
+                # bbox: ltrb
+                bbox[:, [0, 2]] = width - bbox[:, [2, 0]]  # 翻转对应bbox坐标信息
 
-            if 'keypoints' in target:
-                keypoints = target['keypoints']
-                _t = np.all(keypoints > 0, axis=1)  # 全有效的行
-                ids = np.nonzero(_t)  # 获取 需更新的行索引      6和8是0
-                # ids = np.arange(0, len(keypoints[0]), 2)
-                keypoints[ids, ::2] = width - keypoints[ids, ::2]
+                if 'keypoints' in target:
+                    keypoints = target['keypoints']
+                    _t = np.all(keypoints > 0, axis=1)  # 全有效的行
+                    ids = np.nonzero(_t)  # 获取 需更新的行索引      6和8是0
+                    # ids = np.arange(0, len(keypoints[0]), 2)
+                    keypoints[ids, ::2] = width - keypoints[ids, ::2]
         return image, target
 
 
@@ -136,15 +144,16 @@ class ToTensor(object):
         w, h = image.size  # PIL wh
         image = F.to_tensor(image)  # 将PIL图片hw 转tensor c,h,w 且归一化
 
-        bbox = target["bboxs"]
+        if target:
+            bbox = target["bboxs"]
 
-        bbox[:, [0, 2]] = bbox[:, [0, 2]] / w
-        bbox[:, [1, 3]] = bbox[:, [1, 3]] / h
+            bbox[:, [0, 2]] = bbox[:, [0, 2]] / w
+            bbox[:, [1, 3]] = bbox[:, [1, 3]] / h
 
-        if 'keypoints' in target:
-            keypoints = target['keypoints']
-            keypoints[:, ::2] = keypoints[:, ::2] / w
-            keypoints[:, 1::2] = keypoints[:, 1::2] / h
+            if 'keypoints' in target:
+                keypoints = target['keypoints']
+                keypoints[:, ::2] = keypoints[:, ::2] / w
+                keypoints[:, 1::2] = keypoints[:, 1::2] / h
 
         return image, target
 

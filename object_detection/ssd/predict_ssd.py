@@ -16,6 +16,7 @@ from object_detection.ssd.src.ssd_model import SSD300, Backbone
 
 def create_model(num_classes):
     backbone = Backbone()
+    # 看 PostProcess
     model = SSD300(backbone=backbone, num_classes=num_classes)
 
     return model
@@ -47,7 +48,6 @@ if __name__ == '__main__':
     data_transform = p_transform4ssd.Compose([p_transform4ssd.Resize(),
                                               p_transform4ssd.ToTensor(),
                                               p_transform4ssd.Normalization()])
-
 
     # 加载类别信息
     category_index = {}
