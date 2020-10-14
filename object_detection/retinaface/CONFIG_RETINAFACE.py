@@ -1,8 +1,8 @@
 DEBUG = True
 IS_TRAIN = True
 IS_EVAL = False
-PATH_ROOT = 'M:/'
-# PATH_ROOT = '/home/bak3t/bak299g/'
+# PATH_ROOT = 'M:/'
+PATH_ROOT = '/home/bak3t/bak299g/'
 
 '''样本及预处理'''
 DATA_NUM_WORKERS = 10

@@ -3,6 +3,7 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.data_pretreatment import Resize, ResizeKeep
 from f_tools.f_general import get_path_root
 from object_detection.f_fit_tools import load_weight
 from object_detection.ssd import p_transform4ssd
@@ -45,9 +46,11 @@ if __name__ == '__main__':
         imgs.append(img)
 
     # from pil image to tensor, do not normalize image
-    data_transform = p_transform4ssd.Compose([p_transform4ssd.Resize(),
-                                              p_transform4ssd.ToTensor(),
-                                              p_transform4ssd.Normalization()])
+    data_transform = p_transform4ssd.Compose([
+        p_transform4ssd.Resize(),
+        p_transform4ssd.ToTensor(),
+        p_transform4ssd.Normalization(),
+    ])
 
     # 加载类别信息
     category_index = {}
@@ -96,5 +99,5 @@ if __name__ == '__main__':
                      thresh=0.5,
                      line_thickness=5)
             plt.imshow(img)
-            plt.show()
+            # plt.show()
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

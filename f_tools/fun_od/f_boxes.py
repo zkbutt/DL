@@ -56,22 +56,44 @@ def xywh2ltrb(bboxs):
 
 
 def diff_keypoints(anc, g_keypoints, variances=(0.1, 0.2)):
-    ancs_xy = anc[:, :2].repeat(1, 5)
-    ancs_wh = anc[:, 2:].repeat(1, 5)
-    _t = (g_keypoints - ancs_xy) / variances[0] / ancs_wh
+    '''
+    用anc同维 和 已匹配的GT 计算差异
+    :param anc:
+    :param g_keypoints:
+    :param variances:
+    :return:
+    '''
+    if len(anc.shape) == 2:
+        ancs_xy = anc[:, :2].repeat(1, 5)
+        ancs_wh = anc[:, 2:].repeat(1, 5)
+        _t = (g_keypoints - ancs_xy) / variances[0] / ancs_wh
+    elif len(anc.shape) == 3:
+        ancs_xy = anc[:, :, :2].repeat(1, 1, 5)
+        ancs_wh = anc[:, :, 2:].repeat(1, 1, 5)
+        _t = (g_keypoints - ancs_xy) / variances[0] / ancs_wh
+    else:
+        raise Exception('维度错误', anc.shape)
+
     return _t
 
 
 def diff_bbox(anc, g_bbox, variances=(0.1, 0.2)):
     '''
-    用预测的loc 和 anc得到 修复后的框
+    用anc同维 和 已匹配的GT 计算差异
     :param anc: xywh  (nn,4)
     :param p_loc: 修正系数 (nn,4)
     :return: 修复后的框
     '''
-    _a = (g_bbox[:, :2] - anc[:, :2]) / variances[0] / anc[:, 2:]
-    _b = (g_bbox[:, 2:] / anc[:, 2:]).log() / variances[1]
-    _t = torch.cat([_a, _b], dim=1)
+    if len(anc.shape) == 2:
+        _a = (g_bbox[:, :2] - anc[:, :2]) / variances[0] / anc[:, 2:]
+        _b = (g_bbox[:, 2:] / anc[:, 2:]).log() / variances[1]
+        _t = torch.cat([_a, _b], dim=1)
+    elif len(anc.shape) == 3:
+        _a = (g_bbox[:, :, :2] - anc[:, :, :2]) / variances[0] / anc[:, :, 2:]
+        _b = (g_bbox[:, :, 2:] / anc[:, :, 2:]).log() / variances[1]
+        _t = torch.cat([_a, _b], dim=2)
+    else:
+        raise Exception('维度错误', anc.shape)
     return _t
 
 
@@ -256,7 +278,7 @@ def pos_match(ancs, bboxs, criteria):
     :param criteria: 小于等于0.35的反例
     :return:
         label_neg_mask: 返回反例的布尔索引
-        anc_bbox_ind : anc对应的bbox的index 用于提出标签  与anc对应
+        anc_bbox_ind : 通过 g_bbox[anc_bbox_ind]  可选出标签 与anc对应 其它为0
     '''
     # (bboxs个,anc个)
     iou = calc_iou4ts(bboxs, ancs)

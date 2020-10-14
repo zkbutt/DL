@@ -1,5 +1,7 @@
 import os
 
+import torch
+
 from f_tools.GLOBAL_LOG import flog
 
 from object_detection.f_fit_tools import sysconfig, load_weight, save_weight
@@ -27,6 +29,7 @@ if __name__ == "__main__":
     '''
     '''------------------系统配置---------------------'''
     device = sysconfig(PATH_SAVE_WEIGHT)
+    device = torch.device("cpu")
 
     # claxx = RESNET50  # 这里根据实际情况改
     claxx = MOBILENET025  # 这里根据实际情况改

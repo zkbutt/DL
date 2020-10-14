@@ -7,7 +7,7 @@ from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox,
 
 class LossOD_K(nn.Module):
 
-    def __init__(self, anc, loss_weight=(1., 1., 1.)):
+    def __init__(self, anc, loss_weight=(1., 1., 1.), neg_ratio=3):
         '''
 
         :param anc:
@@ -16,8 +16,9 @@ class LossOD_K(nn.Module):
         super().__init__()
         self.location_loss = nn.SmoothL1Loss(reduction='none')
         self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
-        self.anc = anc
+        self.anc = anc.unsqueeze(dim=0)
         self.loss_weight = loss_weight
+        self.neg_ratio = neg_ratio
 
     def forward(self, p_bboxs, g_bboxs, p_labels, g_labels, p_keypoints, g_keypoints):
         '''
@@ -78,48 +79,15 @@ class LossOD_K(nn.Module):
         loss_labels = (loss_labels * num_mask / pos_num).mean(dim=0)
         loss_keypoints = (loss_keypoints * num_mask / pos_num).mean(dim=0)
 
-        loss_total = self.loss_total[0] * loss_bboxs \
-                     + self.loss_total[1] * loss_labels \
-                     + self.loss_total[2] * loss_keypoints
+        loss_total = self.loss_weight[0] * loss_bboxs \
+                     + self.loss_weight[1] * loss_labels \
+                     + self.loss_weight[2] * loss_keypoints
 
         log_dict = {}
         log_dict['loss_bboxs'] = loss_bboxs.item()
         log_dict['loss_labels'] = loss_labels.item()
         log_dict['loss_keypoints'] = loss_keypoints.item()
         return loss_total, log_dict
-
-
-class MoreLabelsNumLossFun(nn.Module):
-    def __init__(self, a=0.5, b=.5):
-        # 这里定义超参 a,b 为系数值
-        super().__init__()
-        self.a = torch.tensor(a)
-        self.b = torch.tensor(b)
-
-    def calculate(self, val):
-        _t = torch.pow(val, 2)
-        _t = torch.sum(_t, dim=1)
-        _t = torch.sqrt(_t)
-        ret = torch.mean(_t)
-        return ret
-
-    def forward(self, outputs: Tensor, y):
-        # 输出一行20列
-        # torch.Size([8, 20]) torch.Size([8, 20])
-        # flog.debug('forward %s %s', outputs, y)
-
-        y1 = torch.ones_like(outputs)
-        y1[y <= 0] = 0  # 取没有目标的值
-        y2 = torch.ones_like(outputs)
-        y2[y > 0] = 0  # 取没有目标的值
-
-        l1 = (y - outputs) * y1
-        l2 = (y - outputs) * y2
-
-        loss1 = self.calculate(l1)  # 已有目标的损失
-        loss2 = self.calculate(l2)  # 其它类大于0则损失
-
-        return self.a * loss1 + self.b * loss2
 
 
 class ObjectDetectionLoss(nn.Module):

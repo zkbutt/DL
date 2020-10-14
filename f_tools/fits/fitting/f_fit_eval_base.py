@@ -13,7 +13,9 @@ from f_tools.datas.f_coco.coco_eval import CocoEvaluator
 
 def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                       print_freq=60, lr_scheduler=None,
-                      ret_train_loss=None, ret_train_lr=None):
+                      ret_train_loss=None, ret_train_lr=None,
+                      is_mixture_fix=True,
+                      ):
     '''
 
     :param data_loader:
@@ -33,8 +35,28 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
     # ---半精度训练1---
     scaler = GradScaler()
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
-        # ---半精度训练2---
-        with autocast():
+        if is_mixture_fix:
+            # ---半精度训练2---
+            with autocast():
+                #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
+                loss_total, log_dict = loss_process(batch_data)
+
+                if ret_train_loss:
+                    ret_train_loss.append(loss_total.detach())
+
+                if not math.isfinite(loss_total):  # 当计算的损失为无穷大时停止训练
+                    flog.error("Loss is {}, stopping training".format(loss_total))
+                    flog.error(log_dict)
+                    sys.exit(1)
+                # ---半精度训练2  完成---
+
+            optimizer.zero_grad()
+            # ---半精度训练3---
+            scaler.scale(loss_total).backward()
+            scaler.step(optimizer)
+            scaler.update()  # # 查看是否要更新scaler
+        else:
+            '''-------------全精度--------------'''
             #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
             loss_total, log_dict = loss_process(batch_data)
 
@@ -45,17 +67,10 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                 flog.error("Loss is {}, stopping training".format(loss_total))
                 flog.error(log_dict)
                 sys.exit(1)
-        # ---半精度训练2  完成---
+            optimizer.zero_grad()
+            loss_total.backward()
+            optimizer.step()
 
-        optimizer.zero_grad()
-        # ---半精度训练3---
-        scaler.scale(loss_total).backward()
-        scaler.step(optimizer)
-        scaler.update()
-
-        # 半精度开了这两个要关
-        # losses.backward()
-        # optimizer.step()
         if lr_scheduler is not None:  # 每批训练lr更新器
             lr_scheduler.step()
 

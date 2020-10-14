@@ -161,7 +161,7 @@ class ToTensor(object):
 class Normalization(object):
     """------------- 根据img net 用于图片调整 输入 tensor --------------"""
 
-    def __init__(self, mean=None, std=None):
+    def __init__(self, mean: object = None, std: object = None) -> object:
         if mean is None:
             mean = [0.485, 0.456, 0.406]
         if std is None:
