@@ -9,6 +9,8 @@ from torch.cuda.amp import GradScaler, autocast
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.f_coco.coco_eval import CocoEvaluator
+from f_tools.fun_od.f_boxes import fix_bbox, fix_keypoints, xywh2ltrb
+from object_detection.f_retinaface.utils.train_eval_fun import _preprocessing_data
 
 
 def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
@@ -84,24 +86,32 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
 
 
 @torch.no_grad()
-def f_evaluate(data_loader, forecast_process, epoch, coco_res_bboxs, coco_res_keypoints=None):
-    '''
-
-    :param data_loader:
-    :param forecast_process:
-    :param epoch:
-    :return:
-    '''
+def f_evaluate(model, data_loader, anchors, device, epoch, coco_res_bboxs, coco_res_keypoints=None, ):
     metric_logger = MetricLogger(delimiter="  ")
     header = "Test: "
     print_freq = max(int(len(data_loader) / 5), 1)
 
     coco_evaluator = CocoEvaluator(data_loader.dataset.coco, ['bbox'])
+    cpu_device = torch.device("cpu")
 
     outputs = []
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
-        evaluator_time = time.time()  # 139911109878320
-        forecast_process(batch_data, epoch, coco_res_bboxs, coco_res_keypoints=coco_res_keypoints)
+        evaluator_time = time.time()
+
+
+
+
+        outputs = []
+        '''
+        bbox需要ltrb
+        '''
+        p_scores = 1
+        for index, (p_bboxs, p_labels, p_keypoints) in enumerate(out):
+            info = {"boxes": p_bboxs.to(cpu_device),
+                    "labels": p_labels.to(cpu_device),
+                    "scores": p_scores.to(cpu_device),
+                    "height_width": targets[index]["height_width"]}
+            outputs.append(info)
 
         eval_time = time.time() - evaluator_time
         metric_logger.update(eval_time=eval_time, coco_size=len(coco_res_bboxs))  # 这个填字典 添加的字段

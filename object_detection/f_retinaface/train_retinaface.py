@@ -1,6 +1,5 @@
 import numpy as np
 
-np.set_printoptions(suppress=True)  # 关闭科学计数
 
 import os
 
@@ -21,6 +20,7 @@ from object_detection.f_retinaface.utils.process_fun import init_model, data_loa
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
+    np.set_printoptions(suppress=True)  # 关闭科学计数
     # 检查保存权重文件夹是否存在，不存在则创建
     if not os.path.exists(CFG.PATH_SAVE_WEIGHT):
         try:

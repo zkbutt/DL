@@ -1,7 +1,7 @@
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb
+from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms
 from f_tools.pic.f_show import show_od_keypoints4ts, show_od4ts
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 
@@ -138,3 +138,63 @@ class LossHandler(FitBase):
         show_dict = {"loss_total": loss_total.detach().item(), }
         show_dict.update(**log_dict)
         return loss_total, show_dict
+
+
+class PredictHandler(FitBase):
+    def __init__(self, model, device, anchors, threshold_conf=0.5, threshold_nms=0.3):
+        super(PredictHandler, self).__init__(model, device)
+        self.anchors = anchors
+        self.threshold_nms = threshold_nms
+        self.threshold_conf = threshold_conf
+
+    def output_res(self, p_boxes, p_keypoints, p_scores):
+        '''
+        已修复的框 点 和对应的分数
+            1. 经分数过滤
+            2. 经NMS 出最终结果
+        :param p_boxes:
+        :param p_keypoints:
+        :param p_scores:
+        :return:
+        '''
+        mask = p_scores >= self.threshold_conf
+        p_boxes = p_boxes[mask]
+        p_scores = p_scores[mask]
+        p_keypoints = p_keypoints[mask]
+
+        if p_scores.shape[0] == 0:
+            flog.error('threshold_conf 过滤后 没有目标 %s', self.threshold_conf)
+            return None, None, None
+
+        flog.debug('threshold_conf 过滤后有 %s 个', p_scores.shape[0])
+        # 2 . 根据得分对框进行从大到小排序。
+        keep = nms(p_boxes, p_scores, self.threshold_nms)
+        flog.debug('threshold_nms 过滤后有 %s 个', len(keep))
+        p_boxes = p_boxes[keep]
+        p_scores = p_scores[keep]
+        p_keypoints = p_keypoints[keep]
+        return p_boxes, p_keypoints, p_scores
+
+    @torch.no_grad()
+    def predicting(self, img_ts4):
+        # ------模型输出处理-------
+        p_loc, p_conf, p_landms = self.model(img_ts4)
+        p_scores = torch.nn.functional.softmax(p_conf, dim=-1)
+        p_scores = p_scores[:, :, 1]
+        p_scores = p_scores.data.squeeze(0)
+
+        p_loc = p_loc.data.squeeze(0)
+        p_landms = p_landms.squeeze(0)
+
+        # ---修复----variances = (0.1, 0.2)
+        p_boxes = fix_bbox(self.anchors, p_loc)
+        xywh2ltrb(p_boxes, safe=False)
+
+        p_keypoints = fix_keypoints(self.anchors, p_landms)
+        p_boxes, p_keypoints, p_scores = self.output_res(p_boxes, p_keypoints, p_scores)
+        return p_boxes, p_keypoints, p_scores
+
+    def forward(self, batch_data):
+        # ------数据处理-------
+        images, _ = _preprocessing_data(batch_data, self.device)
+        return self.predicting(images)

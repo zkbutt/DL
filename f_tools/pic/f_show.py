@@ -226,7 +226,13 @@ def show_od_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
     draw = ImageDraw.Draw(pil_copy)
     cw = 3
     for bbox, k, s in zip(bboxs, keypoints, scores):
-        l, t, r, b = bbox.astype(np.int)
+        if isinstance(bboxs, np.ndarray):
+            l, t, r, b = bbox.astype(np.int)
+        elif isinstance(bboxs, torch.Tensor):
+            l, t, r, b = bbox.type(torch.int)
+        else:
+            raise Exception('类型错误', type(bboxs))
+
         # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
                   fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)])

@@ -3,19 +3,56 @@ import os
 import cv2
 import torch
 import numpy as np
+from PIL import Image
+
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
 from f_tools.fun_od.f_anc import AnchorsFound
 from f_tools.fun_od.f_boxes import xywh2ltrb, fix_bbox, fix_keypoints
-from f_tools.pic.f_show import show_od_keypoints4np
+from f_tools.pic.f_show import show_od4ts, show_od_keypoints4np, show_od_keypoints4pil
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import *
-from object_detection.f_retinaface.utils.process_fun import init_model, output_res
+from object_detection.f_retinaface.utils.process_fun import init_model, output_res, DATA_TRANSFORM
+from object_detection.f_retinaface.utils.train_eval_fun import PredictHandler
+
+
+def other():
+    global h, w, szie_scale4bbox, szie_scale4landmarks, img_ts
+    img_np = cv2.imread(os.path.join(path_img, file))
+    # 打开的是BRG转为RGB
+    img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+    # img_np = cv2.resize(img_np, (1280, 1280))
+    img_np_old = img_np.copy()  # 用于后续 绘制人脸框 使用
+    h, w, _ = img_np.shape
+    # 用于恢复bbox及ke
+    szie_scale4bbox = torch.Tensor([w, h] * 2)
+    szie_scale4landmarks = torch.Tensor([w, h] * 5)
+    # 预处理
+    img_np = img_np.astype(np.float32)
+    # 减掉RGB颜色均值  h,w,3 -> 3,h,w
+    img_np -= np.array((104, 117, 123), np.float32)
+    img_np = img_np.transpose(2, 0, 1)
+    # 增加batch_size维度 np->ts
+    img_ts = torch.from_numpy(img_np).unsqueeze(0)  # 最前面增加一维 可用 image[None]
+
 
 if __name__ == '__main__':
     '''
-    分辩录及预处理影响检测
+[2020-10-17 19:19:56,531] [predict_retinaface.py:95] [predict_retinaface:<module>] [DEBUG]- 最高分 tensor(0.8396)
+[2020-10-17 19:19:56,533] [process_fun.py:63] [process_fun:output_res] [DEBUG]- threshold_conf 过滤后有 58 个
+[2020-10-17 19:19:56,533] [process_fun.py:66] [process_fun:output_res] [DEBUG]- threshold_nms 过滤后有 6 个
+[2020-10-17 19:19:56,635] [predict_retinaface.py:95] [predict_retinaface:<module>] [DEBUG]- 最高分 tensor(0.9995)
+[2020-10-17 19:19:56,637] [process_fun.py:63] [process_fun:output_res] [DEBUG]- threshold_conf 过滤后有 180 个
+[2020-10-17 19:19:56,637] [process_fun.py:66] [process_fun:output_res] [DEBUG]- threshold_nms 过滤后有 6 个
+[2020-10-17 19:19:56,736] [predict_retinaface.py:95] [predict_retinaface:<module>] [DEBUG]- 最高分 tensor(0.9920)
+[2020-10-17 19:19:56,738] [process_fun.py:63] [process_fun:output_res] [DEBUG]- threshold_conf 过滤后有 207 个
+[2020-10-17 19:19:56,738] [process_fun.py:66] [process_fun:output_res] [DEBUG]- threshold_nms 过滤后有 15 个
+[2020-10-17 19:19:56,868] [predict_retinaface.py:95] [predict_retinaface:<module>] [DEBUG]- 最高分 tensor(0.5087)
+[2020-10-17 19:19:56,870] [process_fun.py:63] [process_fun:output_res] [DEBUG]- threshold_conf 过滤后有 9 个
+[2020-10-17 19:19:56,870] [process_fun.py:66] [process_fun:output_res] [DEBUG]- threshold_nms 过滤后有 2 个
+[2020-10-17 19:19:56,964] [predict_retinaface.py:95] [predict_retinaface:<module>] [DEBUG]- 最高分 tensor(0.9921)
+[2020-10-17 19:19:56,965] [process_fun.py:63] [process_fun:output_res] [DEBUG]- threshold_conf 过滤后有 116 个
+[2020-10-17 19:19:56,965] [process_fun.py:66] [process_fun:output_res] [DEBUG]- threshold_nms 过滤后有 6 个
     '''
-
     '''------------------系统配置---------------------'''
     device = torch.device('cpu')
     flog.info('模型当前设备 %s', device)
@@ -35,31 +72,25 @@ if __name__ == '__main__':
     files = os.listdir(path_img)
     for file in files:
         '''---------------数据加载及处理--------------'''
-        img_np = cv2.imread(os.path.join(path_img, file))
-        # 打开的是BRG转为RGB
-        img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
 
-        # img_np = cv2.resize(img_np, (1280, 1280))
-
-        img_np_old = img_np.copy()  # 用于后续 绘制人脸框 使用
-        h, w, _ = img_np.shape
+        img_pil = Image.open(os.path.join(path_img, file)).convert('RGB')
+        w, h = img_pil.size
         # 用于恢复bbox及ke
         szie_scale4bbox = torch.Tensor([w, h] * 2)
         szie_scale4landmarks = torch.Tensor([w, h] * 5)
 
-        # 预处理
-        img_np = img_np.astype(np.float32)
-        # 减掉RGB颜色均值  h,w,3 -> 3,h,w
-        img_np -= np.array((104, 117, 123), np.float32)
-        img_np = img_np.transpose(2, 0, 1)
-        # 增加batch_size维度 np->ts
-        img_ts = torch.from_numpy(img_np).unsqueeze(0)  # 最前面增加一维 可用 image[None]
+        img_ts = DATA_TRANSFORM['val'](img_pil)[0][None]
+
+        # other()
 
         # 生成 所有比例anchors
-        anchors = AnchorsFound([h, w], CFG.ANCHORS_SIZE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP).get_anchors()
+        anchors = AnchorsFound(CFG.IMAGE_SIZE, CFG.ANCHORS_SIZE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP).get_anchors()
 
         '''---------------预测开始--------------'''
         # (batch,++特图(w*h)*anc数,4) (batch,++特图(w*h)*anc数,2)  (batch,++特图(w*h)*anc数,10)
+        predict_handler = PredictHandler(model, device, anchors,
+                                         threshold_conf=0.5, threshold_nms=0.3)
+        predict_handler.predicting(img_ts)
         with torch.no_grad():
             p_loc, p_conf, p_landms = model(img_ts)
 
@@ -75,17 +106,19 @@ if __name__ == '__main__':
 
         # ---修复----variances = (0.1, 0.2)
         p_boxes = fix_bbox(anchors, p_loc)
-        xywh2ltrb(p_boxes)
+        xywh2ltrb(p_boxes, safe=False)
+
         p_keypoints = fix_keypoints(anchors, p_landms)
 
+        flog.debug('最高分 %s', p_scores.max())
         # 出结果
-        p_boxes, p_keypoints, p_scores = output_res(p_boxes, p_keypoints, p_scores)
+        p_boxes, p_keypoints, p_scores = output_res(p_boxes, p_keypoints, p_scores, threshold_conf=0.5)
         if p_boxes is not None:
             # 恢复尺寸
             p_boxes = p_boxes * szie_scale4bbox
             p_keypoints = p_keypoints * szie_scale4landmarks
 
             # 显示结果
-            # show_od_keypoints4np(img_np_old, p_boxes, p_keypoints, p_scores)
+            show_od_keypoints4pil(img_pil, p_boxes, p_keypoints, p_scores)
 
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

@@ -521,6 +521,10 @@ def t多分类():
     # loss.backward()
 
 
+def t手写():
+    pass
+
+
 def t二分类():
     pass
     size = (2, 1000)  # 同维比较

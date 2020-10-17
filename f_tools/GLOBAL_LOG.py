@@ -32,12 +32,13 @@ def get_logger(name='root'):
 
     # fmt = '%(asctime)s - %(pathname)s[line:%(lineno)d] - %(levelname)s: %(message)s'
     # formatter = logging.Formatter(fmt)
+    # black, red, green, yellow, blue, purple, cyan and white {color}，fg_ {color}，bg_ {color}：前景色和背景色
     log_colors_config = {
         'DEBUG': 'cyan',
         'INFO': 'green',
         'WARNING': 'yellow',
         'ERROR': 'red',
-        'CRITICAL': 'red',
+        'CRITICAL': 'red,bg_white',
     }
     formatter = colorlog.ColoredFormatter(
         '%(log_color)s[%(asctime)s] [%(filename)s:%(lineno)d] [%(module)s:%(funcName)s] [%(levelname)s]- %(message)s',
@@ -89,4 +90,5 @@ flog = get_logger(__name__)
 if __name__ == '__main__':
     # flog.debug('一个连接只需一个 %s', get_path_root)
     # flog.debug('多个连接无需   %s%s', [1, 2, {123}], get_path_root())
+    flog.critical(123)
     pass
