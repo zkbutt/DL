@@ -2,23 +2,45 @@ import torch
 import numpy as np
 
 
-def ltrb2xywh(bboxs):
-    bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
-    bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
-    bboxs[:, 0] = bboxs[:, 0] + 0.5 * bboxs[:, 2]
-    bboxs[:, 1] = bboxs[:, 1] + 0.5 * bboxs[:, 3]
+def ltrb2xywh(bboxs, safe=True):
+    dim = len(bboxs.shape)
+    if safe:
+        if isinstance(bboxs, np.ndarray):
+            bboxs = np.copy(bboxs)
+        elif isinstance(bboxs, torch.Tensor):
+            bboxs = torch.clone(bboxs)
+        else:
+            raise Exception('类型错误', type(bboxs))
+
+    if dim == 3:
+        bboxs[:, :, 2] = bboxs[:, :, 2] - bboxs[:, :, 0]
+        bboxs[:, :, 3] = bboxs[:, :, 3] - bboxs[:, :, 1]
+        bboxs[:, :, 0] = bboxs[:, :, 0] + 0.5 * bboxs[:, :, 2]
+        bboxs[:, :, 1] = bboxs[:, :, 1] + 0.5 * bboxs[:, :, 3]
+    elif dim == 2:
+        bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
+        bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
+        bboxs[:, 0] = bboxs[:, 0] + 0.5 * bboxs[:, 2]
+        bboxs[:, 1] = bboxs[:, 1] + 0.5 * bboxs[:, 3]
+    else:
+        raise Exception('维度错误', bboxs.shape)
     return bboxs
 
 
-def ltrb2ltwh(bboxs):
-    '''
-    :param bboxs:
-    :return:
-    '''
-    if bboxs.dim() == 3:
+def ltrb2ltwh(bboxs, safe=True):
+    dim = len(bboxs.shape)
+    if safe:
+        if isinstance(bboxs, np.ndarray):
+            bboxs = np.copy(bboxs)
+        elif isinstance(bboxs, torch.Tensor):
+            bboxs = torch.clone(bboxs)
+        else:
+            raise Exception('类型错误', type(bboxs))
+
+    if dim == 3:
         bboxs[:, :, 2] = bboxs[:, :, 2] - bboxs[:, :, 0]
         bboxs[:, :, 3] = bboxs[:, :, 3] - bboxs[:, :, 1]
-    elif bboxs.dim() == 2:
+    elif dim == 2:
         bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
         bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
     else:
@@ -26,13 +48,38 @@ def ltrb2ltwh(bboxs):
     return bboxs
 
 
-def xywh2ltrb(bboxs):
-    '''
+def ltwh2ltrb(bboxs, safe=True):
+    dim = len(bboxs.shape)
+    if safe:
+        if isinstance(bboxs, np.ndarray):
+            bboxs = np.copy(bboxs)
+        elif isinstance(bboxs, torch.Tensor):
+            bboxs = torch.clone(bboxs)
+        else:
+            raise Exception('类型错误', type(bboxs))
 
-    :param bboxs: [N, 4, 8732]
-    :return:
-    '''
-    if len(bboxs.shape) == 2:
+    if dim == 3:
+        bboxs[:, :, 2] = bboxs[:, 2] + bboxs[:, :, 0]
+        bboxs[:, :, 3] = bboxs[:, 3] + bboxs[:, :, 1]
+    elif dim == 2:
+        bboxs[:, 2] = bboxs[:, 2] + bboxs[:, 0]
+        bboxs[:, 3] = bboxs[:, 3] + bboxs[:, 1]
+    else:
+        raise Exception('维度错误', bboxs.shape)
+    return bboxs
+
+
+def xywh2ltrb(bboxs, safe=True):
+    dim = len(bboxs.shape)
+    if safe:
+        if isinstance(bboxs, np.ndarray):
+            bboxs = np.copy(bboxs)
+        elif isinstance(bboxs, torch.Tensor):
+            bboxs = torch.clone(bboxs)
+        else:
+            raise Exception('类型错误', type(bboxs))
+
+    if dim == 2:
         l = bboxs[:, 0] - 0.5 * bboxs[:, 2]
         t = bboxs[:, 1] - 0.5 * bboxs[:, 3]
         r = bboxs[:, 0] + 0.5 * bboxs[:, 2]
@@ -41,7 +88,7 @@ def xywh2ltrb(bboxs):
         bboxs[:, 1] = t  # ymin
         bboxs[:, 2] = r  # xmax
         bboxs[:, 3] = b  # ymax
-    elif len(bboxs.shape) == 3:
+    elif dim == 3:
         l = bboxs[:, :, 0] - 0.5 * bboxs[:, :, 2]
         t = bboxs[:, :, 1] - 0.5 * bboxs[:, :, 3]
         r = bboxs[:, :, 0] + 0.5 * bboxs[:, :, 2]
@@ -73,7 +120,6 @@ def diff_keypoints(anc, g_keypoints, variances=(0.1, 0.2)):
         _t = (g_keypoints - ancs_xy) / variances[0] / ancs_wh
     else:
         raise Exception('维度错误', anc.shape)
-
     return _t
 
 
@@ -125,6 +171,14 @@ def fix_keypoints(anc, p_keypoints, variances=(0.1, 0.2)):
     ancs_wh = anc[:, 2:].repeat(1, 5)
     _t = ancs_xy + p_keypoints * variances[0] * ancs_wh
     return _t
+
+
+def recover_bbox(bbox, size):
+    pass
+
+
+def recover_keypoints(keypoints, size):
+    pass
 
 
 def bbox_iou4np(bbox_a, bbox_b):
@@ -196,34 +250,23 @@ def bbox_iou4ts(box_a, box_b):
 
 
 def box_area(boxes):
-    """
-    Computes the area of a set of bounding boxes, which are specified by its
-    (x1, y1, x2, y2) coordinates.
-
-    Arguments:
-        boxes (Tensor[N, 4]): boxes for which the area will be computed. They
-            are expected to be in (x1, y1, x2, y2) format
-
-    Returns:
-        area (Tensor[N]): area for each box
-    """
     return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
 
-def calc_iou4ts(boxes1, boxes2):
+def calc_iou4ts(bboxs, ancs):
     '''
 
-    :param boxes1: (Tensor[N, 4])  bboxs
-    :param boxes2: (Tensor[M, 4])  ancs
+    :param bboxs: (Tensor[N, 4])  bboxs  ltrb
+    :param ancs: (Tensor[M, 4])  ancs   xywh
     :return: (Tensor[N, M])
     '''
-    area1 = box_area(boxes1)
-    area2 = box_area(boxes2)
+    area1 = box_area(bboxs)
+    area2 = box_area(ancs)
 
     #  When the shapes do not match,
     #  the shape of the returned output tensor follows the broadcasting rules
-    lt = torch.max(boxes1[:, None, :2], boxes2[:, :2])  # left-top [N,M,2]
-    rb = torch.min(boxes1[:, None, 2:], boxes2[:, 2:])  # right-bottom [N,M,2]
+    lt = torch.max(bboxs[:, None, :2], ancs[:, :2])  # left-top [N,M,2]
+    rb = torch.min(bboxs[:, None, 2:], ancs[:, 2:])  # right-bottom [N,M,2]
 
     wh = (rb - lt).clamp(min=0)  # [N,M,2]
     inter = wh[:, :, 0] * wh[:, :, 1]  # [N,M]
@@ -273,15 +316,15 @@ def pos_match(ancs, bboxs, criteria):
     正样本选取策略
         1. 每一个bboxs框 尽量有一个anc与之对应
         2. 每一个anc iou大于大于阀值的保留
-    :param ancs:  anc模板
-    :param bboxs: 标签框
+    :param ancs:  anc模板 ltrb
+    :param bboxs: 标签框 (xx,4)
     :param criteria: 小于等于0.35的反例
     :return:
         label_neg_mask: 返回反例的布尔索引
         anc_bbox_ind : 通过 g_bbox[anc_bbox_ind]  可选出标签 与anc对应 其它为0
     '''
     # (bboxs个,anc个)
-    iou = calc_iou4ts(bboxs, ancs)
+    iou = calc_iou4ts(bboxs, xywh2ltrb(ancs))
     # (1,anc个值)降维  每一个anc对应的bboxs  最大的iou和index
     anc_bbox_iou, anc_bbox_ind = iou.max(dim=0)  # 存的是 bboxs的index
 

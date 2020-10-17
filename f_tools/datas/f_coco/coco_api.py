@@ -186,6 +186,8 @@ if __name__ == '__main__':
     # annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
     file_ann = '{}/annotations/person_keypoints_{}.json'.format(path_root, data_type)
 
+    path_data_root =  'm:/AI/datas/widerface/coco'
+
     # 初始化标注数据的 COCO api
     coco = COCO(file_ann)
 

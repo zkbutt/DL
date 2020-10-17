@@ -1,15 +1,18 @@
+import numpy as np
+
+np.set_printoptions(suppress=True)  # 关闭科学计数
+
 import os
 
 import torch
 from torch import optim
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_lossfun import LossOD_K
 from f_tools.fun_od.f_anc import AnchorsFound
-from object_detection.f_fit_tools import load_weight
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 from object_detection.f_retinaface.utils.process_fun import init_model, data_loader, train_eval
-import numpy as np
 
 '''
 全精度 time: 0.5965  data: 0.0001  max mem: 5577   实际7333
@@ -18,7 +21,6 @@ import numpy as np
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
-    np.set_printoptions(suppress=True)  # 关闭科学计数
     # 检查保存权重文件夹是否存在，不存在则创建
     if not os.path.exists(CFG.PATH_SAVE_WEIGHT):
         try:
@@ -27,18 +29,20 @@ if __name__ == '__main__':
             flog.error(' %s %s', CFG.PATH_SAVE_WEIGHT, e)
     CFG.SAVE_FILE_NAME = os.path.basename(__file__)
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
+    device = torch.device('cuda:%s' % 0 if torch.cuda.is_available() else "cpu")
     flog.info('模型当前设备 %s', device)
 
     if CFG.DEBUG:
         # device = torch.device("cpu")
         CFG.PRINT_FREQ = 1
         CFG.PATH_SAVE_WEIGHT = None
-        CFG.BATCH_SIZE = 2
+        CFG.BATCH_SIZE = 5
         CFG.DATA_NUM_WORKERS = 1
         pass
     else:
         torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
+
+    # CFG.FILE_FIT_WEIGHT = None
 
     '''---------------数据加载及处理--------------'''
     loader_train, loader_val = data_loader(CFG, device)

@@ -1,7 +1,7 @@
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import load_data4voc
+from f_tools.f_torch_tools import load_weight, save_weight
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr, plot_map
-from object_detection.f_fit_tools import sysconfig, save_weight, load_weight
 from object_detection.ssd.CONFIG_SSD import NUM_CLASSES, PATH_FIT_WEIGHT, PATH_DATA_ROOT, BATCH_SIZE, \
     END_EPOCHS, PRINT_FREQ, PATH_SSD_WEIGHT, DEBUG, PATH_SAVE_WEIGHT, PATH_MODEL_WEIGHT, DATA_NUM_WORKERS, IS_TRAIN, \
     IS_EVAL
@@ -154,8 +154,15 @@ if __name__ == '__main__':
     '''
     '''------------------系统配置---------------------'''
     torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
-    device = sysconfig(PATH_SAVE_WEIGHT)
+    # 检查保存权重文件夹是否存在，不存在则创建
+    if not os.path.exists(PATH_SAVE_WEIGHT):
+        try:
+            os.makedirs(PATH_SAVE_WEIGHT)
+        except Exception as e:
+            flog.error(' %s %s', PATH_SAVE_WEIGHT, e)
 
+    device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
+    flog.info('模型当前设备 %s', device)
     if DEBUG:
         PRINT_FREQ = 1
         PATH_SAVE_WEIGHT = None

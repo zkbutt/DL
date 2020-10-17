@@ -2,7 +2,10 @@ import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
 
+from f_tools.GLOBAL_LOG import flog
 from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints
+from f_tools.pic.f_show import show_od4ts
+from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 
 
 class LossOD_K(nn.Module):
@@ -20,7 +23,7 @@ class LossOD_K(nn.Module):
         self.loss_weight = loss_weight
         self.neg_ratio = neg_ratio
 
-    def forward(self, p_bboxs, g_bboxs, p_labels, g_labels, p_keypoints, g_keypoints):
+    def forward(self, p_bboxs, g_bboxs, p_labels, g_labels, p_keypoints, g_keypoints, imgs_ts=None):
         '''
 
         :param p_bboxs: torch.Size([batch, 16800, 4])
@@ -31,16 +34,30 @@ class LossOD_K(nn.Module):
         :param g_keypoints:
         :return:
         '''
-        # 正样本标签布尔索引 [batch, 16800]
+        # 正样本标签布尔索引 [batch, 16800] 同维运算
         mask_pos = g_labels > 0
-        # 每一个图片的正样本个数  Tensor[batch] 数据1维降维
+
+        if CFG.IS_VISUAL:
+            flog.debug('显示匹配的框 %s 个', torch.sum(mask_pos))
+            for i, (img_ts, mask) in enumerate(zip(imgs_ts, mask_pos)):
+                # 遍历降维 self.anc([1, 16800, 4])
+                _t = self.anc.view(-1, 4).clone()
+                _t[:, ::2] = _t[:, ::2] * CFG.IMAGE_SIZE[0]
+                _t[:, 1::2] = _t[:, 1::2] * CFG.IMAGE_SIZE[1]
+                _t = _t[mask, :]
+                show_od4ts(img_ts, xywh2ltrb(_t), torch.ones(200))
+
+        # 每一个图片的正样本个数  [batch, 16800] ->[batch]
         pos_num = mask_pos.sum(dim=1)  # [batch] 这个用于batch中1个图没有正例不算损失和计算反例数
 
         '''-----------bboxs 损失处理-----------'''
-        # 计算损失 [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
+        # [1, 16800, 4] ^^ [batch, 16800, 4] = [batch, 16800, 4]
         d_bboxs = diff_bbox(self.anc, g_bboxs)
+        # [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
         loss_bboxs = self.location_loss(p_bboxs, d_bboxs).sum(dim=-1)  # smooth_l1_loss
-        loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)  # 正例损失过滤
+        __d = 1
+        # 正例损失过滤
+        loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)
 
         '''-----------keypoints 损失处理-----------'''
         d_keypoints = diff_keypoints(self.anc, g_keypoints)
@@ -76,6 +93,8 @@ class LossOD_K(nn.Module):
 
         # 计算总损失平均值 /正样本数量 [n] 加上超参系数
         loss_bboxs = (loss_bboxs * num_mask / pos_num).mean(dim=0)
+        __d = 1
+        # loss_bboxs.detach().cpu().numpy()
         loss_labels = (loss_labels * num_mask / pos_num).mean(dim=0)
         loss_keypoints = (loss_keypoints * num_mask / pos_num).mean(dim=0)
 

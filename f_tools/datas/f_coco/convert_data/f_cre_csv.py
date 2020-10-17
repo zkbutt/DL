@@ -234,5 +234,5 @@ if __name__ == '__main__':
     2、图片移到一个文件夹
     
     '''
-    # handler_widerface()
-    hadler_voc()
+    handler_widerface()
+    # hadler_voc()

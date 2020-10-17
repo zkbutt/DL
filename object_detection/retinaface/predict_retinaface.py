@@ -5,7 +5,7 @@ import torch
 from PIL import Image
 import numpy as np
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ToTensor, Normalization
+from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ToTensor, Normalization4TS
 from f_tools.fits.f_lossfun import PredictOutput
 from f_tools.fun_od.f_boxes import xywh2ltrb
 from object_detection.retinaface.CONFIG_RETINAFACE import MOBILENET025, IMAGE_SIZE
@@ -60,7 +60,7 @@ if __name__ == '__main__':
     data_transform = Compose([
         ResizeKeep(IMAGE_SIZE),  # (h,w)
         ToTensor(),
-        Normalization(),
+        Normalization4TS(),
     ])
     img_ts, _ = data_transform(img_pil)
 

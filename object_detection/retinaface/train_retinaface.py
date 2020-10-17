@@ -4,7 +4,7 @@ import torch
 from torch import optim
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_pretreatment import Compose, ToTensor, Resize, Normalization, \
+from f_tools.datas.data_pretreatment import Compose, ToTensor, Resize, Normalization4TS, \
     ColorJitter, RandomHorizontalFlip4TS, ResizeKeep
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 from f_tools.fits.f_lossfun import KeypointsLoss
@@ -74,12 +74,12 @@ def data_loader(device):
             ColorJitter(),
             ToTensor(),
             RandomHorizontalFlip4TS(),
-            Normalization(),
+            Normalization4TS(),
         ]),
         "val": Compose([
             ResizeKeep(IMAGE_SIZE),  # (h,w)
             ToTensor(),
-            Normalization(),
+            Normalization4TS(),
         ])
     }
     '''

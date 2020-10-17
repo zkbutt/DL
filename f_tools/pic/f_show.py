@@ -161,29 +161,92 @@ def show_od_keypoints4np(img_np, bboxs, keypoints, scores):
     cv2.waitKey(0)
 
 
+def show_od4np(img_np, bboxs, scores):
+    if isinstance(bboxs, torch.Tensor):
+        bboxs = bboxs.numpy()
+        scores = scores.numpy()
+    for b, s in zip(bboxs, scores):
+        b = b.astype(np.int)
+        text = "{:.4f}".format(s)
+        cv2.rectangle(img_np, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)  # (l,t),(r,b),颜色.宽度
+        cx = b[0]
+        cy = b[1] + 12
+        cv2.putText(img_np, text, (cx, cy), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
+
+    # 远程无法显示
+    # img_pil = Image.fromarray(img_np, mode="RGB")  # h,w,c
+    # img_pil.show()
+    show_image = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    cv2.imshow("after", show_image)
+    cv2.waitKey(0)
+
+
 def show_od4pil(img_pil, boxs, labels=None):
+    '''
+    https://blog.csdn.net/qq_36834959/article/details/79921152?utm_medium=distribute.pc_aggpage_search_result.none-task-blog-2~all~first_rank_v2~rank_v25-1-79921152.nonecase&utm_term=imagedraw%E7%94%BB%E7%82%B9%E7%9A%84%E5%A4%A7%E5%B0%8F%20pil&spm=1000.2123.3001.4430
+    :param img_np: tensor 或 img_pil
+    :param boxs: np
+    :return:
+    '''
+    if labels is None:
+        flog.info('无分数 %s', labels)
+    pil_copy = img_pil.copy()
+    draw = ImageDraw.Draw(pil_copy)
+    # im_width, im_height = pil_copy.size
+    # print(im_width, im_height)
+    for box in boxs:
+        l, t, r, b = box.astype(np.int)
+        # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
+        draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
+                  # fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)],
+                  fill='White',
+                  )
+        # _draw_text(draw, box_to_display_str_map, box, left, right, top, bottom, color)
+    pil_copy.show()
+    # plt.imshow(img_pil)
+    # plt.show()
+
+
+def show_od4ts(img_pil, boxs, labels=None):
+    img_pil = transforms.ToPILImage()(img_pil)
+    show_od4pil(img_pil, boxs.numpy(), labels=labels.numpy())
+
+
+def show_od_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
     '''
 
     :param img_np: tensor 或 img_pil
     :param boxs: np
     :return:
     '''
-    if labels:
-        flog.info('show_od4boxs %s', labels)
-    # ----------恢复原图-------ToTensor
-    draw = ImageDraw.Draw(img_pil)
-    im_width, im_height = img_pil.size
-    print(im_width, im_height)
-    for box in boxs:
-        xmin, ymin, xmax, ymax = box
-        (left, right, top, bottom) = (xmin * 1, xmax * 1,
-                                      ymin * 1, ymax * 1)
-        draw.line([(left, top), (left, bottom), (right, bottom),
-                   (right, top), (left, top)], width=4,
+    if scores is None:
+        flog.error('无分数 %s', scores)
+        return
+    pil_copy = img_pil.copy()
+    draw = ImageDraw.Draw(pil_copy)
+    cw = 3
+    for bbox, k, s in zip(bboxs, keypoints, scores):
+        l, t, r, b = bbox.astype(np.int)
+        # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
+        draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
                   fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)])
-        # _draw_text(draw, box_to_display_str_map, box, left, right, top, bottom, color)
-    plt.imshow(img_pil)
-    plt.show()
+        draw.chord((k[0] - cw, k[1] - cw, k[0] + cw, k[1] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        draw.chord((k[2] - cw, k[3] - cw, k[2] + cw, k[3] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        draw.chord((k[4] - cw, k[5] - cw, k[4] + cw, k[5] + cw), 0, 360, fill=(0, 0, 255), outline=(0, 255, 0))
+        draw.chord((k[6] - cw, k[7] - cw, k[6] + cw, k[7] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        draw.chord((k[8] - cw, k[9] - cw, k[8] + cw, k[9] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        # draw.text((l, t), "hello", (0, 255, 0))
+        # draw.point([(20, 20), (25, 25), (50, 50), (30, 30)], (0, 255, 0))
+        # ltrb 角度顺时间 框色 填充色
+        # draw.chord((0, 0, 3, 3), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+    pil_copy.show()
+    # plt.imshow(img_pil)
+    # plt.show()
+
+
+def show_od_keypoints4ts(img_ts, bboxs, keypoints, scores=None):
+    img_pil = transforms.ToPILImage()(img_ts)
+    show_od_keypoints4pil(img_pil, bboxs.numpy(), keypoints.numpy(), scores=scores.numpy())
 
 
 def __matplotlib_imshow(img, one_channel=False):
@@ -229,30 +292,19 @@ def show_pics_ts(images, labels=None, one_channel=True):
     __matplotlib_imshow(img_grid, one_channel=one_channel)
 
 
-def show_pic_ts(image, labels=None, one_channel=True, **kwargs):
+def show_pic_ts(img_ts, labels=None):
     '''
     查看处理后的图片
-    :param image:
+    :param img_ts:
     :param labels:
-    :param one_channel:
-    :param kwargs:
     :return:
     '''
     # show_pic_ts(images[0], targets[0], classes=train_data_set.class_dict)
-    plt.figure(figsize=(12.80, 7.20))
-
-    classes = kwargs.get('classes', None)
-    if classes:
-        classes_new = {v: k for k, v in classes.items()}
-        s = ', '
-        # classes字典是1开始
-        label_names = [classes_new[i + 1] + ':' + str(lable.item()) for i, lable in enumerate(labels) if lable > 0]
-        s = s.join(label_names)
-        plt.title(s)
-
-    flog.debug('show_pic_ts %s', labels)
-
-    __matplotlib_imshow(image, one_channel=one_channel)
+    # plt.figure(figsize=(12.80, 7.20))
+    flog.debug('labels %s', labels)
+    np_img = img_ts.numpy()
+    plt.imshow(np.transpose(np_img, (1, 2, 0)))
+    plt.show()
 
 
 def show_pic_np(pic, is_torch=False, is_many=None):

@@ -4,10 +4,10 @@ import cv2
 import torch
 import numpy as np
 from f_tools.GLOBAL_LOG import flog
+from f_tools.f_torch_tools import load_weight
 from f_tools.fun_od.f_anc import AnchorsFound
 from f_tools.fun_od.f_boxes import xywh2ltrb, fix_bbox, fix_keypoints
 from f_tools.pic.f_show import show_od_keypoints4np
-from object_detection.f_fit_tools import load_weight
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import *
 from object_detection.f_retinaface.utils.process_fun import init_model, output_res
 
@@ -86,6 +86,6 @@ if __name__ == '__main__':
             p_keypoints = p_keypoints * szie_scale4landmarks
 
             # 显示结果
-            show_od_keypoints4np(img_np_old, p_boxes, p_keypoints, p_scores)
+            # show_od_keypoints4np(img_np_old, p_boxes, p_keypoints, p_scores)
 
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

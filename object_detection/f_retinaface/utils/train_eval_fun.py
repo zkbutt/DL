@@ -1,5 +1,9 @@
 import torch
-from f_tools.fun_od.f_boxes import pos_match
+
+from f_tools.GLOBAL_LOG import flog
+from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb
+from f_tools.pic.f_show import show_od_keypoints4ts, show_od4ts
+from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 
 
 def _preprocessing_data(batch_data, device):
@@ -43,7 +47,7 @@ class LossHandler(FitBase):
             list( # batch个
                 target: dict{
                         image_id: int,
-                        bboxs: np(num_anns, 4),
+                        bboxs: np(num_anns, 4), ltrb
                         labels: np(num_anns),
                         keypoints: np(num_anns,10),
                     }
@@ -54,6 +58,19 @@ class LossHandler(FitBase):
         '''
         # -----------------------输入模型前的数据处理 开始------------------------
         images, targets = _preprocessing_data(batch_data, self.device)
+        # if CFG.IS_VISUAL:
+        #     flog.debug('查看模型输入和anc %s', )
+        #     for img_ts, target in zip(images, targets):
+        #         # 遍历降维
+        #         _t = torch.cat([target['bboxs'], target['keypoints']], dim=1)
+        #         _t[:, ::2] = _t[:, ::2] * CFG.IMAGE_SIZE[0]
+        #         _t[:, 1::2] = _t[:, 1::2] * CFG.IMAGE_SIZE[1]
+        #         show_od_keypoints4ts(img_ts, _t[:, :4], _t[:, 4:14], target['labels'])
+        #
+        #         _t = self.anchors.view(-1, 4).clone()
+        #         _t[:, ::2] = _t[:, ::2] * CFG.IMAGE_SIZE[0]
+        #         _t[:, 1::2] = _t[:, 1::2] * CFG.IMAGE_SIZE[1]
+        #         show_od4ts(img_ts, xywh2ltrb(_t)[:999, :], torch.ones(200))
 
         # -----------------------输入模型前的数据处理 完成------------------------
 
@@ -113,7 +130,7 @@ class LossHandler(FitBase):
 
         # ---------------损失计算 ----------------------
         # log_dict用于显示
-        loss_total, log_dict = self.losser(p_bboxs, gbboxs, p_labels, glabels, p_keypoints, gkeypoints)
+        loss_total, log_dict = self.losser(p_bboxs, gbboxs, p_labels, glabels, p_keypoints, gkeypoints, imgs_ts=images)
 
         # -----------------构建展示字典及返回值------------------------
         # 多GPU时结果处理 reduce_dict 方法

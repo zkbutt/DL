@@ -8,6 +8,7 @@ import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.f_coco.coco_api import t_coco_pic
+from f_tools.fun_od.f_boxes import ltwh2ltrb
 
 
 class CocoDataset(Dataset):
@@ -38,8 +39,10 @@ class CocoDataset(Dataset):
             name_file = 'person_keypoints'
         else:
             raise Exception('mode 错误', self.mode)
-        path_file = '{}/annotations/{}_{}.json'.format(path_root, name_file, data_type)
-        self.coco = COCO(path_file)
+        file_json = '{}/annotations/{}_{}.json'.format(path_root, name_file, data_type)
+        if not os.path.exists(file_json):
+            raise Exception('coco标注文件不存在', file_json)
+        self.coco = COCO(file_json)
         self.image_ids = self.coco.getImgIds()  # 所有图片的id
 
         self._load_classes()
@@ -90,25 +93,27 @@ class CocoDataset(Dataset):
                 keypoints: np(num_anns,10),
             }
         '''
-        img = self.load_image(index)
+        img_pil = self.load_image(index)
         image_id = self.image_ids[index]
         # bboxs, labels,keypoints
 
         # self.coco.loadImgs(image_id)[0]  # 图片基本信息
         # self.coco.loadAnns(3)[0]  # ann信息
-
+        # [bboxs, np.array(labels)] or [bboxs, np.array(labels), keypoints]
         tars_ = self.load_anns(index)
 
         # 动态构造target
         target = {}
         l_ = ['bboxs', 'labels', 'keypoints']
         target['image_id'] = image_id
+        target['size'] = img_pil.size
         for i, tar in enumerate(tars_):
             target[l_[i]] = tar
+        __d = 1  # 调试点
 
-        if self.transform_cpu:
+        if self.transform_cpu is not None:
             # 预处理输入 PIL img 和 np的target
-            img, target = self.transform_cpu(img, target)
+            img_pil, target = self.transform_cpu(img_pil, target)
 
         '''---------------cocoAPI测试 查看图片在归一化前------------------'''
         # cats = self.coco.loadCats(target['labels'])
@@ -128,7 +133,7 @@ class CocoDataset(Dataset):
                 target[key] = torch.tensor(val).type(torch.float)
                 # target[key] = torch.tensor(val).type(torch.float).to(self.device)
 
-        return img, target
+        return img_pil, target
 
     def load_image(self, index):
         '''
@@ -139,8 +144,8 @@ class CocoDataset(Dataset):
         image_info = self.coco.loadImgs(self.image_ids[index])[0]
         path_img = os.path.join(self.path_root, 'images', self.data_type,
                                 image_info['file_name'])
-        img = Image.open(path_img).convert('RGB')  # 原图数据
-        return img
+        img_pil = Image.open(path_img).convert('RGB')  # 原图数据
+        return img_pil
 
     def load_anns(self, index):
         '''
@@ -162,11 +167,12 @@ class CocoDataset(Dataset):
 
         coco_anns = self.coco.loadAnns(annotation_ids)
         for a in coco_anns:
-            labels.append(self.ids_old_new[a['category_id']])
-
             # skip the annotations with width or height < 1
             if a['bbox'][2] < 1 or a['bbox'][3] < 1:
+                # flog.warning('标记框有问题 %s', a)
                 continue
+
+            labels.append(self.ids_old_new[a['category_id']])
             bbox = np.zeros((1, 4), dtype=np.float32)
             bbox[0, :4] = a['bbox']
             bboxs = np.append(bboxs, bbox, axis=0)
@@ -182,8 +188,9 @@ class CocoDataset(Dataset):
                 keypoints = np.append(keypoints, k_[None,], axis=0)
 
         # ltwh --> ltrb
-        bboxs[:, 2] += bboxs[:, 0]
-        bboxs[:, 3] += bboxs[:, 1]
+        ltwh2ltrb(bboxs, safe=False)
+        if bboxs.shape[0] == 0:
+            raise Exception('这图bboxs不存在 %s %s', coco_anns, self.image_ids[index])
 
         if self.mode == 'bboxs':
             return [bboxs, np.array(labels)]

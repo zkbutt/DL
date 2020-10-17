@@ -4,13 +4,13 @@ import torch
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
-    Normalization, Resize
+    Normalization4TS, Resize
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
+from f_tools.f_torch_tools import save_weight
 
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
 from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch
 from f_tools.fun_od.f_boxes import nms
-from object_detection.f_fit_tools import save_weight
 from object_detection.f_retinaface.nets.mobilenet025 import MobileNetV1
 from object_detection.f_retinaface.nets.retinaface import RetinaFace
 from object_detection.f_retinaface.utils.train_eval_fun import LossHandler
@@ -97,25 +97,20 @@ def data_loader(cfg, device):
             Resize(cfg.IMAGE_SIZE),
             ColorJitter(),
             ToTensor(),
-            RandomHorizontalFlip4TS(),
-            Normalization(),
+            RandomHorizontalFlip4TS(1),
+            Normalization4TS(),
         ]),
         "val": Compose([
             # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
             Resize(cfg.IMAGE_SIZE),
             ToTensor(),
-            Normalization(),
+            Normalization4TS(),
         ])
     }
-    '''
-      归一化后 toTensor
-          image_mean = [0.485, 0.456, 0.406]
-          image_std = [0.229, 0.224, 0.225]
-    '''
 
     if cfg.IS_TRAIN:
         dataset_train = CocoDataset(cfg.PATH_DATA_ROOT, 'keypoints', 'train2017',
-                                    device, data_transform['val'],
+                                    device, data_transform['train'],
                                     is_debug=cfg.DEBUG)
 
         loader_train = torch.utils.data.DataLoader(
@@ -124,14 +119,14 @@ def data_loader(cfg, device):
             num_workers=cfg.DATA_NUM_WORKERS,
             shuffle=True,
             pin_memory=True,  # 不使用虚拟内存 GPU要报错
-            drop_last=True,  # 除于batch_size余下的数据
+            # drop_last=True,  # 除于batch_size余下的数据
             collate_fn=_collate_fn,
         )
 
     # loader_train = Data_Prefetcher(loader_train)
     if cfg.IS_EVAL:
         dataset_val = CocoDataset(cfg.PATH_DATA_ROOT, 'bboxs', 'val2017',
-                                  device, data_transform['train'],
+                                  device, data_transform['val'],
                                   is_debug=cfg.DEBUG)
 
         loader_val = torch.utils.data.DataLoader(
@@ -140,7 +135,7 @@ def data_loader(cfg, device):
             num_workers=cfg.DATA_NUM_WORKERS,
             # shuffle=True,
             pin_memory=True,  # 不使用虚拟内存 GPU要报错
-            drop_last=True,  # 除于batch_size余下的数据
+            # drop_last=True,  # 除于batch_size余下的数据
             collate_fn=_collate_fn,
         )
 
