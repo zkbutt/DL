@@ -14,8 +14,7 @@ from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 from object_detection.f_retinaface.utils.process_fun import init_model, data_loader, train_eval
 
 '''
-全精度 time: 0.5965  data: 0.0001  max mem: 5577   实际7333
-半精度 time: 0.5513  data: 0.0002  max mem: 3894   实际5239
+
 '''
 
 if __name__ == '__main__':

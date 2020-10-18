@@ -13,8 +13,8 @@ from object_detection.f_retinaface.utils.process_fun import data_loader, init_mo
 
 if __name__ == '__main__':
     '''
-    time: 0.7119  data: 0.1216 max mem: 3893
-    Total time: 0:03:15 (0.7283 s / it)
+    time: 0.6086  data: 0.0841  剩余时间: 0  max mem: 3892
+    Total time: 0:03:16 (0.7304 s / it)
     
     time: 1.3898  data: 0.7840  max mem: 3893
     time: 1.1856  data: 0.4661  max mem: 3893

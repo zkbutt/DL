@@ -5,9 +5,9 @@ import cv2
 import torch
 import numpy as np
 from f_tools.GLOBAL_LOG import flog
+from f_tools.f_torch_tools import load_weight
 from f_tools.fun_od.f_anc import AnchorsFound
 from f_tools.fun_od.f_boxes import nms
-from object_detection.f_fit_tools import load_weight
 from object_detection.retinaface.CONFIG_RETINAFACE import MOBILENET025, PATH_FIT_WEIGHT, IMAGE_SIZE, VARIANCE
 from object_detection.retinaface.nets.retinaface import RetinaFace
 from object_detection.retinaface.utils.box_utils import decode, decode_landm, non_max_suppression
@@ -55,7 +55,13 @@ if __name__ == '__main__':
                        anchor_num=claxx.ANCHOR_NUM,
                        num_classes=1
                        )
-    start_epoch = load_weight(PATH_FIT_WEIGHT, model)
+    # start_epoch = load_weight(PATH_FIT_WEIGHT, model)
+
+    start_epoch = 0
+    file_weight = r'D:\tb\tb\ai_code\DL\object_detection\retinaface\file\Retinaface_mobilenet0.25.pth'
+    state_dict = torch.load(file_weight, map_location=device)
+    model_dict = model.state_dict()
+    keys_missing, keys_unexpected = model.load_state_dict(state_dict)
     model.to(device)
 
     '''------------------预测开始---------------------'''

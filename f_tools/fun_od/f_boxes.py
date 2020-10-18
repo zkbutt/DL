@@ -78,25 +78,12 @@ def xywh2ltrb(bboxs, safe=True):
             bboxs = torch.clone(bboxs)
         else:
             raise Exception('类型错误', type(bboxs))
-
     if dim == 2:
-        l = bboxs[:, 0] - 0.5 * bboxs[:, 2]
-        t = bboxs[:, 1] - 0.5 * bboxs[:, 3]
-        r = bboxs[:, 0] + 0.5 * bboxs[:, 2]
-        b = bboxs[:, 1] + 0.5 * bboxs[:, 3]
-        bboxs[:, 0] = l  # xmin
-        bboxs[:, 1] = t  # ymin
-        bboxs[:, 2] = r  # xmax
-        bboxs[:, 3] = b  # ymax
+        bboxs[:, :2] -= bboxs[:, 2:] / 2  # 中点移左上
+        bboxs[:, 2:] += bboxs[:, :2]
     elif dim == 3:
-        l = bboxs[:, :, 0] - 0.5 * bboxs[:, :, 2]
-        t = bboxs[:, :, 1] - 0.5 * bboxs[:, :, 3]
-        r = bboxs[:, :, 0] + 0.5 * bboxs[:, :, 2]
-        b = bboxs[:, :, 1] + 0.5 * bboxs[:, :, 3]
-        bboxs[:, :, 0] = l  # xmin
-        bboxs[:, :, 1] = t  # ymin
-        bboxs[:, :, 2] = r  # xmax
-        bboxs[:, :, 3] = b  # ymax
+        bboxs[:, :, :2] -= bboxs[:, :, 2:] / 2  # 中点移左上
+        bboxs[:, :, 2:] += bboxs[:, :, :2]
     else:
         raise Exception('维度错误', bboxs.shape)
     return bboxs
@@ -126,8 +113,8 @@ def diff_keypoints(anc, g_keypoints, variances=(0.1, 0.2)):
 def diff_bbox(anc, g_bbox, variances=(0.1, 0.2)):
     '''
     用anc同维 和 已匹配的GT 计算差异
-    :param anc: xywh  (nn,4)
-    :param p_loc: 修正系数 (nn,4)
+    :param anc: xywh  (nn,4) torch.Size([1, 16800, 4])
+    :param p_loc: 修正系数 (nn,4)  torch.Size([5, 16800, 4])
     :return: 修复后的框
     '''
     if len(anc.shape) == 2:

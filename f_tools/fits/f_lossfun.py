@@ -53,6 +53,7 @@ class LossOD_K(nn.Module):
         '''-----------bboxs 损失处理-----------'''
         # [1, 16800, 4] ^^ [batch, 16800, 4] = [batch, 16800, 4]
         d_bboxs = diff_bbox(self.anc, g_bboxs)
+
         # [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
         loss_bboxs = self.location_loss(p_bboxs, d_bboxs).sum(dim=-1)  # smooth_l1_loss
         __d = 1

@@ -16,9 +16,9 @@ NUM_CLASSES = 2  # 模型分类数 人脸只有1 0 影响类别输出   -----这
 PATH_SAVE_WEIGHT = PATH_ROOT + 'AI/weights/feadre'
 # loss_total: 13.1264 (16.0534)  loss_bboxs: 0.9631 (1.2294)  loss_labels: 2.2601 (2.2723)  loss_keypoints: 8.3139 (11.3223)
 # loss_total: 12.3518 (12.9931)  loss_bboxs: 0.8875 (1.0694)  loss_labels: 2.2473 (2.2477)  loss_keypoints: 8.2336 (8.6065)
-PATH_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_retinaface.py-9_12.490297317504883.pth'
+# PATH_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_retinaface.py-9_12.490297317504883.pth'
 # PATH_FIT_WEIGHT = '/home/win10_sys/tmp/pycharm_project_243/object_detection/retinaface/file/Retinaface_mobilenet0.25.pth'
-# PATH_FIT_WEIGHT = r'D:\tb\tb\ai_code\DL\object_detection\retinaface\file\Retinaface_mobilenet0.25.pth'
+PATH_FIT_WEIGHT = r'D:\tb\tb\ai_code\DL\object_detection\retinaface\file\Retinaface_mobilenet0.25.pth'
 
 '''训练'''
 PRINT_FREQ = 50  # 每50批打印一次

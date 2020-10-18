@@ -207,16 +207,39 @@ def show_od4pil(img_pil, boxs, labels=None):
     # plt.show()
 
 
-def show_od4ts(img_pil, boxs, labels=None):
-    img_pil = transforms.ToPILImage()(img_pil)
-    show_od4pil(img_pil, boxs.numpy(), labels=labels.numpy())
+def show_od4ts(img_ts, boxs, labels=None):
+    img_pil = transforms.ToPILImage()(img_ts)
+    show_od4pil(img_pil, boxs.numpy(), labels)
+
+
+def show_anc4pil(img_pil, anc, size):
+    # _clone = anc[:300, :].clone()
+    _clone = anc.clone()
+    _clone[:, ::2] = _clone[:, ::2] * size[0]
+    _clone[:, 1::2] = _clone[:, 1::2] * size[1]
+    draw = ImageDraw.Draw(img_pil)
+    for c in _clone:
+        if isinstance(c, np.ndarray):
+            l, t, r, b = c.astype(np.int)
+        elif isinstance(c, torch.Tensor):
+            l, t, r, b = c.type(torch.int)
+        else:
+            raise Exception('类型错误', type(c))
+        draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
+                  fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)])
+    img_pil.show()
+
+
+def show_anc4ts(img_ts, anc, size):
+    img_pil = transforms.ToPILImage()(img_ts)
+    show_anc4pil(img_pil, anc, size)
 
 
 def show_od_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
     '''
 
     :param img_np: tensor 或 img_pil
-    :param boxs: np
+    :param boxs: np l, t, r, b
     :return:
     '''
     if scores is None:
@@ -233,7 +256,6 @@ def show_od_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
         else:
             raise Exception('类型错误', type(bboxs))
 
-        # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
                   fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)])
         draw.chord((k[0] - cw, k[1] - cw, k[0] + cw, k[1] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))

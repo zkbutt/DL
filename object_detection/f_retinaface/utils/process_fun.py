@@ -1,30 +1,21 @@
+import os
+
 import torch
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
+    Normalization4TS, Resize
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 from f_tools.f_torch_tools import save_weight
 
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch
 from f_tools.fun_od.f_boxes import nms
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 from object_detection.f_retinaface.nets.mobilenet025 import MobileNetV1
 from object_detection.f_retinaface.nets.retinaface import RetinaFace
-from f_tools.datas.data_pretreatment import Compose, Resize, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
-    Normalization4TS
+from object_detection.f_retinaface.utils.train_eval_fun import LossHandler
 
-from object_detection.f_retinaface.utils.train_eval_fun import LossHandler, PredictHandler
-
-'''
-这个文件处理大流水
-'''
-# if CFG.IS_VISUAL:
-#     # 遍历降维 self.anc([1, 16800, 4])
-#     _t = p_boxes.clone()
-#     _t[:, ::2] = _t[:, ::2] * CFG.IMAGE_SIZE[0]
-#     _t[:, 1::2] = _t[:, 1::2] * CFG.IMAGE_SIZE[1]
-#     _t = _t[:20, :]
-#     show_od4ts(img_ts.squeeze(0), p_boxes, torch.ones(200))
 DATA_TRANSFORM = {
     "train": Compose([
         # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
@@ -43,6 +34,33 @@ DATA_TRANSFORM = {
 }
 
 
+def output_res(p_boxes, p_keypoints, p_scores, threshold_conf=0.5, threshold_nms=0.3):
+    '''
+    已修复的框 点 和对应的分数
+        1. 经分数过滤
+        2. 经NMS 出最终结果
+    :param p_boxes:
+    :param p_keypoints:
+    :param p_scores:
+    :return:
+    '''
+    mask = p_scores >= threshold_conf
+    p_boxes = p_boxes[mask]
+    p_scores = p_scores[mask]
+    p_keypoints = p_keypoints[mask]
+
+    if p_scores.shape[0] == 0:
+        flog.error('threshold_conf 过滤后 没有目标 %s', threshold_conf)
+        return None, None, None
+
+    flog.debug('threshold_conf 过滤后有 %s 个', p_scores.shape[0])
+    # 2 . 根据得分对框进行从大到小排序。
+    keep = nms(p_boxes, p_scores, threshold_nms)
+    flog.debug('threshold_nms 过滤后有 %s 个', len(keep))
+    p_boxes = p_boxes[keep]
+    p_scores = p_scores[keep]
+    p_keypoints = p_keypoints[keep]
+    return p_boxes, p_keypoints, p_scores
 
 
 def init_model(cfg):
@@ -91,10 +109,26 @@ def _collate_fn(batch_datas):
 def data_loader(cfg, device):
     loader_train, dataset_val, loader_val = None, None, None
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
+    data_transform = {
+        "train": Compose([
+            # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+            Resize(cfg.IMAGE_SIZE),
+            ColorJitter(),
+            ToTensor(),
+            RandomHorizontalFlip4TS(1),
+            Normalization4TS(),
+        ]),
+        "val": Compose([
+            # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+            Resize(cfg.IMAGE_SIZE),
+            ToTensor(),
+            Normalization4TS(),
+        ])
+    }
 
     if cfg.IS_TRAIN:
         dataset_train = CocoDataset(cfg.PATH_DATA_ROOT, 'keypoints', 'train2017',
-                                    device, DATA_TRANSFORM['train'],
+                                    device, data_transform['train'],
                                     is_debug=cfg.DEBUG)
 
         loader_train = torch.utils.data.DataLoader(
@@ -110,7 +144,7 @@ def data_loader(cfg, device):
     # loader_train = Data_Prefetcher(loader_train)
     if cfg.IS_EVAL:
         dataset_val = CocoDataset(cfg.PATH_DATA_ROOT, 'bboxs', 'val2017',
-                                  device, DATA_TRANSFORM['val'],
+                                  device, data_transform['val'],
                                   is_debug=cfg.DEBUG)
 
         loader_val = torch.utils.data.DataLoader(
@@ -167,20 +201,19 @@ def train_eval(cfg, start_epoch, model, anchors, losser, optimizer, lr_scheduler
                 epoch=epoch)
 
         '''------------------模型验证---------------------'''
-        if cfg.IS_EVAL:
-            flog.info('验证开始 %s', epoch + 1)
-            predict_handler = PredictHandler(model, device, )
-
-            coco_res_bboxs = []
-            # del coco_res_bboxs
-            f_evaluate(
-                model=model,
-                data_loader=loader_val,
-                anchors=anchors,
-                device=device,
-                epoch=epoch,
-                coco_res_bboxs=coco_res_bboxs
-            )
+        # if cfg.IS_EVAL:
+        #     flog.info('验证开始 %s', epoch + 1)
+        #     forecast_process = ForecastProcess(
+        #         model=model, device=device, ancs=anchors,
+        #         img_size=IMAGE_SIZE, coco=loader_val.dataset.coco, eval_mode='bboxs')
+        #
+        #     coco_res_bboxs = []
+        #     f_evaluate(
+        #         data_loader=loader_val,
+        #         forecast_process=forecast_process,
+        #         epoch=epoch,
+        #         coco_res_bboxs=coco_res_bboxs)
+        #     # del coco_res_bboxs
     if cfg.IS_TRAIN:
         '''-------------结果可视化-----------------'''
         if len(train_loss) != 0 and len(learning_rate) != 0:

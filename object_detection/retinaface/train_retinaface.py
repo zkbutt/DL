@@ -7,11 +7,11 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_pretreatment import Compose, ToTensor, Resize, Normalization4TS, \
     ColorJitter, RandomHorizontalFlip4TS, ResizeKeep
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
+from f_tools.f_torch_tools import save_weight
 from f_tools.fits.f_lossfun import KeypointsLoss
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
-from f_tools.fits.fitting.f_fit_retinaface import f_train_one_epoch, f_evaluate
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate
 from f_tools.fun_od.f_anc import AnchorsFound
-from object_detection.f_fit_tools import save_weight, load_weight
 from object_detection.retinaface.nets.retinaface import RetinaFace
 from object_detection.retinaface.CONFIG_RETINAFACE import PATH_SAVE_WEIGHT, PATH_DATA_ROOT, DEBUG, IMAGE_SIZE, \
     MOBILENET025, PATH_FIT_WEIGHT, NEGATIVE_RATIO, NEG_IOU_THRESHOLD, END_EPOCH, \
@@ -145,17 +145,17 @@ def model_init(claxx, device):
 
     # --------feadre权重加载-----------
     # 重新训练代码
-    # checkpoint = torch.load(PATH_FIT_WEIGHT, map_location=device)
-    # del checkpoint['ClassHead.0.conv1x1.weight']
-    # del checkpoint['ClassHead.0.conv1x1.bias']
-    # del checkpoint['ClassHead.1.conv1x1.weight']
-    # del checkpoint['ClassHead.1.conv1x1.bias']
-    # del checkpoint['ClassHead.2.conv1x1.weight']
-    # del checkpoint['ClassHead.2.conv1x1.bias']
-    # model.load_state_dict(checkpoint, strict=False)  # 定制一个后面改
-    # start_epoch = 0
+    checkpoint = torch.load(PATH_FIT_WEIGHT, map_location=device)
+    del checkpoint['ClassHead.0.conv1x1.weight']
+    del checkpoint['ClassHead.0.conv1x1.bias']
+    del checkpoint['ClassHead.1.conv1x1.weight']
+    del checkpoint['ClassHead.1.conv1x1.bias']
+    del checkpoint['ClassHead.2.conv1x1.weight']
+    del checkpoint['ClassHead.2.conv1x1.bias']
+    model.load_state_dict(checkpoint, strict=False)  # 定制一个后面改
+    start_epoch = 0
 
-    start_epoch = load_weight(PATH_FIT_WEIGHT, model, optimizer, lr_scheduler, device)
+    # start_epoch = load_weight(PATH_FIT_WEIGHT, model, optimizer, lr_scheduler, device)
     # 单层修改学习率
     # optimizer.param_groups[0]['lr'] = 1e-5
     # 多层

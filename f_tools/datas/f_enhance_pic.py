@@ -118,45 +118,46 @@ def mem_enhance(image_path, change_bri=1, change_color=1, change_contras=1, chan
 from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
 
 
-def get_random_data(annotation_line, input_shape, random=True, max_boxes=20, jitter=.3, hue=.1, sat=1.5, val=1.5,
-                    proc_img=True):
+def get_random_data(annotation_line, input_shape, max_boxes=20, jitter=.3, hue=.1, sat=1.5, val=1.5, ):
     '''random preprocessing for real-time data augmentation'''
     line = annotation_line.split()  # 分解成path和区域
-    image = Image.open(line[0])
-    iw, ih = image.size
+    img_pil = Image.open(line[0])
+    iw, ih = img_pil.size
     h, w = input_shape
     box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]])
 
-    def rand(a=0, b=1):
+    def rand(a=0., b=1.):
         return np.random.rand() * (b - a) + a
 
-    # resize image
-    new_ar = w / h * rand(1 - jitter, 1 + jitter) / rand(1 - jitter, 1 + jitter)
+    # 对长宽比进行缩放
+    new_ar = w / h * rand(1. - jitter, 1. + jitter) / rand(1. - jitter, 1. + jitter)
     scale = rand(.7, 1.3)
+    # 对长宽大的进行缩放
     if new_ar < 1:
         nh = int(scale * h)
         nw = int(nh * new_ar)
     else:
         nw = int(scale * w)
         nh = int(nw / new_ar)
-    image = image.resize((nw, nh), Image.BICUBIC)
+    # 对
+    img_pil = img_pil.resize((nw, nh), Image.BICUBIC)
 
     # place image
     dx = int(rand(0, w - nw))
     dy = int(rand(0, h - nh))
     new_image = Image.new('RGB', (w, h), (128, 128, 128))
-    new_image.paste(image, (dx, dy))
-    image = new_image
+    new_image.paste(img_pil, (dx, dy))
+    img_pil = new_image
 
     # flip image or not
     flip = rand() < .5
-    if flip: image = image.transpose(Image.FLIP_LEFT_RIGHT)
+    if flip: img_pil = img_pil.transpose(Image.FLIP_LEFT_RIGHT)
 
     # distort image
     hue = rand(-hue, hue)
     sat = rand(1, sat) if rand() < .5 else 1 / rand(1, sat)
     val = rand(1, val) if rand() < .5 else 1 / rand(1, val)
-    x = rgb_to_hsv(np.array(image) / 255.)
+    x = rgb_to_hsv(np.array(img_pil) / 255.)
     x[..., 0] += hue
     x[..., 0][x[..., 0] > 1] -= 1
     x[..., 0][x[..., 0] < 0] += 1

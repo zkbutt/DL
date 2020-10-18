@@ -2,8 +2,9 @@ import torch
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms
-from f_tools.pic.f_show import show_od_keypoints4ts, show_od4ts
+from f_tools.pic.f_show import show_od_keypoints4ts, show_od4ts, show_anc4ts
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
+from object_detection.retinaface.utils.box_utils import decode
 
 
 def _preprocessing_data(batch_data, device):
@@ -147,7 +148,7 @@ class PredictHandler(FitBase):
         self.threshold_nms = threshold_nms
         self.threshold_conf = threshold_conf
 
-    def output_res(self, p_boxes, p_keypoints, p_scores):
+    def output_res(self, p_boxes, p_keypoints, p_scores, img_ts4=None):
         '''
         已修复的框 点 和对应的分数
             1. 经分数过滤
@@ -165,6 +166,12 @@ class PredictHandler(FitBase):
         if p_scores.shape[0] == 0:
             flog.error('threshold_conf 过滤后 没有目标 %s', self.threshold_conf)
             return None, None, None
+
+        if img_ts4 is not None:
+            if CFG.IS_VISUAL:
+                flog.debug('修复后 fix_bbox %s', )
+                # h, w = img_ts4.shape[-2:]
+                show_anc4ts(img_ts4.squeeze(0), p_boxes, CFG.IMAGE_SIZE)
 
         flog.debug('threshold_conf 过滤后有 %s 个', p_scores.shape[0])
         # 2 . 根据得分对框进行从大到小排序。
@@ -189,9 +196,12 @@ class PredictHandler(FitBase):
         # ---修复----variances = (0.1, 0.2)
         p_boxes = fix_bbox(self.anchors, p_loc)
         xywh2ltrb(p_boxes, safe=False)
+        if CFG.IS_VISUAL:
+            flog.debug('修复后 fix_bbox %s', )
+            show_anc4ts(img_ts4.squeeze(0), p_boxes, CFG.IMAGE_SIZE)
 
         p_keypoints = fix_keypoints(self.anchors, p_landms)
-        p_boxes, p_keypoints, p_scores = self.output_res(p_boxes, p_keypoints, p_scores)
+        p_boxes, p_keypoints, p_scores = self.output_res(p_boxes, p_keypoints, p_scores, img_ts4)
         return p_boxes, p_keypoints, p_scores
 
     def forward(self, batch_data):
