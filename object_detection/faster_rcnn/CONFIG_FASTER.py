@@ -2,8 +2,8 @@ DEBUG = True
 
 '''样本'''
 # PATH_DATA_ROOT = r'M:\datas\widerface'
-PATH_DATA_ROOT = r'M:\datas\m_VOC2007'
-# PATH_DATA_ROOT = r'm:\AI\datas\VOC2012'
+# PATH_DATA_ROOT = r'M:\AI\datas\m_VOC2007'
+PATH_DATA_ROOT = r'm:\AI\datas\VOC2012'
 # PATH_DATA_ROOT = r'I:\VOC2012'
 BATCH_SIZE = 2  # b32_i2_d1  b16_i0.98_d0.5  b24_i0.98_d0.5
 PRINT_FREQ = 50  # 每50批打印一次
@@ -14,11 +14,11 @@ NUM_CLASSES = 21
 PATH_SAVE_WEIGHT = r'M:\weights\feadre'
 
 # PATH_MODEL_WEIGHT = r'M:\AI\weights\pytorch\fasterrcnn_resnet50_fpn_coco-258fb6c6.pth'
-# PATH_MODEL_WEIGHT = r'M:\AI\weights\pytorch\fasterrcnn_mobilenet_v2-b0353104.pth'
-PATH_MODEL_WEIGHT = None
+PATH_MODEL_WEIGHT = r'M:\AI\weights\pytorch\fasterrcnn_mobilenet_v2-b0353104.pth'
+# PATH_MODEL_WEIGHT = None
 # PATH_FIT_WEIGHT = r'm:\AI\weights\feadre\ssd300-0.pth'
-# PATH_FIT_WEIGHT = r'M:\AI\weights\feadre\train_mobilenet.py-2.pth'
-PATH_FIT_WEIGHT = None
+PATH_FIT_WEIGHT = r'M:\AI\weights\feadre\train_mobilenet.py-2.pth'
+# PATH_FIT_WEIGHT = None
 END_EPOCHS = 10
 
 '''模型参数'''

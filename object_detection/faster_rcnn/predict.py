@@ -6,6 +6,7 @@ from torchvision import transforms
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import get_path_root
+from f_tools.f_torch_tools import load_weight
 from f_tools.pic.f_show import draw_box
 from object_detection.faster_rcnn.CONFIG_FASTER import NUM_CLASSES, PATH_FIT_WEIGHT, PATH_DATA_ROOT
 from object_detection.faster_rcnn.backbone.mobilenetv2_model import MobileNetV2
@@ -15,7 +16,6 @@ from PIL import Image
 import json
 import matplotlib.pyplot as plt
 
-from object_detection.f_fit_tools import sysconfig, load_weight
 from object_detection.faster_rcnn.network_files.rpn_function import AnchorsGenerator
 
 

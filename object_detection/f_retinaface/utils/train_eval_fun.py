@@ -48,7 +48,7 @@ class LossHandler(FitBase):
             list( # batch个
                 target: dict{
                         image_id: int,
-                        bboxs: np(num_anns, 4), ltrb
+                        bboxs: np(num_anns, 4), ltrb ltrb ltrb ltrb
                         labels: np(num_anns),
                         keypoints: np(num_anns,10),
                     }
@@ -83,7 +83,7 @@ class LossHandler(FitBase):
            )
         '''
         out = self.model(images)
-        p_bboxs = out[0]  # (batch,16800,4)
+        p_bboxs_xywh = out[0]  # (batch,16800,4)  xywh  xywh
         p_labels = out[1]  # (batch,16800,10)
         p_keypoints = out[2]  # (batch,16800,2)
 
@@ -91,7 +91,7 @@ class LossHandler(FitBase):
         num_batch = images.shape[0]
         num_ancs = self.anchors.shape[0]
 
-        gbboxs = torch.Tensor(*p_bboxs.shape).to(images)  # torch.Size([batch, 16800, 4])
+        gbboxs_ltrb = torch.Tensor(*p_bboxs_xywh.shape).to(images)  # torch.Size([batch, 16800, 4])
         glabels = torch.Tensor(num_batch, num_ancs).to(images)  # 计算损失只会存在一维 无论多少类 标签只有一类
         gkeypoints = torch.Tensor(*p_keypoints.shape).to(images)  # 相当于empty
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
@@ -125,13 +125,13 @@ class LossHandler(FitBase):
             match_labels[label_neg_mask] = 0.
             glabels[index] = match_labels
 
-            gbboxs[index] = match_bboxs
+            gbboxs_ltrb[index] = match_bboxs
             gkeypoints[index] = match_keypoints
         '''---------------------与输出进行维度匹配及类别匹配  完成-------------------------'''
 
         # ---------------损失计算 ----------------------
         # log_dict用于显示
-        loss_total, log_dict = self.losser(p_bboxs, gbboxs, p_labels, glabels, p_keypoints, gkeypoints, imgs_ts=images)
+        loss_total, log_dict = self.losser(p_bboxs_xywh, gbboxs_ltrb, p_labels, glabels, p_keypoints, gkeypoints, imgs_ts=images)
 
         # -----------------构建展示字典及返回值------------------------
         # 多GPU时结果处理 reduce_dict 方法
@@ -169,7 +169,7 @@ class PredictHandler(FitBase):
 
         if img_ts4 is not None:
             if CFG.IS_VISUAL:
-                flog.debug('修复后 fix_bbox %s', )
+                flog.debug('过滤后 threshold_conf %s', )
                 # h, w = img_ts4.shape[-2:]
                 show_anc4ts(img_ts4.squeeze(0), p_boxes, CFG.IMAGE_SIZE)
 

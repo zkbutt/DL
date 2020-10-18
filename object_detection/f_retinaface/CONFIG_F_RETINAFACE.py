@@ -1,5 +1,5 @@
 class CFG():
-    DEBUG = True
+    DEBUG = False
     IS_VISUAL = False
     IS_TRAIN = True
     IS_EVAL = False
@@ -22,9 +22,9 @@ class CFG():
     SAVE_FILE_NAME = 'f_retinaface'
     # loss_total: 13.1264 (16.0534)  loss_bboxs: 0.9631 (1.2294)  loss_labels: 2.2601 (2.2723)  loss_keypoints: 8.3139 (11.3223)
     # loss_total: 12.3518 (12.9931)  loss_bboxs: 0.8875 (1.0694)  loss_labels: 2.2473 (2.2477)  loss_keypoints: 8.2336 (8.6065)
+    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_retinaface.py-10_7.423844337463379.pth'
+    # FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_retinaface.py-40_6.929875373840332.pth'
     # FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_retinaface.py-3_6.152596473693848.pth'
-    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_retinaface.py-36_6.884148597717285.pth'
-    # FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_retinaface.py-4_7.6jjjjj.pth'
     # FILE_FIT_WEIGHT = '/home/win10_sys/tmp/pycharm_project_243/object_detection/retinaface/file/Retinaface_mobilenet0.25.pth'
     # FILE_FIT_WEIGHT = r'D:\tb\tb\ai_code\DL\object_detection\retinaface\file\Retinaface_mobilenet0.25.pth'
 
@@ -32,7 +32,7 @@ class CFG():
     PRINT_FREQ = 50  # 每50批打印一次
     END_EPOCH = 50
     VARIANCE = [0.1, 0.2]  # 框修正限制
-    LOSS_WEIGHT = [2, 1, 1]  # 损失系数 用于  loss_bboxs loss_labels  loss_keypoints
+    LOSS_WEIGHT = [3, 1, 1]  # 损失系数 用于  loss_bboxs loss_labels  loss_keypoints
 
     '''Loss参数'''
     PREDICT_IOU_THRESHOLD = 0.3  # 用于预测的阀值

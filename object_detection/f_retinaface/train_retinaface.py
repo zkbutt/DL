@@ -13,8 +13,11 @@ from f_tools.fun_od.f_anc import AnchorsFound
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 from object_detection.f_retinaface.utils.process_fun import init_model, data_loader, train_eval
 
-'''
+'''/home/win10_sys/AI/weights/feadre/train_retinaface.py-40_6.929875373840332.pth
+eta: 0:00:00.730305  lr: 0.000500  loss_total: 6.8880 (7.2228)  loss_bboxs: 1.0246 (1.0967)  loss_labels: 1.5412 (1.5934)  loss_keypoints: 2.1876 (2.3392)  time: 0.5443  data: 0.0541  剩余时间: 0  max mem: 3893
 
+/home/win10_sys/AI/weights/feadre/train_retinaface.py-10_7.423844337463379.pth
+lr: 0.000250  loss_total: 6.9989 (7.4330)  loss_bboxs: 1.0570 (1.0892)  loss_labels: 1.4724 (1.5348)  loss_keypoints: 2.5386 (2.6307)  time: 0.6397  data: 0.1441  剩余时间: 0  max mem: 389
 '''
 
 if __name__ == '__main__':

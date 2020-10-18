@@ -78,9 +78,9 @@ class Resize(object):
         self.resize = torchvision.transforms.Resize(size)
 
     def __call__(self, img_pil, target):
-        # if CFG.IS_VISUAL:
-        #     flog.debug('显示原图 %s', img_pil.size)
-        #     img_pil.show()
+        if CFG.IS_VISUAL:
+            flog.debug('显示原图 %s', img_pil.size)
+            img_pil.show()
         w, h = img_pil.size  # PIL wh
         h_ratio, w_ratio = np.array([h, w]) / self.resize.size  # hw
         img_pil = self.resize(img_pil)
@@ -94,9 +94,9 @@ class Resize(object):
                 keypoints = target['keypoints']
                 keypoints[:, ::2] = keypoints[:, ::2] / w_ratio
                 keypoints[:, 1::2] = keypoints[:, 1::2] / h_ratio
-                # if CFG.IS_VISUAL:
-                #     flog.debug('缩放后%s', img_pil.size)
-                #     show_od_keypoints4pil(img_pil, bbox, keypoints, target['labels'])
+                if CFG.IS_VISUAL:
+                    flog.debug('缩放后%s', img_pil.size)
+                    show_od_keypoints4pil(img_pil, bbox, keypoints, target['labels'])
         return img_pil, target
 
 

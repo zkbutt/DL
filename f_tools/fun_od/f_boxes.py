@@ -115,7 +115,7 @@ def diff_bbox(anc, g_bbox, variances=(0.1, 0.2)):
     用anc同维 和 已匹配的GT 计算差异
     :param anc: xywh  (nn,4) torch.Size([1, 16800, 4])
     :param p_loc: 修正系数 (nn,4)  torch.Size([5, 16800, 4])
-    :return: 修复后的框
+    :return: 计算差异值   对应xywh
     '''
     if len(anc.shape) == 2:
         _a = (g_bbox[:, :2] - anc[:, :2]) / variances[0] / anc[:, 2:]
@@ -335,6 +335,32 @@ def pos_match(ancs, bboxs, criteria):
     label_neg_mask = anc_bbox_iou <= criteria  # anc 的正例index
 
     return label_neg_mask, anc_bbox_ind
+
+
+def resize_boxes(boxes, original_size, new_size):
+    '''
+    用于预处理 和 最后的测试(预测还原)
+    :param boxes: 输入多个
+    :param original_size: 图像缩放前的尺寸
+    :param new_size: 图像缩放后的尺寸
+    :return:
+    '''
+    # 输出数组   新尺寸 /旧尺寸 = 对应 h w 的缩放因子
+    ratios = [
+        torch.tensor(s, dtype=torch.float32, device=boxes.device)
+        / torch.tensor(s_orig, dtype=torch.float32, device=boxes.device)
+        for s, s_orig in zip(new_size, original_size)
+    ]
+
+    ratios_height, ratios_width = ratios
+    # Removes a tensor dimension, boxes [minibatch, 4]
+    # Returns a tuple of all slices along a given dimension, already without it.
+    xmin, ymin, xmax, ymax = boxes.unbind(dim=1)  # 分列
+    xmin = xmin * ratios_width
+    xmax = xmax * ratios_width
+    ymin = ymin * ratios_height
+    ymax = ymax * ratios_height
+    return torch.stack((xmin, ymin, xmax, ymax), dim=1)
 
 
 if __name__ == '__main__':
