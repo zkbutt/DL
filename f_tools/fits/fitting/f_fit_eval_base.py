@@ -86,44 +86,21 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
 
 
 @torch.no_grad()
-def f_evaluate(model, data_loader, anchors, device, epoch, coco_res_bboxs, coco_res_keypoints=None, ):
+def f_evaluate(data_loader, predict_handler, epoch, res_eval):
     metric_logger = MetricLogger(delimiter="  ")
     header = "Test: "
     print_freq = max(int(len(data_loader) / 5), 1)
 
-    coco_evaluator = CocoEvaluator(data_loader.dataset.coco, ['bbox'])
-    cpu_device = torch.device("cpu")
-
-    outputs = []
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
-        evaluator_time = time.time()
+        start_time = time.time()
+        _dataset = data_loader.dataset
+        d = predict_handler.handler_map_dt_txt(batch_data,
+                                               path_dt_info=_dataset.path_dt_info,
+                                               idx_to_class=_dataset.idx_to_class,
+                                               )
 
-
-
-
-        outputs = []
-        '''
-        bbox需要ltrb
-        '''
-        p_scores = 1
-        for index, (p_bboxs, p_labels, p_keypoints) in enumerate(out):
-            info = {"boxes": p_bboxs.to(cpu_device),
-                    "labels": p_labels.to(cpu_device),
-                    "scores": p_scores.to(cpu_device),
-                    "height_width": targets[index]["height_width"]}
-            outputs.append(info)
-
-        eval_time = time.time() - evaluator_time
-        metric_logger.update(eval_time=eval_time, coco_size=len(coco_res_bboxs))  # 这个填字典 添加的字段
-
-    # 总输出
-    coco_evaluator.accumulate()  # 计算
-    coco_evaluator.summarize()  # 输出指标
-    print_txt = coco_evaluator.coco_eval[iou_types[0]].stats
-    coco_map = print_txt[0]  # 取出指标
-    voc_map = print_txt[1]
-    if coco_res_bboxs:
-        coco_res_bboxs.append(coco_map)
+        end_time = time.time() - start_time
+        metric_logger.update(eval_time=end_time)  # 这个填字典 添加的字段
 
 
 class SmoothedValue(object):

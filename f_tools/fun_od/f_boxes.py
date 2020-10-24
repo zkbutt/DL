@@ -137,11 +137,20 @@ def fix_bbox(anc, p_loc, variances=(0.1, 0.2)):
     :param p_loc: 修正系数 (nn,4)
     :return: 修复后的框
     '''
-    # 坐标移动
-    _a = anc[:, :2] + p_loc[:, :2] * variances[0] * anc[:, 2:]
-    # 宽高缩放
-    _b = anc[:, 2:] * torch.exp(p_loc[:, 2:] * variances[1])
-    _t = torch.cat([_a, _b], dim=1)
+    if len(anc.shape) == 2:
+        # 坐标移动
+        _a = anc[:, :2] + p_loc[:, :2] * variances[0] * anc[:, 2:]
+        # 宽高缩放
+        _b = anc[:, 2:] * torch.exp(p_loc[:, 2:] * variances[1])
+        _t = torch.cat([_a, _b], dim=1)
+    elif len(anc.shape) == 3:
+        # 坐标移动
+        _a = anc[:, :, :2] + p_loc[:, :, :2] * variances[0] * anc[:, :, 2:]
+        # 宽高缩放
+        _b = anc[:, :, 2:] * torch.exp(p_loc[:, :, 2:] * variances[1])
+        _t = torch.cat([_a, _b], dim=2)
+    else:
+        raise Exception('维度错误', anc.shape)
     return _t
 
 
@@ -153,10 +162,18 @@ def fix_keypoints(anc, p_keypoints, variances=(0.1, 0.2)):
     :param variances:
     :return:
     '''
-    # [anc个, 4] ->  [anc个, 2] -> [anc个, 2*5]
-    ancs_xy = anc[:, :2].repeat(1, 5)
-    ancs_wh = anc[:, 2:].repeat(1, 5)
-    _t = ancs_xy + p_keypoints * variances[0] * ancs_wh
+    if len(anc.shape) == 2:
+        # [anc个, 4] ->  [anc个, 2] -> [anc个, 2*5]
+        ancs_xy = anc[:, :2].repeat(1, 5)
+        ancs_wh = anc[:, 2:].repeat(1, 5)
+        _t = ancs_xy + p_keypoints * variances[0] * ancs_wh
+    elif len(anc.shape) == 3:
+        # [anc个, 4] ->  [anc个, 2] -> [anc个, 2*5]
+        ancs_xy = anc[:, :, :2].repeat(1, 1, 5)
+        ancs_wh = anc[:, :, 2:].repeat(1, 1, 5)
+        _t = ancs_xy + p_keypoints * variances[0] * ancs_wh
+    else:
+        raise Exception('维度错误', anc.shape)
     return _t
 
 

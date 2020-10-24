@@ -373,6 +373,72 @@ class WiderfaceDataSet(Dataset):
         return image_data, box_data
 
 
+class MapDataSet(Dataset):
+    def __init__(self, path_root, path_dt_res, class_to_idx, transforms=None, is_debug=False, look=False, out='ts', ):
+        path_dt_info = os.path.join(path_dt_res, 'dt_info')
+        if os.path.exists(path_dt_res):
+            if not os.path.exists(path_dt_info):
+                os.mkdir(path_dt_info)
+        else:
+            raise Exception('path_dt_res目录不存在: %s' % path_dt_res)
+        self.path_dt_info = path_dt_info  # 用于保存结果
+
+        self.out = out
+        self.look = look
+        self.is_debug = is_debug
+        self.transform_cpu = transforms
+        self.path_imgages = os.path.join(path_root, 'images')
+        self.path_gt_info = os.path.join(path_root, 'gt_info')
+        self.class_to_idx = class_to_idx
+        self.idx_to_class = {}
+        for k, v in class_to_idx.items():
+            self.idx_to_class[v] = k
+
+        if os.path.exists(self.path_gt_info):
+            self.names_gt_info = os.listdir(self.path_gt_info)
+        else:
+            raise Exception('标签目录不存在: %s' % self.path_gt_info)
+
+        self.targets = []
+        for name in self.names_gt_info:
+            _labels = []
+            _bboxs = []
+            with open(os.path.join(self.path_gt_info, name)) as f:
+                lines = f.readlines()
+                for line in lines:
+                    line = line.rstrip()  # 去换行
+                    label, l, t, r, b = line.split(' ')
+                    _labels.append(class_to_idx[label])
+                    _bboxs.append([float(l), float(t), float(r), float(b)])
+            self.targets.append({'labels': _labels, 'bboxs': _bboxs})
+
+    def __len__(self):
+        return len(self.names_gt_info)
+
+    def __getitem__(self, index):
+        '''
+        target={labels:[x],bboxs:[x,4],size:(w,h)}
+        :param index:
+        :return: 返回图片有可能是pil 或 其它格式  需根据transform_cpu 判断
+        '''
+
+        names_gt_info = self.names_gt_info[index]
+        name_jpg = names_gt_info.split('.')[0] + '.jpg'
+        img_pil = Image.open(os.path.join(self.path_imgages, name_jpg))  # 原图数据
+        target = self.targets[index]
+        target['size'] = img_pil.size
+        target['name_txt'] = names_gt_info
+        target['bboxs'] = np.array(target['bboxs'], dtype=np.float32)
+        if self.transform_cpu is not None:
+            # 预处理输入 PIL img 和 np的target
+            img_pil, target = self.transform_cpu(img_pil, target)
+        if self.out == 'ts':
+            target['bboxs'] = torch.tensor(target['bboxs']).type(torch.float)
+            target['labels'] = torch.tensor(target['labels']).type(torch.int64)
+            target['size'] = torch.tensor(target['size']).type(torch.int64)
+        return img_pil, target
+
+
 class Data_Prefetcher():
     '''
     nvidia 要求进来的是tensor数据 GPU dataloader加速
@@ -506,6 +572,7 @@ def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, is
         VOC_root, file_name[1],
         data_transform["val"],
         bbox2one=bbox2one,
+        isdebug=isdebug
     )
     val_data_set_loader = torch.utils.data.DataLoader(
         val_data_set,
@@ -571,11 +638,8 @@ def load_data4widerface(path_data_root, img_size_in, batch_size, mode='train', i
 
 
 if __name__ == '__main__':
-    train_loader = None
-    prefetcher = Data_Prefetcher(train_loader)
-    data = prefetcher.next()
-    i = 0
-    while data is not None:
-        print(i, len(data))
-        i += 1
-        data = prefetcher.next()
+    path_root = r'M:\AI\datas\widerface\val'
+    class_to_idx = {'face': 1}
+    data_set = MapDataSet(path_root, class_to_idx)
+    for ss in data_set:
+        print(ss)

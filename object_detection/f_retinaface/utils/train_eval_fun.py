@@ -1,13 +1,15 @@
+import os
+
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms
+from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms
 from f_tools.pic.f_show import show_od_keypoints4ts, show_od4ts, show_anc4ts
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 from object_detection.retinaface.utils.box_utils import decode
 
 
-def _preprocessing_data(batch_data, device):
+def _preprocessing_data(batch_data, device, mode='keypoints'):
     '''
     cpu转gpu 输入模型前数据处理方法 定制
     :param batch_data:
@@ -17,8 +19,14 @@ def _preprocessing_data(batch_data, device):
     images, targets = batch_data
     images = images.to(device)
     for target in targets:
-        for key, val in target.items():
-            target[key] = val.to(device)
+        target['bboxs'] = target['bboxs'].to(device)
+        target['labels'] = target['labels'].to(device)
+        target['size'] = target['size'].to(device)
+        if mode == 'keypoints':
+            target['keypoints'] = target['keypoints'].to(device)
+
+        # for key, val in target.items():
+        #     target[key] = val.to(device)
     return images, targets
 
 
@@ -131,7 +139,8 @@ class LossHandler(FitBase):
 
         # ---------------损失计算 ----------------------
         # log_dict用于显示
-        loss_total, log_dict = self.losser(p_bboxs_xywh, gbboxs_ltrb, p_labels, glabels, p_keypoints, gkeypoints, imgs_ts=images)
+        loss_total, log_dict = self.losser(p_bboxs_xywh, gbboxs_ltrb, p_labels, glabels, p_keypoints, gkeypoints,
+                                           imgs_ts=images)
 
         # -----------------构建展示字典及返回值------------------------
         # 多GPU时结果处理 reduce_dict 方法
@@ -144,7 +153,7 @@ class LossHandler(FitBase):
 class PredictHandler(FitBase):
     def __init__(self, model, device, anchors, threshold_conf=0.5, threshold_nms=0.3):
         super(PredictHandler, self).__init__(model, device)
-        self.anchors = anchors
+        self.anchors = anchors[None]  # (1,xx,4)
         self.threshold_nms = threshold_nms
         self.threshold_conf = threshold_conf
 
@@ -156,9 +165,13 @@ class PredictHandler(FitBase):
         :param p_boxes:
         :param p_keypoints:
         :param p_scores:
+        :param img_ts4: 用于显示
+        :param idxs_img: 用于识别多个
         :return:
         '''
+        # (batch,xx) -> (batch.xx)
         mask = p_scores >= self.threshold_conf
+        # (batch,xx,4) -> (3,4) 拉伸降维
         p_boxes = p_boxes[mask]
         p_scores = p_scores[mask]
         p_keypoints = p_keypoints[mask]
@@ -175,6 +188,7 @@ class PredictHandler(FitBase):
 
         flog.debug('threshold_conf 过滤后有 %s 个', p_scores.shape[0])
         # 2 . 根据得分对框进行从大到小排序。
+        # keep = batched_nms(p_boxes, p_scores, idxs_img, self.threshold_nms)
         keep = nms(p_boxes, p_scores, self.threshold_nms)
         flog.debug('threshold_nms 过滤后有 %s 个', len(keep))
         p_boxes = p_boxes[keep]
@@ -183,28 +197,111 @@ class PredictHandler(FitBase):
         return p_boxes, p_keypoints, p_scores
 
     @torch.no_grad()
-    def predicting(self, img_ts4):
+    def predicting4one(self, img_ts4):
+        '''
+        相比 forward 没有预处理
+        :param img_ts4:
+        :return:
+        '''
         # ------模型输出处理-------
+        # (batch,xx,4)
         p_loc, p_conf, p_landms = self.model(img_ts4)
+        # (batch,xx,1)->(batch.xx)
         p_scores = torch.nn.functional.softmax(p_conf, dim=-1)
         p_scores = p_scores[:, :, 1]
-        p_scores = p_scores.data.squeeze(0)
+        # p_scores = p_scores.data.squeeze(0)
+        # p_loc = p_loc.data.squeeze(0)
+        # p_landms = p_landms.squeeze(0)
 
-        p_loc = p_loc.data.squeeze(0)
-        p_landms = p_landms.squeeze(0)
-
-        # ---修复----variances = (0.1, 0.2)
+        # ---修复--并转换 xywh --> ltrb--variances = (0.1, 0.2)
         p_boxes = fix_bbox(self.anchors, p_loc)
         xywh2ltrb(p_boxes, safe=False)
-        if CFG.IS_VISUAL:
-            flog.debug('修复后 fix_bbox %s', )
-            show_anc4ts(img_ts4.squeeze(0), p_boxes, CFG.IMAGE_SIZE)
-
         p_keypoints = fix_keypoints(self.anchors, p_landms)
+
         p_boxes, p_keypoints, p_scores = self.output_res(p_boxes, p_keypoints, p_scores, img_ts4)
+        '''
+        xx是最终框 (xx,4)  (xx,10)  (xx)
+        '''
         return p_boxes, p_keypoints, p_scores
 
     def forward(self, batch_data):
         # ------数据处理-------
         images, _ = _preprocessing_data(batch_data, self.device)
-        return self.predicting(images)
+        return self.predicting4one(images)
+
+    @torch.no_grad()
+    def handler_map_dt_txt(self, batch_data, path_dt_info, idx_to_class):
+        # (batch,3,640,640)   list(batch{'size','bboxs','labels'}) 转换到GPU设备
+        images, targets = _preprocessing_data(batch_data, self.device, mode='bbox')
+        sizes = []
+        files_txt = []
+        for target in targets:
+            sizes.append(target['size'])
+            files_txt.append(os.path.join(path_dt_info, target['name_txt']))
+
+        idxs, p_boxes, p_labels, p_scores = self.predicting4many(images)
+
+        for i, (szie, file_txt) in enumerate(zip(sizes, files_txt)):
+            mask = idxs == i
+            if torch.any(mask):
+                lines_write = []
+                for label, score, bbox in zip(p_labels[mask], p_scores[mask], p_boxes[mask]):
+                    _bbox = [str(i.item()) for i in list((bbox * szie.repeat(2)).type(torch.int64).data)]
+                    bbox_str = ' '.join(_bbox)
+                    _line = idx_to_class[label.item()] + ' ' + str(score.item()) + ' ' + bbox_str + '\n'
+                    lines_write.append(_line)
+                with open(file_txt, "w") as f:
+                    f.writelines(lines_write)
+            else:
+                flog.warning('没有预测出框 %s', files_txt)
+        return p_labels, p_scores, p_boxes, sizes, idxs
+
+    def predicting4many(self, images):
+        # (batch,xx,4)
+        p_loc, p_conf, p_landms = self.model(images)
+        # (batch,xx,1)->(batch.xx)
+        p_scores = torch.nn.functional.softmax(p_conf, dim=-1)
+        p_scores = p_scores[:, :, 1]
+        # ---修复----variances = (0.1, 0.2)
+        p_boxes = fix_bbox(self.anchors, p_loc)
+        xywh2ltrb(p_boxes, safe=False)
+        # (batch个) -> (batch,1) -> (batch, xx) 从1开始有利于批量nms
+        idxs = torch.arange(1, p_boxes.shape[0] + 1, device=self.device)
+        idxs = idxs.view(-1, 1).repeat(1, p_boxes.shape[1])
+        # (batch,xx) -> (batch.xx)
+        mask = p_scores >= self.threshold_conf  # 这里过滤有可能导致没得
+        # (batch,xx,4) -> (3,4) 拉伸降维
+        p_boxes = p_boxes[mask]
+        p_scores = p_scores[mask]
+        idxs = idxs[mask]
+        keep = batched_nms(p_boxes, p_scores, idxs, self.threshold_nms)
+        flog.debug('threshold_nms 过滤后有 %s 个', len(keep))
+        p_labels = torch.ones(len(keep), dtype=torch.int64).to(p_boxes.device)
+        p_boxes = p_boxes[keep]
+        p_scores = p_scores[keep]
+        idxs = idxs[keep] - 1  # 为batched_nms +1 恢复
+        return idxs, p_boxes, p_labels, p_scores
+
+    def to_map_res(self, p_labels, p_scores, p_boxes, sizes, idxs):
+        '''
+        tvmonitor 0.471781 0 13 174 244
+        cup 0.414941 274 226 301 265
+        :param p_labels:
+        :param p_scores:
+        :param p_boxes:
+        :param sizes:
+        :param idxs:
+        :param idx_to_class:
+        :return:
+        '''
+        idx_to_class = {}
+        for i, szie in enumerate(sizes):
+            mask = idxs == i
+            if torch.any(mask):
+                lines_write = []
+                for label, score, bbox in zip(p_labels[mask], p_scores[mask], p_boxes[mask]):
+                    _bbox = [str(i.item()) for i in list((bbox * szie.repeat(2)).type(torch.int64).data)]
+                    bbox_str = ' '.join(_bbox)
+                    line = idx_to_class[label.item()] + ' ' + str(score.item()) + ' ' + bbox_str
+                with open(file_txt, "w") as f:
+                    f.writelines(lines_write)

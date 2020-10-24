@@ -12,6 +12,7 @@ from f_tools.fits.f_lossfun import KeypointsLoss
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
 from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate
 from f_tools.fun_od.f_anc import AnchorsFound
+from object_detection.f_retinaface.utils.train_eval_fun import PredictHandler
 from object_detection.retinaface.nets.retinaface import RetinaFace
 from object_detection.retinaface.CONFIG_RETINAFACE import PATH_SAVE_WEIGHT, PATH_DATA_ROOT, DEBUG, IMAGE_SIZE, \
     MOBILENET025, PATH_FIT_WEIGHT, NEGATIVE_RATIO, NEG_IOU_THRESHOLD, END_EPOCH, \
@@ -202,14 +203,13 @@ def trainning(start_epoch, model, device, anchors, losser, optimizer, lr_schedul
         '''------------------模型验证---------------------'''
         if IS_EVAL:
             flog.info('验证开始 %s', epoch + 1)
-            forecast_process = ForecastProcess(
-                model=model, device=device, ancs=anchors,
-                img_size=IMAGE_SIZE, coco=loader_val.dataset.coco, eval_mode='bboxs')
+            predict_handler = PredictHandler(model, device, anchors,
+                                             threshold_conf=0.5, threshold_nms=0.3)
 
             coco_res_bboxs = []
             f_evaluate(
                 data_loader=loader_val,
-                forecast_process=forecast_process,
+                predict_handler=predict_handler,
                 epoch=epoch,
                 coco_res_bboxs=coco_res_bboxs)
             # del coco_res_bboxs

@@ -3,18 +3,19 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.data_factory import MapDataSet
 from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
     Normalization4TS, Resize
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 from f_tools.f_torch_tools import save_weight
 
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate
 from f_tools.fun_od.f_boxes import nms
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 from object_detection.f_retinaface.nets.mobilenet025 import MobileNetV1
 from object_detection.f_retinaface.nets.retinaface import RetinaFace
-from object_detection.f_retinaface.utils.train_eval_fun import LossHandler
+from object_detection.f_retinaface.utils.train_eval_fun import LossHandler, PredictHandler
 
 DATA_TRANSFORM = {
     "train": Compose([
@@ -143,10 +144,11 @@ def data_loader(cfg, device):
 
     # loader_train = Data_Prefetcher(loader_train)
     if cfg.IS_EVAL:
-        dataset_val = CocoDataset(cfg.PATH_DATA_ROOT, 'bboxs', 'val2017',
-                                  device, data_transform['val'],
-                                  is_debug=cfg.DEBUG)
-
+        class_to_idx = {'face': 1}
+        path_data_root = r'M:\AI\datas\widerface\val'
+        path_dt_res = r'M:\temp\11'
+        dataset_val = MapDataSet(path_data_root, path_dt_res, class_to_idx, transforms=data_transform['val'],
+                                 is_debug=cfg.DEBUG)
         loader_val = torch.utils.data.DataLoader(
             dataset_val,
             batch_size=cfg.BATCH_SIZE,
@@ -201,19 +203,17 @@ def train_eval(cfg, start_epoch, model, anchors, losser, optimizer, lr_scheduler
                 epoch=epoch)
 
         '''------------------模型验证---------------------'''
-        # if cfg.IS_EVAL:
-        #     flog.info('验证开始 %s', epoch + 1)
-        #     forecast_process = ForecastProcess(
-        #         model=model, device=device, ancs=anchors,
-        #         img_size=IMAGE_SIZE, coco=loader_val.dataset.coco, eval_mode='bboxs')
-        #
-        #     coco_res_bboxs = []
-        #     f_evaluate(
-        #         data_loader=loader_val,
-        #         forecast_process=forecast_process,
-        #         epoch=epoch,
-        #         coco_res_bboxs=coco_res_bboxs)
-        #     # del coco_res_bboxs
+        if cfg.IS_EVAL:
+            flog.info('验证开始 %s', epoch + 1)
+            predict_handler = PredictHandler(model, device, anchors,
+                                             threshold_conf=0.5, threshold_nms=0.3)
+            res_eval = []
+            f_evaluate(
+                data_loader=loader_val,
+                predict_handler=predict_handler,
+                epoch=epoch,
+                res_eval=res_eval)
+            # del coco_res_bboxs
     if cfg.IS_TRAIN:
         '''-------------结果可视化-----------------'''
         if len(train_loss) != 0 and len(learning_rate) != 0:

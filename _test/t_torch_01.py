@@ -17,11 +17,16 @@ import torch
 
 from f_tools.GLOBAL_LOG import flog
 
-
-input = torch.randn(2, 5, requires_grad=True)
-print(input)
-input = (input + 8) * 2
-print(input)
+# input = torch.randn(2, 4, requires_grad=True)
+# for i in input.split(1, 1):
+#     print(i.shape)
 
 # y.backward(torch.FloatTensor([1, 0.1, 0.01]))  # 自动求导
 # print(x.grad)  # 求对x的梯度
+
+
+idxs_img = torch.arange(5)
+input = torch.randn(3, 5)
+# (5) -> (1,5)
+idxs_img = idxs_img.view(-1, 1).repeat(1, 5)
+print(idxs_img.view(idxs_img.shape[0],-1))

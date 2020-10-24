@@ -1,8 +1,8 @@
 class CFG():
-    DEBUG = False
+    DEBUG = True
     IS_VISUAL = False
-    IS_TRAIN = True
-    IS_EVAL = False
+    IS_TRAIN = False
+    IS_EVAL = True
     IS_MIXTURE_FIX = True
     PATH_ROOT = 'M:/'
     # PATH_ROOT = '/home/win10_sys/'

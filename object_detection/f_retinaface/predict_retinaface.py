@@ -1,6 +1,5 @@
 import os
 
-import cv2
 import torch
 import numpy as np
 from PIL import Image
@@ -8,8 +7,7 @@ from PIL import Image
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
 from f_tools.fun_od.f_anc import AnchorsFound
-from f_tools.fun_od.f_boxes import xywh2ltrb, fix_bbox, fix_keypoints, resize_boxes
-from f_tools.pic.f_show import show_od4ts, show_od_keypoints4np, show_od_keypoints4pil, show_anc4ts
+from f_tools.pic.f_show import show_od_keypoints4pil
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import *
 from object_detection.f_retinaface.utils.process_fun import init_model, DATA_TRANSFORM
 from object_detection.f_retinaface.utils.train_eval_fun import PredictHandler
@@ -36,10 +34,19 @@ if __name__ == '__main__':
     '''------------------系统配置---------------------'''
     device = torch.device('cpu')
     flog.info('模型当前设备 %s', device)
+    use_y = False  # 是否使用原装验证
 
     '''------------------模型定义---------------------'''
     model = init_model(CFG)
     model.eval()
+
+    if use_y:
+        file_weight = r'D:\tb\tb\ai_code\DL\object_detection\retinaface\file\Retinaface_mobilenet0.25.pth'
+        state_dict = torch.load(file_weight, map_location=device)
+        model_dict = model.state_dict()
+        keys_missing, keys_unexpected = model.load_state_dict(state_dict)
+    else:
+        start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, device=device)
 
     path_img = './img'
     files = os.listdir(path_img)
@@ -53,18 +60,14 @@ if __name__ == '__main__':
         # szie_scale4bbox = torch.Tensor(CFG.IMAGE_SIZE * 2)
         # szie_scale4landmarks = torch.Tensor(CFG.IMAGE_SIZE * 5)
 
-        '''feadre处理方法'''
-        # img_ts = DATA_TRANSFORM['val'](img_pil)[0][None]
-        # anc_size=CFG.IMAGE_SIZE
-        # start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, device=device)
-
-        '''原装预处理方法'''
-        img_ts = other(img_pil)
-        anc_size = (h, w)
-        file_weight = r'D:\tb\tb\ai_code\DL\object_detection\retinaface\file\Retinaface_mobilenet0.25.pth'
-        state_dict = torch.load(file_weight, map_location=device)
-        model_dict = model.state_dict()
-        keys_missing, keys_unexpected = model.load_state_dict(state_dict)
+        if use_y:
+            '''原装预处理方法'''
+            img_ts = other(img_pil)
+            anc_size = (h, w)
+        else:
+            '''feadre处理方法'''
+            img_ts = DATA_TRANSFORM['val'](img_pil)[0][None]
+            anc_size = CFG.IMAGE_SIZE
 
         # 生成 所有比例anchors
         anchors = AnchorsFound(anc_size, CFG.ANCHORS_SIZE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP).get_anchors()
@@ -76,7 +79,7 @@ if __name__ == '__main__':
         # (batch,++特图(w*h)*anc数,4) (batch,++特图(w*h)*anc数,2)  (batch,++特图(w*h)*anc数,10)
         predict_handler = PredictHandler(model, device, anchors,
                                          threshold_conf=0.5, threshold_nms=0.3)
-        p_boxes, p_keypoints, p_scores = predict_handler.predicting(img_ts)
+        p_boxes, p_keypoints, p_scores = predict_handler.predicting4one(img_ts)
         if p_boxes is not None:
             # 恢复尺寸
             p_boxes = p_boxes * szie_scale4bbox

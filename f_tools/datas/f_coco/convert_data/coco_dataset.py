@@ -91,6 +91,7 @@ class CocoDataset(Dataset):
                 bboxs: np(num_anns, 4),
                 labels: np(num_anns),
                 keypoints: np(num_anns,10),
+                size: wh
             }
         '''
         img_pil = self.load_image(index)
@@ -106,7 +107,7 @@ class CocoDataset(Dataset):
         target = {}
         l_ = ['bboxs', 'labels', 'keypoints']
         target['image_id'] = image_id
-        target['size'] = img_pil.size
+        target['size'] = img_pil.size  # (w,h)
         for i, tar in enumerate(tars_):
             target[l_[i]] = tar
         __d = 1  # 调试点
@@ -127,11 +128,15 @@ class CocoDataset(Dataset):
         # show_pics_ts(img[None])
 
         if self.out == 'ts':
-            # target['image_id'] = torch.tensor(image_id)
+            target['bboxs'] = torch.tensor(target['bboxs']).type(torch.float)
+            target['labels'] = torch.tensor(target['labels']).type(torch.int64)
+            target['size'] = torch.tensor(target['size']).type(torch.int64)
+            if self.mode == 'keypoints':
+                target['keypoints'] = torch.tensor(target['keypoints']).type(torch.float)
             # img = img.to(self.device)
-            for key, val in target.items():
-                target[key] = torch.tensor(val).type(torch.float)
-                # target[key] = torch.tensor(val).type(torch.float).to(self.device)
+            # for key, val in target.items():
+            #     target[key] = torch.tensor(val).type(torch.float)
+            #     target[key] = torch.tensor(val).type(torch.float).to(self.device)
 
         return img_pil, target
 
