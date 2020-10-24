@@ -1,4 +1,5 @@
 import os
+import sys
 
 import torch
 
@@ -145,9 +146,7 @@ def data_loader(cfg, device):
     # loader_train = Data_Prefetcher(loader_train)
     if cfg.IS_EVAL:
         class_to_idx = {'face': 1}
-        path_data_root = r'M:\AI\datas\widerface\val'
-        path_dt_res = r'M:\temp\11'
-        dataset_val = MapDataSet(path_data_root, path_dt_res, class_to_idx, transforms=data_transform['val'],
+        dataset_val = MapDataSet(cfg.PATH_DT_ROOT, cfg.PATH_DT_RES, class_to_idx, transforms=data_transform['val'],
                                  is_debug=cfg.DEBUG)
         loader_val = torch.utils.data.DataLoader(
             dataset_val,
@@ -213,6 +212,8 @@ def train_eval(cfg, start_epoch, model, anchors, losser, optimizer, lr_scheduler
                 predict_handler=predict_handler,
                 epoch=epoch,
                 res_eval=res_eval)
+            if cfg.IS_RUN_ONE:
+                return
             # del coco_res_bboxs
     if cfg.IS_TRAIN:
         '''-------------结果可视化-----------------'''

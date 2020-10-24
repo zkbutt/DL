@@ -1,6 +1,9 @@
+import shutil
 import sys
 import os
 import glob
+from f_tools.datas.map.config_map import CFG
+
 
 ## This script ensures same number of files in ground-truth and detection-results folder.
 ## When you encounter file not found error, it's usually because you have
@@ -11,42 +14,6 @@ import glob
 
 
 # make sure that the cwd() in the beginning is the location of the python script (so that every path makes sense)
-from f_tools.datas.map.config_map import CFG
-
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
-# 初始化原装测试
-# parent_path = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
-# parent_path = os.path.abspath(os.path.join(parent_path, os.pardir))
-# GT_PATH = os.path.join(parent_path, 'input', 'ground-truth')
-# DR_PATH = os.path.join(parent_path, 'input', 'detection-results')
-
-GT_PATH = CFG.PATH_GT
-DR_PATH = CFG.PATH_DT
-IMG_PATH = CFG.PATH_IMG
-
-backup_folder = 'backup_no_matches_found'  # must end without slash
-
-os.chdir(GT_PATH)
-gt_files = glob.glob('*.txt')
-if len(gt_files) == 0:
-    print("Error: no .txt files found in", GT_PATH)
-    sys.exit()
-os.chdir(DR_PATH)
-dr_files = glob.glob('*.txt')
-if len(dr_files) == 0:
-    print("Error: no .txt files found in", DR_PATH)
-    sys.exit()
-
-gt_files = set(gt_files)
-dr_files = set(dr_files)
-print('total ground-truth files:', len(gt_files))
-print('total detection-results files:', len(dr_files))
-print()
-
-gt_backup = gt_files - dr_files
-dr_backup = dr_files - gt_files
-
 
 def backup(src_folder, backup_files, backup_folder):
     # non-intersection files (txt format) will be moved to a backup folder
@@ -61,13 +28,64 @@ def backup(src_folder, backup_files, backup_folder):
         os.rename(file, backup_folder + '/' + file)
 
 
-backup(GT_PATH, gt_backup, backup_folder)
-backup(DR_PATH, dr_backup, backup_folder)
-if gt_backup:
-    print('total ground-truth backup files:', len(gt_backup))
-if dr_backup:
-    print('total detection-results backup files:', len(dr_backup))
+def recover_gt():
+    path_gt_bak = os.path.join(GT_PATH, backup_folder)
+    if os.path.exists(path_gt_bak):
+        os.chdir(path_gt_bak)
+        files_gt_bak = glob.glob('*.txt')  # 获取文件名
+        for file in files_gt_bak:
+            if os.path.exists(os.path.join(GT_PATH, file)):
+                continue
+            shutil.move(file, GT_PATH)
 
-intersection = gt_files & dr_files
-print('total intersected files:', len(intersection))
-print("Intersection completed!")
+
+def fix_txt():
+    os.chdir(GT_PATH)
+    gt_files = glob.glob('*.txt')  # #获取指定目录下的所有txt
+    if len(gt_files) == 0:
+        print("Error: no .txt files found in", GT_PATH)
+        sys.exit()
+    os.chdir(DR_PATH)
+    dr_files = glob.glob('*.txt')
+    if len(dr_files) == 0:
+        print("Error: no .txt files found in", DR_PATH)
+        sys.exit()
+    gt_files = set(gt_files)
+    dr_files = set(dr_files)
+    print('total ground-truth files:', len(gt_files))
+    print('total detection-results files:', len(dr_files))
+    print()
+    gt_backup = gt_files - dr_files
+    dr_backup = dr_files - gt_files
+    backup(GT_PATH, gt_backup, backup_folder)
+    backup(DR_PATH, dr_backup, backup_folder)
+    if gt_backup:
+        print('total ground-truth backup files:', len(gt_backup))
+    if dr_backup:
+        print('total detection-results backup files:', len(dr_backup))
+    intersection = gt_files & dr_files
+    print('total intersected files:', len(intersection))
+    print("Intersection completed!")
+
+
+if __name__ == '__main__':
+    '''
+    41轮 2684/3225   mAP = 29.18%
+    11轮 2617/3225   mAP = 36.33%
+    '''
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    # 初始化原装测试
+    # parent_path = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+    # parent_path = os.path.abspath(os.path.join(parent_path, os.pardir))
+    # GT_PATH = os.path.join(parent_path, 'input', 'ground-truth')
+    # DR_PATH = os.path.join(parent_path, 'input', 'detection-results')
+    GT_PATH = CFG.PATH_GT
+    DR_PATH = CFG.PATH_DT
+    IMG_PATH = CFG.PATH_IMG
+    recover = True
+
+    backup_folder = 'backup_no_matches_found'  # must end without slash
+
+    recover_gt()
+
+    # fix_txt()

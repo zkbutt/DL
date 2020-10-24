@@ -25,11 +25,13 @@ abc.txt --- abc.jpg   ltrb
 
 '''
 if __name__ == '__main__':
-    path_img = r'M:\AI\datas\widerface\val/images'
-    file_label = r'M:\AI\datas\widerface\val/label.txt'
+    # path_img = r'M:\AI\datas\widerface\val/images'
+    # file_label = r'M:\AI\datas\widerface\val/label.txt'
+    path_img = r'/home/win10_sys/AI/datas/widerface/WIDER_val/images'
+    file_label = r'/home/win10_sys/AI/datas/widerface/val/label.txt'
     class_name = 'face'
     is_move = False
-    path_dst = 'm:/temp/11'  # 目标自动创建 images gt_info
+    path_dst = '/home/win10_sys/AI/datas/widerface/val'  # 目标自动创建 images gt_info
     path_imgages = os.path.join(path_dst, 'images')
     path_gt_info = os.path.join(path_dst, 'gt_info')
 

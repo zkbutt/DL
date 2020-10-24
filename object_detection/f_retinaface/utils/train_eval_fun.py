@@ -253,7 +253,8 @@ class PredictHandler(FitBase):
                 with open(file_txt, "w") as f:
                     f.writelines(lines_write)
             else:
-                flog.warning('没有预测出框 %s', files_txt)
+                # flog.warning('没有预测出框 %s', files_txt)
+                pass
         return p_labels, p_scores, p_boxes, sizes, idxs
 
     def predicting4many(self, images):
@@ -275,7 +276,7 @@ class PredictHandler(FitBase):
         p_scores = p_scores[mask]
         idxs = idxs[mask]
         keep = batched_nms(p_boxes, p_scores, idxs, self.threshold_nms)
-        flog.debug('threshold_nms 过滤后有 %s 个', len(keep))
+        # flog.debug('threshold_nms 过滤后有 %s 个', len(keep))
         p_labels = torch.ones(len(keep), dtype=torch.int64).to(p_boxes.device)
         p_boxes = p_boxes[keep]
         p_scores = p_scores[keep]
