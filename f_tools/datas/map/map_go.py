@@ -9,7 +9,7 @@ import math
 
 import numpy as np
 
-from f_tools.datas.map.config_map import CFG
+from f_tools.datas.map.CONFIG_MAP import CFG
 
 MINOVERLAP = 0.5  # 置信度 default value (defined in the PASCAL VOC2012 challenge)
 

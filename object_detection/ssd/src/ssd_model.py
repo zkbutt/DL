@@ -6,8 +6,8 @@ from object_detection.ssd.CONFIG_SSD import NEG_RATIO
 from object_detection.ssd.src.res50_backbone import resnet50
 from torch import nn, Tensor
 import torch
-from torch.jit.annotations import Optional, List, Dict, Tuple, Module
-from object_detection.ssd.src.utils import dboxes300_coco, Encoder, PostProcess
+from torch.jit.annotations import List
+from object_detection.ssd.src.utils import dboxes300_coco, PostProcess
 
 
 class Backbone(nn.Module):
@@ -293,7 +293,7 @@ class Loss(nn.Module):
 
 
 if __name__ == '__main__':
-    from f_tools.model.analyse import f_tensorwatch, f_summary
+    from f_pytorch.backbone_t.analyse import f_tensorwatch
 
     # model = resnet50()
     backbone = Backbone()

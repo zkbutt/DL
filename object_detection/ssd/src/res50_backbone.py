@@ -133,6 +133,6 @@ def resnet50(num_classes=1000, include_top=True):
 
 if __name__ == '__main__':
     model = resnet50()
-    from f_tools.model.analyse import f_tensorwatch
+    from f_pytorch.backbone_t.analyse import f_tensorwatch
 
     f_tensorwatch(model, 'model_analyse.xlsx', (1, 3, 300, 300))

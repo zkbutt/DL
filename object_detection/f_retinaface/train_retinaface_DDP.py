@@ -42,9 +42,6 @@ if __name__ == '__main__':
           "ppid:%s ...pid: %s" % (os.getppid(), os.getpid())
           )
 
-    '''---------------数据加载及处理--------------'''
-    loader_train, loader_val = data_loader(CFG, device)
-
     '''------------------模型定义---------------------'''
     model = init_model(CFG)
     model.to(device)  # 这个不需要加等号
@@ -59,13 +56,13 @@ if __name__ == '__main__':
     # 在发现loss不再降低或者acc不再提高之后，降低学习率
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
 
-    start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device)
-    # 权重初始模式
-    # state_dict = torch.load(CFG.FILE_FIT_WEIGHT, map_location=device)
-    # model_dict = model.state_dict()
-    # keys_missing, keys_unexpected = model.load_state_dict(state_dict)
     # start_epoch = 0
+    start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device)
 
+    '''---------------数据加载及处理--------------'''
+    loader_train, loader_val = data_loader(CFG, device)
+
+    flog.debug('---训练开始---epoch %s', start_epoch + 1)
     train_eval(CFG, start_epoch, model, anchors, losser, optimizer, lr_scheduler,
                loader_train=loader_train, loader_val=loader_val, device=device,
                )

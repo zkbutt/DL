@@ -45,6 +45,7 @@ if __name__ == '__main__':
     # print(args.integers)
     # print(args.name)
     # print(args.family)
-    r = range(3, 6)
-    for i in r:
-        print(i)
+    # r = range(3, 6)
+    # for i in r:
+    #     print(i)
+    print(sys.float_info.min)

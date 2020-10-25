@@ -1,6 +1,5 @@
 import numpy as np
 
-
 import os
 
 import torch
@@ -18,6 +17,8 @@ eta: 0:00:00.730305  lr: 0.000500  loss_total: 6.8880 (7.2228)  loss_bboxs: 1.02
 
 /home/win10_sys/AI/weights/feadre/train_retinaface.py-10_7.423844337463379.pth
 lr: 0.000250  loss_total: 6.9989 (7.4330)  loss_bboxs: 1.0570 (1.0892)  loss_labels: 1.4724 (1.5348)  loss_keypoints: 2.5386 (2.6307)  time: 0.6397  data: 0.1441  剩余时间: 0  max mem: 389
+
+6个图片，显存6125 time: 0.5513
 '''
 
 if __name__ == '__main__':
@@ -46,9 +47,6 @@ if __name__ == '__main__':
 
     # CFG.FILE_FIT_WEIGHT = None
 
-    '''---------------数据加载及处理--------------'''
-    loader_train, loader_val = data_loader(CFG, device)
-
     '''------------------模型定义---------------------'''
     model = init_model(CFG)
     model.to(device)  # 这个不需要加等号
@@ -70,6 +68,10 @@ if __name__ == '__main__':
     # keys_missing, keys_unexpected = model.load_state_dict(state_dict)
     # start_epoch = 0
 
+    '''---------------数据加载及处理--------------'''
+    loader_train, loader_val = data_loader(CFG, device)
+
+    flog.debug('---训练开始---epoch %s', start_epoch + 1)
     train_eval(CFG, start_epoch, model, anchors, losser, optimizer, lr_scheduler,
                loader_train=loader_train, loader_val=loader_val, device=device,
                )

@@ -6,7 +6,6 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms
 from f_tools.pic.f_show import show_od_keypoints4ts, show_od4ts, show_anc4ts
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
-from object_detection.retinaface.utils.box_utils import decode
 
 
 def _preprocessing_data(batch_data, device, mode='keypoints'):
@@ -186,11 +185,11 @@ class PredictHandler(FitBase):
                 # h, w = img_ts4.shape[-2:]
                 show_anc4ts(img_ts4.squeeze(0), p_boxes, CFG.IMAGE_SIZE)
 
-        flog.debug('threshold_conf 过滤后有 %s 个', p_scores.shape[0])
+        # flog.debug('threshold_conf 过滤后有 %s 个', p_scores.shape[0])
         # 2 . 根据得分对框进行从大到小排序。
         # keep = batched_nms(p_boxes, p_scores, idxs_img, self.threshold_nms)
         keep = nms(p_boxes, p_scores, self.threshold_nms)
-        flog.debug('threshold_nms 过滤后有 %s 个', len(keep))
+        # flog.debug('threshold_nms 过滤后有 %s 个', len(keep))
         p_boxes = p_boxes[keep]
         p_scores = p_scores[keep]
         p_keypoints = p_keypoints[keep]

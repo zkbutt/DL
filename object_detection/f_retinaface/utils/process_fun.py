@@ -2,7 +2,9 @@ import os
 import sys
 
 import torch
+from torchvision import models
 
+from f_pytorch.backbone_t.model_look import FRebuild4densenet161
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet
 from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
@@ -66,8 +68,34 @@ def output_res(p_boxes, p_keypoints, p_scores, threshold_conf=0.5, threshold_nms
 
 
 def init_model(cfg):
-    backbone = MobileNetV1()
-    model = RetinaFace(backbone, cfg.IN_CHANNELS, cfg.OUT_CHANNEL, cfg.RETURN_LAYERS, cfg.ANCHOR_NUM, cfg.NUM_CLASSES)
+    # backbone = MobileNetV1()
+    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_mobilenetv1'
+    # cfg.RETURN_LAYERS = {'layer2': 1, 'layer3': 2, 'layer4': 3}
+    # cfg.IN_CHANNELS_FPN = [64, 128, 256]
+    # cfg.BATCH_SIZE = 48
+
+    # backbone = models.resnet50(pretrained=True)  # batch5 5353
+    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_resnet'
+    backbone = models.resnext50_32x4d(pretrained=True)  # batch5 6269 time: 0.9488
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_resnext50'
+    # backbone = models.wide_resnet50_2(pretrained=True) # batch5 6779
+    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_wide_resnet'
+    cfg.RETURN_LAYERS = {'layer2': 1, 'layer3': 2, 'layer4': 3}
+    cfg.IN_CHANNELS_FPN = [512, 1024, 2048]
+    cfg.BATCH_SIZE = 6
+
+    # backbone = models.densenet161(pretrained=True)  # 能力 22.35  6.20  ---top2
+    # backbone = FRebuild4densenet161(backbone, None)
+    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_densenet161'
+    # cfg.RETURN_LAYERS = {'layer1': 1, 'layer2': 2, 'layer3': 3}
+    # cfg.IN_CHANNELS_FPN = [768, 2112, 2208]
+    # cfg.BATCH_SIZE = 3
+
+    cfg.OUT_CHANNEL = 256
+    # ------------------------自定义backbone完成-------------------------------
+
+    model = RetinaFace(backbone, cfg.IN_CHANNELS_FPN, cfg.OUT_CHANNEL, cfg.RETURN_LAYERS, cfg.ANCHOR_NUM,
+                       cfg.NUM_CLASSES)
 
     return model
 

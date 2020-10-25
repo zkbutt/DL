@@ -2,7 +2,7 @@ import shutil
 import sys
 import os
 import glob
-from f_tools.datas.map.config_map import CFG
+from f_tools.datas.map.CONFIG_MAP import CFG
 
 
 ## This script ensures same number of files in ground-truth and detection-results folder.
@@ -72,6 +72,8 @@ if __name__ == '__main__':
     '''
     41轮 2684/3225   mAP = 29.18%
     11轮 2617/3225   mAP = 36.33%
+    resnet 5轮 2904/3225   mAP = 32.47%
+    resnext 4轮 2738/3225  mAP = 30.48%
     '''
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     # 初始化原装测试
@@ -88,4 +90,4 @@ if __name__ == '__main__':
 
     recover_gt()
 
-    # fix_txt()
+    fix_txt()

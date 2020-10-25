@@ -227,7 +227,7 @@ class MetricLogger(object):
                                            '{meters}',
                                            'time: {time}',
                                            'data: {data}',
-                                           '剩余时间: {r_time}',
+                                           # '剩余时间: {r_time}',
                                            'max mem: {memory:.0f}'])
         else:
             log_msg = self.delimiter.join([header,
@@ -236,7 +236,7 @@ class MetricLogger(object):
                                            '{meters}',
                                            'time: {time}',
                                            'data: {data}',
-                                           '剩余时间: {r_time}',
+                                           # '剩余时间: {r_time}',
                                            ])
         MB = 1024.0 * 1024.0
         for obj in iterable:
@@ -252,14 +252,14 @@ class MetricLogger(object):
                                               meters=str(self),
                                               time=str(iter_time),  # 模型迭代时间(含数据加载) SmoothedValue对象
                                               data=str(data_time),  # 取数据时间 SmoothedValue对象
-                                              r_time=str(int(iter_time.value * (len(iterable) - i))),
+                                              # r_time=str(int(iter_time.value * (len(iterable) - i))),
                                               memory=torch.cuda.max_memory_allocated() / MB))
                 else:
                     flog.debug(log_msg.format(i, len(iterable),
                                               eta=eta_string,
                                               meters=str(self),
                                               time=str(iter_time),
-                                              r_time=str(int(iter_time.value * (len(iterable) - i))),
+                                              # r_time=str(int(iter_time.value * (len(iterable) - i))),
                                               data=str(data_time)))
             i += 1
             end = time.time()

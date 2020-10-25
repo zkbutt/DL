@@ -8,8 +8,7 @@ import torch.nn.functional as F
 from torchvision import models
 
 from f_tools.GLOBAL_LOG import flog
-from object_detection.retinaface.nets.mobilenet025 import MobileNetV1
-from object_detection.retinaface.nets.layers import FPN, SSH
+from object_detection.f_retinaface.nets.layers import FPN, SSH
 
 
 class ClassHead(nn.Module):
@@ -47,10 +46,10 @@ class LandmarkHead(nn.Module):
 
 
 class RetinaFace(nn.Module):
-    def __init__(self, backbone, in_channels, out_channel, return_layers, anchor_num, num_classes):
+    def __init__(self, backbone, in_channels_fpn, out_channel, return_layers, anchor_num, num_classes):
         '''
 
-        :param in_channels: fpn的输入通道维度 数组对应输
+        :param in_channels_fpn: fpn的输入通道维度 数组对应输
         :param out_channel: FPN的输出 与SSH输出一致
         :param pretrain_path: backbone 权重文件路径
         :param return_layers:  定义 backbone 的输出名
@@ -62,11 +61,6 @@ class RetinaFace(nn.Module):
         # self.body = _utils.IntermediateLayerGetter(backbone, {'stage1': 1, 'stage2': 2, 'stage3': 3})
         # 生成 IntermediateLayerGetter 对象 通过 out = self.body(inputs) 即可输出多个形成数组
         self.body = _utils.IntermediateLayerGetter(backbone, return_layers)  # backbone转换
-        in_channels_fpn = [
-            in_channels * 2,
-            in_channels * 4,
-            in_channels * 8,
-        ]
         self.fpn = FPN(in_channels_fpn, out_channel)
         self.ssh1 = SSH(out_channel, out_channel)
         self.ssh2 = SSH(out_channel, out_channel)
