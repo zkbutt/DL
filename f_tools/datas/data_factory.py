@@ -410,7 +410,7 @@ class MapDataSet(Dataset):
                     label, l, t, r, b = line.split(' ')
                     _labels.append(class_to_idx[label])
                     _bboxs.append([float(l), float(t), float(r), float(b)])
-            self.targets.append({'labels': _labels, 'bboxs': _bboxs})
+            self.targets.append({'labels': _labels, 'boxes': _bboxs})
 
     def __len__(self):
         return len(self.names_gt_info)
@@ -428,12 +428,12 @@ class MapDataSet(Dataset):
         target = self.targets[index]
         target['size'] = img_pil.size
         target['name_txt'] = names_gt_info
-        target['bboxs'] = np.array(target['bboxs'], dtype=np.float32)
+        target['boxes'] = np.array(target['boxes'], dtype=np.float32)
         if self.transform_cpu is not None:
             # 预处理输入 PIL img 和 np的target
             img_pil, target = self.transform_cpu(img_pil, target)
         if self.out == 'ts':
-            target['bboxs'] = torch.tensor(target['bboxs']).type(torch.float)
+            target['boxes'] = torch.tensor(target['boxes']).type(torch.float)
             target['labels'] = torch.tensor(target['labels']).type(torch.int64)
             target['size'] = torch.tensor(target['size']).type(torch.int64)
         return img_pil, target

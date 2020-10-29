@@ -467,10 +467,8 @@ class AnchorsFound(object):
 
         self.image_size = image_size
         # 根据预处理后的尺寸及步距 计算每一个特图的尺寸
-        # feature_maps: [[80, 80], [40, 40], [20, 20]] = [640,640] / [8, 16, 32]
-        # self.feature_maps = np.ceil(self.image_size[None] / self.feature_map_steps[:, None])
         from math import ceil
-        # torch.tensor(image_size)[None].expand((3, 2)) / torch.tensor(feature_map_steps).type(torch.float)[:, None]
+        # 根据预处理图片及下采倍数，计算特图尺寸 <class 'list'>: [[52, 52], [26, 26], [13, 13]] (w,h)
         self.feature_maps = [[ceil(self.image_size[0] / step), ceil(self.image_size[1] / step)]
                              for step in self.feature_map_steps]
 
@@ -507,8 +505,69 @@ class AnchorsFound(object):
         return output
 
 
+class Anchors():
+    def __init__(self, image_size, anchors_size, feature_size_steps, anchors_clip=False):
+        '''
+        没有长宽比就是个正方形
+        :param image_size:  原图预处理后尺寸 w,h
+        :param anchors_size:每一个特图对应的每一种特图的尺寸
+             ANCHORS_SIZE = [
+                [[116, 90], [156, 198], [373, 326]],  # 小特图大目标 13x13
+                [[30, 61], [62, 45], [59, 119]], # 26, 26
+                [[10, 13], [16, 30], [33, 23]],  # 大特图小目标 52, 52
+            ]
+        :param feature_size_steps: [8, 16, 32]  # 特图的步距 可通过尺寸算出来
+        :param anchors_clip: 是否剔除超边界
+        '''
+        self.anchors_clip = anchors_clip  # 是否剔除超边界---超参
+        self.anchors_size = anchors_size
+        # 特征层对应的步距   [8, 16, 32] 原图size/特图size = images/feature_maps = steps
+        self.feature_size_steps = feature_size_steps  # 这个定义特图下采样比例
+
+        self.image_size = image_size
+        # 根据预处理后的尺寸及步距 计算每一个特图的尺寸
+        from math import ceil
+        # 根据预处理图片及下采倍数，计算特图尺寸 <class 'list'>: [[52, 52], [26, 26], [13, 13]] (w,h)
+        self.feature_sizes = [[ceil(self.image_size[0] / step), ceil(self.image_size[1] / step)]
+                              for step in self.feature_size_steps]
+
+    def get_anchors(self):
+        '''
+        要得到最终的框还需乘原图对应的尺寸
+        :return:
+            返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框
+            这里是 x,y,w,h 调整系数
+        '''
+        anchors = []
+        # 为每一个特图 生成
+        for i, feature_size in enumerate(self.feature_sizes):
+            # 取出 每一个特图对应的 Anchors 的尺寸组 [[116, 90], [156, 198], [373, 326]]
+            ancs_szie = self.anchors_size[i]
+            # 每个网格点2个先验框，都是正方形
+            from itertools import product as product
+            # 取每一个特图的w,h   ,进行笛卡尔积循环 相当于行列坐标
+            for xw, yh in product(range(feature_size[0]), range(feature_size[1])):
+                for anc_size in ancs_szie:
+                    scale_x = anc_size[0] / self.image_size[0]  # anc -> 特图的映射
+                    scale_y = anc_size[1] / self.image_size[1]
+                    # self.steps = [8, 16, 32]
+                    # 加0.5是将中间点从左上角调整到格子的中间
+                    dense_cx = [x * self.feature_size_steps[i] / self.image_size[0] for x in [xw + 0.5]]
+                    dense_cy = [y * self.feature_size_steps[i] / self.image_size[1] for y in [yh + 0.5]]
+                    for cy, cx in product(dense_cy, dense_cx):
+                        anchors += [cx, cy, scale_x, scale_y]  # x,y,w,h 特图的每一个点对应原图的比例
+            # 最终形成的 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数
+            # 需乘个size才能得到具体的框
+
+        output = torch.Tensor(anchors).view(-1, 4)
+        if self.anchors_clip:
+            output.clamp_(max=1, min=0)  # 去除超边际的
+        return output  # torch.Size([10647, 4])
+
+
 def __t_anc4found():
-    size = [320, 320]
+    # size = [320, 320]
+    size = [416, 416]
     anchors_size = [[16, 32], [64, 128], [256, 512]]
     feature_map_steps = [8, 16, 32]
     clip = False
@@ -520,7 +579,7 @@ def __t_anc4found():
     __anchors = anchors.clone()
     __anchors[:, [0, 2]] = __anchors[:, [0, 2]] * size[0]
     __anchors[:, [1, 3]] = __anchors[:, [1, 3]] * size[1]
-    # 中心点 --> 左上角 为了plt.Rectangle
+    # xywh --> ltwh 为了plt.Rectangle
     __anchors[:, :2] = __anchors[:, :2] - __anchors[:, 2:] / 2.
     import matplotlib.pyplot as plt
     # 构造点
@@ -635,5 +694,40 @@ def __t001():
 
 if __name__ == '__main__':
     # __t001()
-    __t_anc4found()
+    # __t_anc4found()
+    size = [416, 416]
+    anchors_size = [
+        [[116, 90], [156, 198], [373, 326]],  # 小特图大目标 13x13
+        [[30, 61], [62, 45], [59, 119]],  # 26, 26
+        [[10, 13], [16, 30], [33, 23]],  # 大特图小目标 52, 52
+    ]
+    feature_map_steps = [8, 16, 32]
+    anchors = Anchors(size, anchors_size, feature_map_steps).get_anchors()  # torch.Size([16800, 4])
+    index_start = 0
+    len = 6
+    anchors = anchors[index_start:index_start + len]  # 这里选出 anchors
+    # --------------anchors 转换画图--------------
+    __anchors = anchors.clone()
+    __anchors[:, [0, 2]] = __anchors[:, [0, 2]] * size[0]
+    __anchors[:, [1, 3]] = __anchors[:, [1, 3]] * size[1]
+    # xywh --> ltwh 为了plt.Rectangle
+    __anchors[:, :2] = __anchors[:, :2] - __anchors[:, 2:] / 2.
+    import matplotlib.pyplot as plt
+
+    # 构造点
+    w = [i for i in range(size[0])]
+    h = [i for i in range(size[1])]
+    ww, hh = np.meshgrid(w, h)
+    p = 100  # 图片显示padding
+    # ----------图形配置---------
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    plt.ylim(-p, size[0] + p)
+    plt.xlim(-p, size[1] + p)
+    ax.invert_yaxis()  # y轴反向
+    plt.scatter(ww.reshape(-1), hh.reshape(-1))
+    for a in __anchors:  # 画矩形框
+        rect = plt.Rectangle((a[0], a[1]), a[2], a[3], color="r", fill=False)
+        ax.add_patch(rect)
+    plt.show()
     pass

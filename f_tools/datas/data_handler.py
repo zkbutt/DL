@@ -31,7 +31,7 @@ def spilt_voc2txt(path_files, val_rate=0.3, overlay=False):
         files_num = len(files_name)  # 文件数量
         flog.debug('总文件数 %s', files_num)
         # 随机选出val的index
-        if val_rate > 1:
+        if val_rate > 1.:
             val_index = random.sample(range(0, files_num), k=int(val_rate))
         else:
             val_index = random.sample(range(0, files_num), k=int(files_num * val_rate))
@@ -100,4 +100,5 @@ def spilt_data2folder(path_root, val_rate=0.3):
 if __name__ == '__main__':
     path = r'M:\AI\datas\VOC2012\trainval'
     # spilt_data2folder(r'M:\datas\flower_data\flower_photos')
-    spilt_voc2txt(path, val_rate=256)
+    # spilt_voc2txt(path, val_rate=256)
+    spilt_voc2txt(path, val_rate=0.0)

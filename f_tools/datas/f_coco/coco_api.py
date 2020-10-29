@@ -140,7 +140,7 @@ def show_od4coco(img, target, coco):
 
     cats = coco.loadCats(target['labels'])
 
-    for cat, bbox, keypoint in zip(cats, target['bboxs'], target['keypoints']):
+    for cat, bbox, keypoint in zip(cats, target['boxes'], target['keypoints']):
         skeleton = cat['skeleton']
         keypoint = keypoint
         print()

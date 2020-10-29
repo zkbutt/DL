@@ -33,7 +33,7 @@ class CocoDataset(Dataset):
         self.out = out
         self.transform_cpu = transform
         self.mode = mode
-        if self.mode == 'bboxs':
+        if self.mode == 'boxes':
             name_file = 'instances'
         elif self.mode == 'keypoints':
             name_file = 'person_keypoints'
@@ -105,7 +105,7 @@ class CocoDataset(Dataset):
 
         # 动态构造target
         target = {}
-        l_ = ['bboxs', 'labels', 'keypoints']
+        l_ = ['boxes', 'labels', 'keypoints']
         target['image_id'] = image_id
         target['size'] = img_pil.size  # (w,h)
         for i, tar in enumerate(tars_):
@@ -128,7 +128,7 @@ class CocoDataset(Dataset):
         # show_pics_ts(img[None])
 
         if self.out == 'ts':
-            target['bboxs'] = torch.tensor(target['bboxs']).type(torch.float)
+            target['boxes'] = torch.tensor(target['boxes']).type(torch.float)
             target['labels'] = torch.tensor(target['labels']).type(torch.int64)
             target['size'] = torch.tensor(target['size']).type(torch.int64)
             if self.mode == 'keypoints':
@@ -197,7 +197,7 @@ class CocoDataset(Dataset):
         if bboxs.shape[0] == 0:
             raise Exception('这图bboxs不存在 %s %s', coco_anns, self.image_ids[index])
 
-        if self.mode == 'bboxs':
+        if self.mode == 'boxes':
             return [bboxs, np.array(labels)]
         elif self.mode == 'keypoints':
             return [bboxs, np.array(labels), keypoints]

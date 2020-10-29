@@ -218,7 +218,7 @@ def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
     annotations = pd.read_csv(file_csv, header=None).values
     # 重构csv格式标注文件
     file_annotations_dict = {}
-    if mode == 'bboxs' and annotations[0].shape[0] != 6:
+    if mode == 'boxes' and annotations[0].shape[0] != 6:
         raise Exception('加载csv格式出错 mode=%s value=%s' % (mode, annotations[0]))
     if mode == 'keypoints' and annotations[0].shape[0] != 21:
         raise Exception('加载csv格式出错 mode=%s value=%s' % (mode, annotations[0]))
@@ -226,7 +226,7 @@ def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
         key = annotation[0].split(os.sep)[-1]  # 取文件名
         value = np.array([annotation[1:]])  # 取bbox
 
-        # assert mode == 'bboxs' and len(value) == 5, '加载csv格式出错 value=%s' % value
+        # assert mode == 'boxes' and len(value) == 5, '加载csv格式出错 value=%s' % value
         # assert mode == 'keypoints' and len(value) == 16, '加载csv格式出错 value=%s' % value
         if key in file_annotations_dict.keys():
             file_annotations_dict[key] = np.concatenate((file_annotations_dict[key], value), axis=0)
@@ -241,7 +241,7 @@ def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
     if not os.path.exists(path_annotations):
         os.makedirs(path_annotations)
 
-    if mode == 'bboxs':
+    if mode == 'boxes':
         # 把训练集转化为COCO的json格式
         name_file = 'instances'
 
@@ -294,7 +294,7 @@ if __name__ == '__main__':
     type = 'val2017'  # train2017
     # path_img = r'M:\AI\datas\widerface\val\images'  # 真实图片路径
     path_img = r'M:\AI\datas\widerface\val\images'  # 真实图片路径
-    mode = 'bboxs'  # 'keypoints'  # 'bboxs':
+    mode = 'boxes'  # 'keypoints'  # 'boxes':
     path_coco_save = r"M:\AI\datas\widerface"  # 这个是生成的根
 
     with open(path_classname, 'r', encoding='utf-8') as f:

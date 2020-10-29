@@ -8,9 +8,6 @@ import torch.distributed as dist
 from torch.cuda.amp import GradScaler, autocast
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.f_coco.coco_eval import CocoEvaluator
-from f_tools.fun_od.f_boxes import fix_bbox, fix_keypoints, xywh2ltrb
-from object_detection.f_retinaface.utils.train_eval_fun import _preprocessing_data
 
 
 def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,

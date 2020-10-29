@@ -6,6 +6,7 @@ import torchvision.models as models
 from torch import nn
 from torch.nn import AvgPool2d
 
+from f_pytorch.backbone_t.f_models.darknet import darknet53
 from f_pytorch.backbone_t.f_models.mobilenet025 import MobileNetV1
 from f_tools.GLOBAL_LOG import flog
 
@@ -65,16 +66,38 @@ def f替换(model):
     model.classifier = nn.Linear(features, 5)
 
 
+def other():
+    pass
+    # 修正版本报错
+    # torch.onnx.set_training = torch.onnx.select_model_mode_for_export
+    # 生成模型结构图
+    # img = tw.draw_model(model, [1, 3, 224, 224])
+    # print(type(img))
+    # img.save(r'model.jpg')
+    # # GRAPHVIZ+TORCHVIZ
+    # x = torch.rand(8, 3, 256, 512)
+    # y = model(x)
+
+
+def f_look(model, input=(1, 3, 416, 416)):
+    import tensorwatch as tw
+
+    # 用这个即可---查看网络的统计结果---
+    args_pd = tw.model_stats(model, input)
+    args_pd.to_excel('model_look.xlsx')
+
+
 if __name__ == '__main__':
     '''
     '''
-    data_inputs_list = [1, 3, 640, 640]
+    # data_inputs_list = [1, 3, 640, 640]
+    data_inputs_list = [1, 3, 416, 416]
     torch.random.manual_seed(20201025)  # 3746401707500
     data_inputs_ts = torch.rand(data_inputs_list, dtype=torch.float)
 
-    model = models.densenet161(pretrained=True)  # 能力 22.35  6.20  ---top2
-    model = FRebuild4densenet161(model, None)
-    return_layers = {'layer1': 1, 'layer2': 2, 'layer3': 3}
+    # model = models.densenet161(pretrained=True)  # 能力 22.35  6.20  ---top2
+    # model = FRebuild4densenet161(model, None)
+    # return_layers = {'layer1': 1, 'layer2': 2, 'layer3': 3}
 
     # model = models.wide_resnet50_2(pretrained=True)  # 能力 21.49 5.91  ---top1
     # model = models.resnext50_32x4d(pretrained=True)  # 能力 22.38 6.30 ---top3
@@ -82,12 +105,14 @@ if __name__ == '__main__':
 
     # model = models.resnet50(pretrained=True)  # 下采样倍数32 能力23.85 7.13
     # return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
-    my_model = FModelOne2More(model, return_layers)
-    data_outputs = my_model(data_inputs_ts)
-    for k, v in data_outputs.items():
-        print(v.shape)
+    # my_model = FModelOne2More(model, return_layers)
+    # data_outputs = my_model(data_inputs_ts)
+    # for k, v in data_outputs.items():
+    #     print(v.shape)
 
     # f替换(model)
+
+    model = darknet53()
     '''
     torch.Size([1, 512, 80, 80])
     torch.Size([1, 1024, 40, 40])
@@ -106,8 +131,8 @@ if __name__ == '__main__':
     import tensorwatch as tw
 
     # 用这个即可---查看网络的统计结果---
-    # args_pd = tw.model_stats(model, data_inputs_list)
-    # args_pd.to_excel('model_log.xlsx')
+    args_pd = tw.model_stats(model, data_inputs_list)
+    args_pd.to_excel('model_log.xlsx')
 
     # # print(type(args_pd))
     # print(args_pd)
@@ -117,17 +142,7 @@ if __name__ == '__main__':
     # summary1 = summary(model, (3, 640, 640))
     # print(type(summary1))
 
-    # 修正版本报错
-    # torch.onnx.set_training = torch.onnx.select_model_mode_for_export
-
-    # 生成模型结构图
-    # img = tw.draw_model(model, [1, 3, 224, 224])
-    # print(type(img))
-    # img.save(r'model.jpg')
-
-    # # GRAPHVIZ+TORCHVIZ
-    # x = torch.rand(8, 3, 256, 512)
-    # y = model(x)
+    # other()
     '''-----------------模型分析 完成-----------------------'''
 
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

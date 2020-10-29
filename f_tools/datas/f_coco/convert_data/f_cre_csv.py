@@ -15,7 +15,7 @@ class Widerface2Csv:
 
         :param path_root:
         :param file_txt:
-        :param mode: 'bboxs'  'keypoints'   'caption'
+        :param mode: 'boxes'  'keypoints'   'caption'
         '''
         super().__init__()
         self.path_root = path_root
@@ -50,7 +50,7 @@ class Widerface2Csv:
             fun_copy = shutil.copy
         lines = f.readlines()
 
-        if self.mode == 'bboxs':
+        if self.mode == 'boxes':
             classes, infos = self.handler_b_k(fun_copy, is_copy, lines, path_dst)
         elif self.mode == 'keypoints':
             classes, infos = self.handler_b_k(fun_copy, is_copy, lines, path_dst)
@@ -157,7 +157,7 @@ def handler_widerface():
     # mode = 'val'
     path_root = os.path.join('M:\AI\datas\widerface', mode)
     file_txt = 'label.txt'
-    # widerface_csv = Widerface2Csv(path_root, file_txt, 'bboxs')
+    # widerface_csv = Widerface2Csv(path_root, file_txt, 'boxes')
     widerface_csv = Widerface2Csv(path_root, file_txt, 'keypoints')
     path_dst = os.path.join(path_root, 'images')  # 图片移动到此处
     widerface_csv.to_csv(True, path_dst, is_move=True)

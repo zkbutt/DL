@@ -12,7 +12,7 @@ from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 
 def _show(img_ts, target, name):
     flog.debug('%s 后', name)
-    concatenate = np.concatenate([target['bboxs'], target['keypoints']], axis=1)
+    concatenate = np.concatenate([target['boxes'], target['keypoints']], axis=1)
     concatenate[:, ::2] = concatenate[:, ::2] * CFG.IMAGE_SIZE[0]
     concatenate[:, 1::2] = concatenate[:, 1::2] * CFG.IMAGE_SIZE[1]
     img_pil = transforms.ToPILImage()(img_ts)
@@ -55,13 +55,13 @@ class ResizeKeep():
         img_pil = Image.fromarray(img_np, mode="RGB")
 
         if target:
-            target["bboxs"] = target["bboxs"] * ratio
+            target['boxes'] = target['boxes'] * ratio
             target['keypoints'] = target['keypoints'] * ratio
             if CFG.IS_VISUAL:
                 flog.debug('ResizeKeep 后%s')
                 show_od_keypoints4pil(
                     img_pil,
-                    target["bboxs"],
+                    target['boxes'],
                     target['keypoints'],
                     target['labels'])
         return img_pil, target
@@ -86,7 +86,7 @@ class Resize(object):
         img_pil = self.resize(img_pil)
 
         if target:
-            bbox = target["bboxs"]
+            bbox = target['boxes']
             bbox[:, [0, 2]] = bbox[:, [0, 2]] / w_ratio
             bbox[:, [1, 3]] = bbox[:, [1, 3]] / h_ratio
 
@@ -112,9 +112,9 @@ class RandomHorizontalFlip4TS(object):
             img_ts = img_ts.flip(-1)  # 水平翻转图片
 
             if target:
-                bbox = target["bboxs"]
+                bbox = target['boxes']
                 bbox[:, [2, 0]] = 1.0 - bbox[:, ::2]  # 翻转对应bbox坐标信息
-                target["bboxs"] = bbox
+                target['boxes'] = bbox
                 if 'keypoints' in target:
                     keypoints = target['keypoints']
                     _t = np.all(keypoints > 0, axis=1)  # 全有效的行
@@ -155,7 +155,7 @@ class RandomHorizontalFlip4PIL(object):
             img_pil = img_pil.transpose(Image.FLIP_LEFT_RIGHT)  # 水平翻转图片
 
             if target:
-                bbox = target["bboxs"]
+                bbox = target['boxes']
                 # bbox: ltrb
                 bbox[:, [0, 2]] = width - bbox[:, [2, 0]]  # 翻转对应bbox坐标信息
 
@@ -169,7 +169,7 @@ class RandomHorizontalFlip4PIL(object):
                     #     flog.debug('RandomHorizontalFlip4PIL 后%s')
                     #     show_od_keypoints4pil(
                     #         img_pil,
-                    #         target["bboxs"],
+                    #         target['boxes'],
                     #         target['keypoints'],
                     #         target['labels'])
         return img_pil, target
@@ -184,7 +184,7 @@ class ToTensor(object):
         w, h = img_pil.size  # PIL wh
         img_ts = F.to_tensor(img_pil)  # 将PIL图片hw 转tensor c,h,w 且归一化
         if target:
-            bbox = target["bboxs"]
+            bbox = target['boxes']
 
             bbox[:, [0, 2]] = bbox[:, [0, 2]] / w
             bbox[:, [1, 3]] = bbox[:, [1, 3]] / h
