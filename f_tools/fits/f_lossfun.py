@@ -3,14 +3,14 @@ from torch import Tensor, nn
 import torch.nn.functional as F
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.data_pretreatment import f_recover_normalization4ts
 from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints, ltrb2xywh
 from f_tools.pic.f_show import show_od4ts
-from object_detection.f_retinaface.CONFIG_F_RETINAFACE import CFG
 
 
 class LossOD_K(nn.Module):
 
-    def __init__(self, anc, loss_weight=(1., 1., 1.), neg_ratio=3):
+    def __init__(self, anc, loss_weight=(1., 1., 1.), neg_ratio=3, cfg=None):
         '''
 
         :param anc:
@@ -22,6 +22,7 @@ class LossOD_K(nn.Module):
         self.anc = anc.unsqueeze(dim=0)
         self.loss_weight = loss_weight
         self.neg_ratio = neg_ratio
+        self.cfg = cfg
 
     def forward(self, p_bboxs_xywh, g_bboxs_ltrb, p_labels, g_labels, p_keypoints, g_keypoints, imgs_ts=None):
         '''
@@ -37,7 +38,7 @@ class LossOD_K(nn.Module):
         # 正样本标签布尔索引 [batch, 16800] 同维运算
         mask_pos = g_labels > 0
 
-        if CFG.IS_VISUAL:
+        if self.cfg is not None and self.cfg.IS_VISUAL:
             flog.debug('显示匹配的框 %s 个', torch.sum(mask_pos))
             for i, (img_ts, mask) in enumerate(zip(imgs_ts, mask_pos)):
                 # 遍历降维 self.anc([1, 16800, 4])
@@ -112,7 +113,7 @@ class LossOD_K(nn.Module):
 
 class LossOD(nn.Module):
 
-    def __init__(self, anc, loss_weight=(1., 1., 1.), neg_ratio=3):
+    def __init__(self, anc, loss_weight=(1., 1., 1.), neg_ratio=3, cfg=None):
         '''
 
         :param anc:
@@ -124,36 +125,39 @@ class LossOD(nn.Module):
         self.anc = anc.unsqueeze(dim=0)
         self.loss_weight = loss_weight
         self.neg_ratio = neg_ratio
+        self.cfg = cfg
 
-    def forward(self, p_bboxs_xywh, mg_bboxs_ltrb, p_conf, mg_labels, p_cls, imgs_ts=None):
+    def forward(self, p_bboxs_xywh, mg_bboxs_ltrb, p_cls, mg_labels, imgs_ts=None):
         '''
         当只有两个类时，只用p_conf即可
+                p_conf:torch.Size([5, 10647])
         :param p_bboxs_xywh: torch.Size([5, 10647, 4])
         :param mg_bboxs_ltrb:torch.Size([5, 10647, 4])
-        :param p_conf:torch.Size([5, 10647])
-        :param mg_labels:torch.Size([5, 10647])
+        :param mg_labels:torch.Size([5, 10647]) 已匹配
         :param p_cls:torch.Size([5, 10647, 20])
         :param imgs_ts:
         :return:
         '''
         # 同维运算
         mask_pos = mg_labels > 0
-
-        if CFG.IS_VISUAL:
-            flog.debug('显示匹配的框 %s 个', torch.sum(mask_pos))
+        # 检查匹配是否正确
+        if self.cfg is not None and self.cfg.IS_VISUAL:
             for i, (img_ts, mask) in enumerate(zip(imgs_ts, mask_pos)):
+                flog.debug('显示匹配的框 %s 个', torch.sum(mask))
                 # 遍历降维 self.anc([1, 16800, 4])
+                img_ts_show = f_recover_normalization4ts(img_ts)
                 _t = self.anc.view(-1, 4).clone()
-                _t[:, ::2] = _t[:, ::2] * CFG.IMAGE_SIZE[0]
-                _t[:, 1::2] = _t[:, 1::2] * CFG.IMAGE_SIZE[1]
+                _t[:, ::2] = _t[:, ::2] * self.cfg.IMAGE_SIZE[0]
+                _t[:, 1::2] = _t[:, 1::2] * self.cfg.IMAGE_SIZE[1]
                 _t = _t[mask, :]
-                show_od4ts(img_ts, xywh2ltrb(_t), torch.ones(200))
+                # _t = _t[:20, :] # 显示框个数
+                show_od4ts(img_ts_show, xywh2ltrb(_t), torch.ones(20))
 
         # 每一个图片的正样本个数  [batch, 16800] ->[batch]
         pos_num = mask_pos.sum(dim=1)  # [batch] 这个用于batch中1个图没有正例不算损失和计算反例数
 
         '''-----------bboxs 损失处理-----------'''
-        # [1, 16800, 4] ^^ [batch, 16800, 4] = [batch, 16800, 4]
+        # 用anc和gt计算出差异 [1, 16800, 4] ^^ [batch, 16800, 4] = [batch, 16800, 4]
         d_bboxs = diff_bbox(self.anc, ltrb2xywh(mg_bboxs_ltrb))
 
         # [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
@@ -164,9 +168,9 @@ class LossOD(nn.Module):
 
         '''-----------labels 损失处理-----------'''
         # 移到中间才能计算
-        p_conf = p_conf.permute(0, 2, 1)  # (batch,16800,2) -> (batch,2,16800)
+        p_cls = p_cls.permute(0, 2, 1)  # (batch,16800,2) -> (batch,2,16800)
         # (batch,2,16800)^[batch, 16800] ->[batch, 16800] 得同维每一个元素的损失
-        loss_labels = self.confidence_loss(p_conf, mg_labels.long())
+        loss_labels = self.confidence_loss(p_cls, mg_labels.long())
         # 分类损失 - 负样本选取  选损失最大的
         labels_neg = loss_labels.clone()
         labels_neg[mask_pos] = torch.tensor(0.0).to(loss_labels)  # 正样本先置0 使其独立 排除正样本,选最大的
@@ -192,16 +196,12 @@ class LossOD(nn.Module):
         __d = 1
         # loss_bboxs.detach().cpu().numpy()
         loss_labels = (loss_labels * num_mask / pos_num).mean(dim=0)
-        loss_keypoints = (loss_keypoints * num_mask / pos_num).mean(dim=0)
 
-        loss_total = self.loss_weight[0] * loss_bboxs \
-                     + self.loss_weight[1] * loss_labels \
-                     + self.loss_weight[2] * loss_keypoints
+        loss_total = self.loss_weight[0] * loss_bboxs + self.loss_weight[1] * loss_labels
 
         log_dict = {}
         log_dict['loss_bboxs'] = loss_bboxs.item()
         log_dict['loss_labels'] = loss_labels.item()
-        log_dict['loss_keypoints'] = loss_keypoints.item()
         return loss_total, log_dict
 
 

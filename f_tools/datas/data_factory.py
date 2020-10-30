@@ -33,7 +33,7 @@ class VOCDataSet(Dataset):
         :param path_data_root: voc数据集的根目录
         :param path_file_txt: 提前准备好的xml及jpg对应的文件名
         :param transforms:  自定义的 transforms 支持 boxes 一起处理
-        :param bbox2one: 是否需要统一化 bbox2one
+        :param bbox2one: bbox是否需要统一化 bbox2one
         '''
         self.path_data_root = path_data_root
         self.transforms = transforms
@@ -108,7 +108,7 @@ class VOCDataSet(Dataset):
 
         # list(np数组)   转换   为tensor
         boxes = torch.as_tensor(boxes, dtype=torch.float32)
-        if self.bbox2one:
+        if self.bbox2one: # 归一化
             boxes /= torch.tensor(image.size).repeat(2)  # np高级
         labels = torch.as_tensor(labels, dtype=torch.int64)
         iscrowd = torch.as_tensor(iscrowd, dtype=torch.int64)

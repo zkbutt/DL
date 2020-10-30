@@ -34,7 +34,7 @@ if __name__ == '__main__':
         CFG.PRINT_FREQ = 1
         CFG.PATH_SAVE_WEIGHT = None
         CFG.BATCH_SIZE = 5
-        CFG.DATA_NUM_WORKERS = 1
+        CFG.DATA_NUM_WORKERS = 0
         pass
     else:
         torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
     anchors = Anchors(CFG.IMAGE_SIZE, CFG.ANCHORS_SIZE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP).get_anchors()
     anchors = anchors.to(device)
-    losser = LossOD(anchors, CFG.LOSS_WEIGHT, CFG.NEGATIVE_RATIO)
+    losser = LossOD(anchors, CFG.LOSS_WEIGHT, CFG.NEGATIVE_RATIO, cfg=CFG)
     # # 权重衰减(如L2惩罚)(默认: 0)
     optimizer = optim.Adam(model.parameters(), 1e-3)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)

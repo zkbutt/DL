@@ -244,7 +244,7 @@ class Loss(nn.Module):
         '''
 
         :param ploc: 预测值 N,4,8732
-        :param plabel: 预测值  N,label_numx,8732
+        :param plabel: 预测值  N,label_numx,8732 confs
         :param gloc: 已完成 正例匹配 n,4,8732
         :param glabel: 已完成 正例匹配  0~20值  (batch,8732)  anchor匹配到的对应GTBOX的分数
         :return:

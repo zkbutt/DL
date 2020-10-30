@@ -89,7 +89,7 @@ class LossHandler(FitBase):
         num_ancs = self.anchors.shape[0]
 
         mg_bboxs_ltrb = torch.Tensor(*p_bboxs_xywh.shape).to(images)  # torch.Size([batch, 16800, 4])
-        mg_labels = torch.Tensor(num_batch, num_ancs).to(images)  # 计算损失只会存在一维 无论多少类 标签只有一类
+        mg_labels = torch.Tensor(num_batch, num_ancs, device=images.device).type(torch.int64)  # 计算损失只会存在一维 无论多少类 标签只有一类
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
         for index in range(num_batch):
             g_bboxs = targets[index]['boxes']  # torch.Size([batch, 4])
@@ -120,7 +120,7 @@ class LossHandler(FitBase):
 
         # ---------------损失计算 ----------------------
         # log_dict用于显示
-        loss_total, log_dict = self.losser(p_bboxs_xywh, mg_bboxs_ltrb, p_conf, mg_labels, p_cls, imgs_ts=images)
+        loss_total, log_dict = self.losser(p_bboxs_xywh, mg_bboxs_ltrb, p_cls, mg_labels, imgs_ts=images)
 
         # -----------------构建展示字典及返回值------------------------
         # 多GPU时结果处理 reduce_dict 方法

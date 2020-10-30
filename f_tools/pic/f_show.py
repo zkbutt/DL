@@ -194,10 +194,12 @@ def show_od4pil(img_pil, boxs, labels=None):
     draw = ImageDraw.Draw(pil_copy)
     # im_width, im_height = pil_copy.size
     # print(im_width, im_height)
+    if isinstance(boxs, torch.Tensor):
+        boxs = boxs.numpy()
     for box in boxs:
         l, t, r, b = box.astype(np.int)
         # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
-        draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
+        draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=1,
                   # fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)],
                   fill='White',
                   )
@@ -208,7 +210,7 @@ def show_od4pil(img_pil, boxs, labels=None):
 
 
 def show_od4ts(img_ts, boxs, labels=None):
-    img_pil = transforms.ToPILImage()(img_ts)
+    img_pil = transforms.ToPILImage(mode="RGB")(img_ts)
     show_od4pil(img_pil, boxs.numpy(), labels)
 
 

@@ -24,13 +24,13 @@ DATA_TRANSFORM = {
         ToTensor(),
         RandomHorizontalFlip4TS(1),
         Normalization4TS(),
-    ]),
+    ], CFG),
     "val": Compose([
         # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
         Resize(CFG.IMAGE_SIZE),
         ToTensor(),
         Normalization4TS(),
-    ])
+    ], CFG)
 }
 
 
@@ -121,7 +121,7 @@ def data_loader(cfg, device):
             cfg.PATH_DATA_ROOT,
             'train.txt',  # 正式训练要改这里
             DATA_TRANSFORM["train"],
-            bbox2one=True,
+            bbox2one=False,
             isdebug=cfg.DEBUG
         )
 

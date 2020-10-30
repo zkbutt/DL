@@ -1,6 +1,8 @@
 class CFG:
     DEBUG = True
     IS_VISUAL = False
+    IS_VISUAL_PRETREATMENT = False
+
     IS_TRAIN = True
     IS_MIXTURE_FIX = False
     PATH_ROOT = 'M:/'
