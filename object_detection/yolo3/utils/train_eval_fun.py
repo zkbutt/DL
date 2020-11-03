@@ -81,7 +81,10 @@ class LossHandler(FitBase):
         '''
         out = self.model(images)
         p_bboxs_xywh = out[:, :, :4]  # torch.Size([5, 10647, 4])
-        p_conf = out[:, :, 5]  # torch.Size([5, 10647])
+        # sigmoid = torch.sigmoid(out[:, :, 4:])
+        # p_conf = sigmoid[:, :, 0]
+        # p_cls = sigmoid[:, :, 1:]
+        p_conf = out[:, :, 5]  # torch.Size([5, 10647]) 预测的iou值
         p_cls = out[:, :, 5:]  # torch.Size([5, 10647, 20])
 
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''

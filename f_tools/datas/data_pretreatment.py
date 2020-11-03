@@ -6,6 +6,7 @@ import torchvision.transforms
 from torchvision.transforms import functional as F, transforms
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.fun_od.f_boxes import calc_iou4ts
 from f_tools.pic.f_show import show_od_keypoints4pil, show_od4pil
 from f_tools.pic.size_handler import resize_img_keep_np
 
@@ -75,14 +76,17 @@ class ResizeKeep():
 
         if target:
             target['boxes'] = target['boxes'] * ratio
-            target['keypoints'] = target['keypoints'] * ratio
-            if cfg.IS_VISUAL and cfg.IS_VISUAL_PRETREATMENT:
-                flog.debug('ResizeKeep 后%s')
-                show_od_keypoints4pil(
-                    img_pil,
-                    target['boxes'],
-                    target['keypoints'],
-                    target['labels'])
+            if 'keypoints' in target:
+                target['keypoints'] = target['keypoints'] * ratio
+                if cfg.IS_VISUAL and cfg.IS_VISUAL_PRETREATMENT:
+                    flog.debug('ResizeKeep 后%s')
+                    show_od_keypoints4pil(
+                        img_pil,
+                        target['boxes'],
+                        target['keypoints'],
+                        target['labels'])
+            elif cfg.IS_VISUAL and cfg.IS_VISUAL_PRETREATMENT:
+                show_od4pil(img_pil, target['boxes'], target['labels'])
         return img_pil, target
 
 
@@ -194,6 +198,119 @@ class RandomHorizontalFlip4PIL(object):
                     #         target['keypoints'],
                     #         target['labels'])
         return img_pil, target
+
+
+class SSDCroppingPIL(object):
+    """
+    根据原文，对图像进行裁剪,该方法应放在ToTensor前
+    Cropping for SSD, according to original paper
+    Choose between following 3 conditions:
+    1. Preserve the original image
+    2. Random crop minimum IoU is among 0.1, 0.3, 0.5, 0.7, 0.9
+    3. Random crop
+    Reference to https://github.com/chauhan-utk/ssd.DomainAdaptation
+    """
+
+    def __init__(self):
+        # 定义随机
+        self.sample_options = (
+            # Do nothing
+            None,
+            # min IoU, max IoU
+            (0.1, None),
+            (0.3, None),
+            (0.5, None),
+            (0.7, None),
+            (0.9, None),
+            # no IoU requirements
+            (None, None),
+        )
+
+    def __call__(self, img_pil, target, cfg):
+        # Ensure always return cropped image
+        while True:
+            mode = random.choice(self.sample_options)  # 选一个iou
+            if mode is None:  # 不做随机裁剪处理
+                return img_pil, target
+
+            htot, wtot = target['height_width']
+
+            min_iou, max_iou = mode
+            min_iou = float('-inf') if min_iou is None else min_iou
+            max_iou = float('+inf') if max_iou is None else max_iou
+
+            # Implementation use 5 iteration to find possible candidate
+            for _ in range(5):
+                # 0.3*0.3 approx. 0.1
+                w = random.uniform(0.3, 1.0)
+                h = random.uniform(0.3, 1.0)
+
+                if w / h < 0.5 or w / h > 2:  # 保证宽高比例不要太大在0.5-2之间
+                    continue
+
+                # left 0 ~ wtot - w, top 0 ~ htot - h
+                left = random.uniform(0, 1.0 - w)  # 均匀分布
+                top = random.uniform(0, 1.0 - h)
+
+                right = left + w
+                bottom = top + h
+
+                # boxes的坐标是在0-1之间的
+                boxes = target["boxes"]
+                size = target['height_width'].numpy()[::-1]  # torch没有反序
+                size = torch.tensor(size.copy()).repeat(2)  # repeat 方法与np用法不一致
+                boxes_ = boxes / size
+
+                ious = calc_iou4ts(boxes_, torch.tensor([[left, top, right, bottom]]))
+
+                # tailor all the bboxes and return
+                # all(): Returns True if all elements in the tensor are True, False otherwise.
+                if not ((ious > min_iou) & (ious < max_iou)).all():
+                    continue
+
+                # discard any bboxes whose center not in the cropped image
+                xc = 0.5 * (boxes_[:, 0] + boxes_[:, 2])
+                yc = 0.5 * (boxes_[:, 1] + boxes_[:, 3])
+
+                # 查找所有的gt box的中心点有没有在采样patch中的
+                masks = (xc > left) & (xc < right) & (yc > top) & (yc < bottom)
+
+                # if no such boxes_, continue searching again
+                # 如果所有的gt box的中心点都不在采样的patch中，则重新找
+                if not masks.any():
+                    continue
+
+                # 修改采样patch中的所有gt box的坐标（防止出现越界的情况）
+                boxes_[boxes_[:, 0] < left, 0] = left
+                boxes_[boxes_[:, 1] < top, 1] = top
+                boxes_[boxes_[:, 2] > right, 2] = right
+                boxes_[boxes_[:, 3] > bottom, 3] = bottom
+
+                # 虑除不在采样patch中的gt box
+                boxes_ = boxes_[masks, :]
+                # 获取在采样patch中的gt box的标签
+                labels = target['labels']
+                labels = labels[masks]
+
+                # 裁剪patch
+                left_idx = int(left * wtot)
+                top_idx = int(top * htot)
+                right_idx = int(right * wtot)
+                bottom_idx = int(bottom * htot)
+                img_pil = img_pil.crop((left_idx, top_idx, right_idx, bottom_idx))
+
+                # 调整裁剪后的bboxes_坐标信息
+                boxes_[:, 0] = (boxes_[:, 0] - left) / w
+                boxes_[:, 1] = (boxes_[:, 1] - top) / h
+                boxes_[:, 2] = (boxes_[:, 2] - left) / w
+                boxes_[:, 3] = (boxes_[:, 3] - top) / h
+
+                # 更新crop后的gt box坐标信息以及标签信息
+                target['boxes'] = boxes_ * size
+                target['labels'] = labels
+                if cfg.IS_VISUAL and cfg.IS_VISUAL_PRETREATMENT:
+                    show_od4pil(img_pil, target['boxes'], target['labels'])
+                return img_pil, target
 
 
 class ToTensor(object):

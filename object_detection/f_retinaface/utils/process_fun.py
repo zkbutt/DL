@@ -28,13 +28,13 @@ DATA_TRANSFORM = {
         ToTensor(),
         RandomHorizontalFlip4TS(1),
         Normalization4TS(),
-    ]),
+    ], CFG),
     "val": Compose([
         # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
         Resize(CFG.IMAGE_SIZE),
         ToTensor(),
         Normalization4TS(),
-    ])
+    ], CFG)
 }
 
 
@@ -139,26 +139,26 @@ def _collate_fn(batch_datas):
 def data_loader(cfg, device):
     loader_train, dataset_val, loader_val = None, None, None
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
-    data_transform = {
-        "train": Compose([
-            # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
-            Resize(cfg.IMAGE_SIZE),
-            ColorJitter(),
-            ToTensor(),
-            RandomHorizontalFlip4TS(1),
-            Normalization4TS(),
-        ]),
-        "val": Compose([
-            # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
-            Resize(cfg.IMAGE_SIZE),
-            ToTensor(),
-            Normalization4TS(),
-        ])
-    }
+    # data_transform = {
+    #     "train": Compose([
+    #         # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+    #         Resize(cfg.IMAGE_SIZE),
+    #         ColorJitter(),
+    #         ToTensor(),
+    #         RandomHorizontalFlip4TS(1),
+    #         Normalization4TS(),
+    #     ]),
+    #     "val": Compose([
+    #         # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+    #         Resize(cfg.IMAGE_SIZE),
+    #         ToTensor(),
+    #         Normalization4TS(),
+    #     ])
+    # }
 
     if cfg.IS_TRAIN:
         dataset_train = CocoDataset(cfg.PATH_DATA_ROOT, 'keypoints', 'train2017',
-                                    device, data_transform['train'],
+                                    device, DATA_TRANSFORM['train'],
                                     is_debug=cfg.DEBUG)
 
         loader_train = torch.utils.data.DataLoader(
@@ -174,7 +174,7 @@ def data_loader(cfg, device):
     # loader_train = Data_Prefetcher(loader_train)
     if cfg.IS_EVAL:
         class_to_idx = {'face': 1}
-        dataset_val = MapDataSet(cfg.PATH_DT_ROOT, cfg.PATH_DT_RES, class_to_idx, transforms=data_transform['val'],
+        dataset_val = MapDataSet(cfg.PATH_DT_ROOT, cfg.PATH_DT_RES, class_to_idx, transforms=DATA_TRANSFORM['val'],
                                  is_debug=cfg.DEBUG)
         loader_val = torch.utils.data.DataLoader(
             dataset_val,

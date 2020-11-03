@@ -1,3 +1,4 @@
+import math
 import numpy as np
 
 import os
@@ -6,18 +7,25 @@ import torch
 from torch import optim
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.f_lossfun import LossOD_K, LossOD
+from f_tools.f_torch_tools import load_weight
+from f_tools.fits.f_lossfun import LossOD_K, LossYOLO
 from f_tools.fun_od.f_anc import Anchors
 from object_detection.yolo3.utils.process_fun import init_model, data_loader, train_eval
 from object_detection.yolo3.CONFIG_YOLO3 import CFG
 
 '''
 416x416x3  13x13x(20+1+4)
+tensorboard.exe --logdir "./"
 '''
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
-    np.set_printoptions(suppress=True)  # 关闭科学计数
+    # np.set_printoptions(suppress=True)  # 关闭科学计数
+    # torch.set_printoptions(linewidth=320, precision=5, profile='long')
+    # np.set_printoptions(suppress=True, linewidth=320,
+    #                     formatter={'float_kind': '{:11.5g}'.format})  # format short g, %precision=5
+    # matplotlib.rc('font', **{'size': 11})
+
     # 检查保存权重文件夹是否存在，不存在则创建
     if not os.path.exists(CFG.PATH_SAVE_WEIGHT):
         try:
@@ -41,6 +49,12 @@ if __name__ == '__main__':
 
     # CFG.FILE_FIT_WEIGHT = None
 
+    # accumulate = max(round(64 / CFG.BATCH_SIZE), 1)  # 每64次才更新一次参数
+    small_conf = CFG.FEATURE_MAP_STEPS[-1]  # 模型下采样倍数
+    # 尺寸必须是
+    assert math.fmod(CFG.IMAGE_SIZE[0], small_conf) == 0, "尺寸 %s must be a %s 的倍数" % (CFG.IMAGE_SIZE, small_conf)
+    assert math.fmod(CFG.IMAGE_SIZE[1], small_conf) == 0, "尺寸 %s must be a %s 的倍数" % (CFG.IMAGE_SIZE, small_conf)
+
     '''------------------模型定义---------------------'''
     model = init_model(CFG)
 
@@ -49,9 +63,12 @@ if __name__ == '__main__':
 
     anchors = Anchors(CFG.IMAGE_SIZE, CFG.ANCHORS_SIZE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP).get_anchors()
     anchors = anchors.to(device)
-    losser = LossOD(anchors, CFG.LOSS_WEIGHT, CFG.NEGATIVE_RATIO, cfg=CFG)
-    # # 权重衰减(如L2惩罚)(默认: 0)
-    optimizer = optim.Adam(model.parameters(), 1e-3)
+    losser = LossYOLO(anchors, CFG.LOSS_WEIGHT, CFG.NEGATIVE_RATIO, cfg=CFG)
+    # 最初学习率
+    lr0 = 1e-3
+    lrf = lr0 / 100
+    optimizer = optim.Adam(model.parameters(), lr0)
+    # optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
 
     # start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device)

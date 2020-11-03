@@ -1,7 +1,7 @@
 class CFG:
     DEBUG = True
     IS_VISUAL = False
-    IS_VISUAL_PRETREATMENT = False
+    IS_VISUAL_PRETREATMENT = False  # 图片预处理
 
     IS_TRAIN = True
     IS_MIXTURE_FIX = False
@@ -54,10 +54,10 @@ class CFG:
     # 每层anc数需统一，各层数据才能进行融合处理
     ANCHORS_SIZE = [
         [[116, 90], [156, 198], [373, 326]],  # 小特图大目标 13x13
-        [[30, 61], [62, 45], [59, 119]], # 26, 26
+        [[30, 61], [62, 45], [59, 119]],  # 26, 26
         [[10, 13], [16, 30], [33, 23]],  # 大特图小目标 52, 52
     ]
-    FEATURE_MAP_STEPS = [8, 16, 32]  # 特图的步距
+    FEATURE_MAP_STEPS = [8, 16, 32]  # 特图的步距 下采倍数
     # ANCHORS_VARIANCE = [0.1, 0.2]  # 修复系数 中心0.1 长宽0.2
     ANCHORS_CLIP = True  # 是否剔除超边界
     # ANCHOR_NUM = 2

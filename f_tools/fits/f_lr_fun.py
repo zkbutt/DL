@@ -1,60 +1,98 @@
+import math
 import torch
+from torch import optim
+from torchvision import models
 
 
-def warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor):
+def f_cos_diminish(optimizer, start_epoch, epochs, lrf_scale):
     '''
-
+    自定义调整策略
     :param optimizer:
-    :param warmup_iters: 迭代次数最大1000  warmup_iters = min(1000, len(data_loader) - 1)
-    :param warmup_factor: 迭代值起始值  warmup_factor = 5.0 / 10000  # 0.0005
-    :return: 学习率倍率 从 设定值 warmup_factor -> 1
-    '''
-
-    def f(x):
-        """根据step数返回一个学习率倍率因子"""
-        if x >= warmup_iters:  # 当迭代数大于给定的warmup_iters时，倍率因子为1
-            return 1
-        alpha = float(x) / warmup_iters  # 随每一步变大最大1
-        # 迭代过程中倍率因子从 设定值 warmup_factor -> 1
-        return warmup_factor * (1 - alpha) + alpha
-
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=f)
-
-
-def update_lr(optimizer, lr):
-    '''
-        curr_lr=0.001
-        if (epoch + 1) % 20 == 0:
-            curr_lr /= 3
-            update_lr(optimizer, curr_lr)
-
-        lambda_G = lambda epoch : 0.5 ** (epoch // 30)
-    :param optimizer:
-    :param lr:
+    :param start_epoch:
+    :param epochs: 总迭代次数
     :return:
-
-    optimizer = optim.Adam(model.parameters(), lr=0.0002)
-
-    lambda_G = lambda epoch: 0.5 ** (epoch // 30)
-    # 29表示从epoch = 30开始
-    schduler_G = torch.optim.lr_scheduler.LambdaLR(optimizer.parameters(), lambda_G, last_epoch=29)
-
-    schduler_G = torch.optim.lr_scheduler.StepLR(optimizer.parameters(), step_size=30, gamma=0.1, last_epoch=29)
     '''
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+    # cos渐减小学习率 余弦值首先缓慢下降吗然后加速下降, 再次缓慢下降
+    fun = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - lrf_scale) + lrf_scale
+
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=fun)
+    scheduler.last_epoch = start_epoch  # 指定从哪个epoch开始
+    return scheduler
 
 
-def get_lr(optimizer):  # 获取优化器lr
-    for param_group in optimizer.param_groups:
-        return param_group['lr']
+def lr_example(optimizer):
+    lr = 1e-3
+    '''
+    监控指标，当指标不再变化则调整 2次不降低则 LR变为原来的一半
+        • mode：min（对应损失值）/max（对应精确度） 两种模式
+        • factor：调整系数（相当于之前的lamda）
+        • patience：“耐心”，接受几次不变化
+        • cooldown：“冷却时间”，停止监控一段时间
+        • verbose：是否打印日志
+        • min_lr：学习率下限（到达下限就不再监视调整了）
+        • eps：学习率衰减最小值
+    '''
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
 
+    '''
+    步按比例gamma  等间隔调整学习率
+    0<epoch<30, lr = 0.05
+    30<=epoch<60, lr = 0.005
+    60<=epoch<90, lr = 0.0005
+    '''
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
 
-def lr_example():
-    # 在发现loss不再降低或者acc不再提高之后，降低学习率
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
+    '''
+    指定区间按比例下降 按给定间隔调整学习率
+    lr = 0.05     if epoch < 30
+    lr = 0.005    if 30 <= epoch < 80
+    lr = 0.0005   if epoch >= 80
+    '''
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [30, 80], 0.1)
+
+    # 按指数减 gamma：指数的底
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
+
+    '''
+    余弦周期调整学习率 30轮后降为0
+    T_max：下降周期，就是学习率从最大下降到最小经过的epoch数
+    eta_min：学习率下限
+    '''
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30, eta_min=0, )
+
+    return scheduler
 
 
 def op_example():
-    # 权重衰减(如L2惩罚)(默认: 0)
-    optimizer = optim.Adam(model.parameters(), 1e-3, weight_decay=5e-4)
+    lr0 = 1e-3
+    optimizer = optim.Adam(model.parameters(), lr=lr0, weight_decay=5e-4)  # 权重衰减(如L2惩罚)(默认: 0)
+    optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
+
+
+def f_show_scheduler(scheduler, epochs):
+    import matplotlib.pyplot as plt
+    y = []
+    for _ in range(epochs):
+        scheduler.step()
+        y.append(optimizer.param_groups[0]['lr'])
+    plt.plot(y, '.-', label='LambdaLR')
+    plt.xlabel('epoch')
+    plt.ylabel('LR')
+    plt.tight_layout()
+    # plt.savefig('LR.png', dpi=300)
+    plt.show()
+
+
+if __name__ == '__main__':
+    model = models.resnext50_32x4d(pretrained=True)
+    lr0 = 1e-3
+    optimizer = optim.Adam(model.parameters(), lr0)
+    lrf_scale = 0.01
+    start_epoch = 0
+    epochs = 10
+
+    scheduler = f_cos_diminish(optimizer, start_epoch, epochs, lrf_scale)
+    # scheduler = lr_example(optimizer)
+    f_show_scheduler(scheduler, 100)
+    pass

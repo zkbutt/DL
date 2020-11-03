@@ -93,8 +93,9 @@ class YoloBody(nn.Module):
         _out = self.last_layer1_upsample(_out)
         _out = torch.cat([_out, backbone_out1], 1)
         out1, _ = _branch(self.last_layer1, _out)  # torch.Size([5, 75, 52, 52])
-        outs = self.data_packaging([out1, out2, out3], self.nums_anc)
 
+        # 自定义数据重装函数
+        outs = self.data_packaging([out1, out2, out3], self.nums_anc)
         return outs
 
     def data_packaging(self, outs, nums_anc):
@@ -108,7 +109,7 @@ class YoloBody(nn.Module):
         for out, num_anc in zip(outs, nums_anc):
             batch, o, w, h = out.shape  # torch.Size([5, 75, 52, 52])
             out = out.permute(0, 2, 3, 1)  # torch.Size([5, 52, 52, 75])
-            _ts.append(out.reshape(batch, -1, int(o / num_anc)).contiguous()) # torch.Size([5, 52*52*3, 25])
+            _ts.append(out.reshape(batch, -1, int(o / num_anc)).contiguous())  # torch.Size([5, 52*52*3, 25])
         # torch.Size([5, 2704, 75])，torch.Size([5, 676, 75])，torch.Size([5, 169, 75]) -> torch.Size([5, 3549, 75])
         return torch.cat(_ts, dim=1)
 

@@ -76,6 +76,7 @@ class VOCDataSet(Dataset):
         doc = self.parse_xml(path_xml)  # 解析xml
         path_img = os.path.join(os.path.join(self.path_data_root, 'JPEGImages'), doc['annotation']['filename'])
 
+        # image = Image.open(path_img).convert('RGB')  # 这个打开的wh
         image = Image.open(path_img)  # 这个打开的wh
         if image.format != "JPEG":  # 类型校验 这里打开的是原图
             raise ValueError("Image format not JPEG")
@@ -126,6 +127,7 @@ class VOCDataSet(Dataset):
         target["area"] = area
         target["iscrowd"] = iscrowd
 
+        '''这里输出 img_pil'''
         if self.transforms is not None:  # 这里是预处理
             image, target = self.transforms(image, target)  # 这里返回的是匹配后的bbox
 

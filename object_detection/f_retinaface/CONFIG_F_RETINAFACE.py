@@ -1,14 +1,14 @@
 class CFG:
-    DEBUG = False
+    DEBUG = True
     IS_VISUAL = False
-    IS_TRAIN = False
+    IS_TRAIN = True
     IS_MIXTURE_FIX = False
     PATH_ROOT = 'M:/'
     # PATH_ROOT = '/home/win10_sys/'
     # PATH_ROOT = '/home/bak3t/bakls299g/'
 
     '''EVAL---MAP运算'''
-    IS_EVAL = True  # 判断个文件夹 防误操作
+    IS_EVAL = False  # 判断个文件夹 防误操作
     IS_RUN_ONE = True
     # PATH_DT_ROOT = r'M:\AI\datas\widerface\val' # 不能在CPU上弄
     PATH_DT_ROOT = '/home/win10_sys/AI/datas/widerface/val'

@@ -5,7 +5,7 @@ from f_pytorch.backbone_t.model_look import f_look
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet, VOCDataSet
 from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
-    Normalization4TS, Resize
+    Normalization4TS, Resize, SSDCroppingPIL
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 from f_tools.f_torch_tools import save_weight
 
@@ -18,8 +18,9 @@ from object_detection.yolo3.utils.train_eval_fun import LossHandler
 
 DATA_TRANSFORM = {
     "train": Compose([
-        # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+        # ResizeKeep(CFG.IMAGE_SIZE),
         Resize(CFG.IMAGE_SIZE),
+        # SSDCroppingPIL(),
         ColorJitter(),
         ToTensor(),
         RandomHorizontalFlip4TS(1),

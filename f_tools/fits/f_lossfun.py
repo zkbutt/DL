@@ -8,6 +8,36 @@ from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox,
 from f_tools.pic.f_show import show_od4ts
 
 
+class FocalLoss(nn.Module):
+    # Wraps focal loss around existing loss_fcn(), i.e. criteria = FocalLoss(nn.BCEWithLogitsLoss(), gamma=1.5)
+    def __init__(self, loss_fcn, gamma=1.5, alpha=0.25):
+        super(FocalLoss, self).__init__()
+        self.loss_fcn = loss_fcn  # must be nn.BCEWithLogitsLoss()
+        self.gamma = gamma
+        self.alpha = alpha
+        self.reduction = loss_fcn.reduction
+        self.loss_fcn.reduction = 'none'  # required to apply FL to each element
+
+    def forward(self, pred, true):
+        loss = self.loss_fcn(pred, true)
+        # p_t = torch.exp(-loss)
+        # loss *= self.alpha * (1.000001 - p_t) ** self.gamma  # non-zero power for gradient stability
+
+        # TF implementation https://github.com/tensorflow/addons/blob/v0.7.1/tensorflow_addons/losses/focal_loss.py
+        pred_prob = torch.sigmoid(pred)  # prob from logits
+        p_t = true * pred_prob + (1 - true) * (1 - pred_prob)
+        alpha_factor = true * self.alpha + (1 - true) * (1 - self.alpha)
+        modulating_factor = (1.0 - p_t) ** self.gamma
+        loss *= alpha_factor * modulating_factor
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:  # 'none'
+            return loss
+
+
 class LossOD_K(nn.Module):
 
     def __init__(self, anc, loss_weight=(1., 1., 1.), neg_ratio=3, cfg=None):
@@ -111,7 +141,7 @@ class LossOD_K(nn.Module):
         return loss_total, log_dict
 
 
-class LossOD(nn.Module):
+class LossYOLO(nn.Module):
 
     def __init__(self, anc, loss_weight=(1., 1., 1.), neg_ratio=3, cfg=None):
         '''
@@ -121,7 +151,8 @@ class LossOD(nn.Module):
         '''
         super().__init__()
         self.location_loss = nn.SmoothL1Loss(reduction='none')
-        self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
+        # self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
+        self.confidence_loss = nn.BCELoss(reduction='none')
         self.anc = anc.unsqueeze(dim=0)
         self.loss_weight = loss_weight
         self.neg_ratio = neg_ratio
@@ -158,16 +189,18 @@ class LossOD(nn.Module):
 
         '''-----------bboxs 损失处理-----------'''
         # 用anc和gt计算出差异 [1, 16800, 4] ^^ [batch, 16800, 4] = [batch, 16800, 4]
-        d_bboxs = diff_bbox(self.anc, ltrb2xywh(mg_bboxs_ltrb))
+        d_bboxs = diff_bbox(self.anc, ltrb2xywh(mg_bboxs_ltrb), variances=[1, 1])
 
         # [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
+        p_bboxs_xywh[:, :, :2] = torch.sigmoid(p_bboxs_xywh[:, :, :2])  # yolo sigmoid归一化xy
         loss_bboxs = self.location_loss(p_bboxs_xywh, d_bboxs).sum(dim=-1)  # smooth_l1_loss
         # __d = 1
         # 正例损失过滤
         loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)
 
-        '''-----------labels 损失处理-----------'''
+        '''-----------cls 损失处理-----------'''
         # 移到中间才能计算
+        p_cls = torch.sigmoid(p_cls)  # sigmoid归一化 各个类独立
         p_cls = p_cls.permute(0, 2, 1)  # (batch,16800,2) -> (batch,2,16800)
         # (batch,2,16800)^[batch, 16800] ->[batch, 16800] 得同维每一个元素的损失
         loss_labels = self.confidence_loss(p_cls, mg_labels.long())
@@ -601,51 +634,86 @@ class PredictOutput(nn.Module):
         return imgs_rets
 
 
-def t多分类():
+def f_bce(i, o):
+    '''
+    同维
+    :param i: 值必须为0~1之间 float
+    :param o: 值为 float
+    :return:
+    '''
+    return np.round(-(o * np.log(i) + (1 - o) * np.log(1 - i)), 4)
+
+
+def t_多值交叉熵():
     # 2维
     input = torch.randn(2, 5, requires_grad=True)  # (batch,类别值)
-    # 多分类标签 (3)
+    # 多分类标签 [3,5) size=(2)
     target = torch.randint(3, 5, (2,), dtype=torch.int64)  # (batch)  值是3~4
     loss = F.cross_entropy(input, target, reduction='none')  # 二维需要拉平
     print(loss)
     # 多维
     input = torch.randn(2, 7, 5, requires_grad=True)  # (batch,类别值,框)
-    # # 多分类标签 (3)
+    # # 多分类标签 [3,5) size=(2,5)
     target = torch.randint(3, 5, (2, 5,), dtype=torch.int64)  # (batch,框)
     loss = F.cross_entropy(input, target, reduction='none')  # 二维需要拉平
     print(loss)
     # loss.backward()
 
 
-def t手写():
-    pass
-
-
-def t二分类():
-    pass
-    size = (2, 1000)  # 同维比较
+def f_二值交叉熵2():
+    # input 与 target 一一对应 同维
+    size = (2, 3)  # 两个数据
     input = torch.randn(*size, requires_grad=True)
-    # input = F.softmax(input,dim=-1)
-    target = torch.tensor(np.random.randint(0, 2, size), dtype=torch.float)
-    # loss = F.binary_cross_entropy(input, target, reduction='none')  # input不为1要报错
-    loss = F.binary_cross_entropy(F.sigmoid(input), target, reduction='none')
-    # loss = F.binary_cross_entropy_with_logits(input, target, reduction='none')
+    # [0,2)
+    # target = torch.tensor(np.random.randint(0, 5, size), dtype=torch.float)
+    # target = torch.tensor(np.random.randint(0, 2, size), dtype=torch.float)
+    target = torch.tensor([
+        [1, 0, 0],
+        [1, 0, 1],
+    ], dtype=torch.float)
 
-    # loss.backward()
+    loss1 = F.binary_cross_entropy(torch.sigmoid(input), target, reduction='none')  # 独立的
+    print(loss1)
 
-    # loss = F.binary_cross_entropy(F.sigmoid(input), target, reduction='none')
-    # loss = F.binary_cross_entropy_with_logits(predict, label, reduction='none')  #
+    loss2 = F.binary_cross_entropy_with_logits(input, target, reduction='none')
+    print(loss2)
 
+    # loss = F.binary_cross_entropy(F.softmax(input, dim=-1), target, reduction='none')  # input不为1要报错
+    # loss = F.cross_entropy(input, target, reduction='none')  # 二维需要拉平
     # print(loss)
-    print(loss)
+
     # loss.backward()
+    pass
+
+
+def f_二值交叉熵1():
+    '''
+    二值交叉熵可通过独热处理多分类
+    :return:
+    '''
+    bce_loss = torch.nn.BCELoss(reduction='none')
+    # bce_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
+
+    p_cls = [[0.3, 0.8, 0.9], [0.2, 0.7, 0.8]]
+    g_cls = [[0., 0, 1], [0, 0, 1]]  # float
+
+    p_cls_np = np.array(p_cls)
+    g_cls_np = np.array(g_cls)
+    print(f_bce(p_cls_np, g_cls_np))
+
+    p_cls_ts = torch.tensor(p_cls)
+    g_cls_ts = torch.tensor(g_cls)
+    print(bce_loss(p_cls_ts, g_cls_ts))
 
 
 if __name__ == '__main__':
     import numpy as np
 
-    '''-------------多分类损失------------'''
-    # t多分类()
+    np.random.seed(20201031)
 
-    '''---------------二分类损失----------------'''
-    t二分类()
+    # t_多值交叉熵()
+    # f_二值交叉熵2()
+    f_二值交叉熵1()
+    '''
+    每一个输出对应多个目标?多标签
+    '''

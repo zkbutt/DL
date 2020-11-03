@@ -32,8 +32,8 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
     header = 'Epoch: [{}/{}]'.format(epoch + 1, end_epoch)
 
     # ---半精度训练1---
-    scaler = GradScaler()
-    for batch_data in metric_logger.log_every(data_loader, print_freq, header):
+    scaler = GradScaler(enabled=True)
+    for i, batch_data in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         if is_mixture_fix:
             # ---半精度训练2---
             with autocast():
@@ -49,11 +49,18 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                     sys.exit(1)
                 # ---半精度训练2  完成---
 
-            optimizer.zero_grad()
             # ---半精度训练3---
             scaler.scale(loss_total).backward()
-            scaler.step(optimizer)
-            scaler.update()  # # 查看是否要更新scaler
+
+            # 每训练n批图片更新一次权重
+            if i % 3 == 0:
+                scaler.step(optimizer)
+                scaler.update()  # 查看是否要更新scaler
+                optimizer.zero_grad()
+
+            # scaler.step(optimizer)
+            # scaler.update()  # 查看是否要更新scaler
+            # optimizer.zero_grad()
         else:
             '''-------------全精度--------------'''
             #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
@@ -66,9 +73,10 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                 flog.error("Loss is {}, stopping training".format(loss_total))
                 flog.error(log_dict)
                 sys.exit(1)
-            optimizer.zero_grad()
+
             loss_total.backward()
             optimizer.step()
+            optimizer.zero_grad()
 
         if lr_scheduler is not None:  # 每批训练lr更新器
             lr_scheduler.step()
