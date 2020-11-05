@@ -9,10 +9,12 @@ def resize_keypoints4ratio(keypoints, ratio):
     print(keypoints)
     return keypoints
 
+
 def resize_boxes4ratio(boxes, ratio):
     boxes[:, ::2] = boxes[:, ::2] * ratio
     boxes[:, 1::2] = boxes[:, 1::2] * ratio
     return boxes
+
 
 def resize_boxes4np(boxes, original_size, new_size):
     '''
@@ -54,6 +56,18 @@ def resize_boxes4tensor(boxes, original_size, new_size):
     ymin = ymin * ratios_height
     ymax = ymax * ratios_height
     return torch.stack((xmin, ymin, xmax, ymax), dim=1)
+
+
+def resize_img_keep_np1(img_np, size):
+    h, w, _ = img_np.shape
+    if h > w:
+        padw = (h - w) // 2
+        img_np = np.pad(img_np, ((0, 0), (padw, padw), (0, 0)), 'constant', constant_values=0)
+    elif w > h:
+        padh = (w - h) // 2
+        img_np = np.pad(img_np, ((padh, padh), (0, 0), (0, 0)), 'constant', constant_values=0)
+    img_np = cv2.resize(img_np, (size[0], size[1]))
+    return img_np
 
 
 def resize_img_keep_np(img_np, new_size, mode='lt', fill_color=(0, 0, 0)):
@@ -134,6 +148,8 @@ if __name__ == '__main__':
     # img_pil = img_pil.resize((300, 600), Image.ANTIALIAS)
     img_pil.thumbnail((800, 600), Image.ANTIALIAS)
     img_pil.show()
+
+    img_np = cv2.imread(file_img)  # 读取原始图像
 
     # img_tensor = F.to_tensor(img_pil)  # Image w,h -> c,h,w +归一化
     # img_tensor = resize_img_tensor(img_tensor, (600, 200))

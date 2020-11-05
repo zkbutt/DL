@@ -2,6 +2,8 @@ import math
 import torch
 import numpy as np
 
+from f_tools.datas.data_factory import VOCDataSet
+
 
 def ltrb2xywh(bboxs, safe=True):
     dim = len(bboxs.shape)
@@ -427,5 +429,61 @@ def resize_boxes(boxes, original_size, new_size):
     return torch.stack((xmin, ymin, xmax, ymax), dim=1)
 
 
+def boxes2yolo(boxes, labels, num_bbox=2, num_class=20, grid=7):
+    '''
+    将ltrb 转换为 7*7*(2*(4+1)+20) = grid*grid*(num_bbox(4+1)+num_class)
+    :param boxes:
+    :param labels:
+    :param num_bbox:
+    :param num_class:
+    :param grid:
+    :return:
+    '''
+    target = torch.zeros((7, 7, 5 * num_bbox + num_class))
+    # ltrb -> xywh
+    wh = boxes[:, 2:] - boxes[:, :2]
+    # bbox的中心点坐标
+    cxcy = (boxes[:, 2:] + boxes[:, :2]) / 2
+    cell_size = 1. / grid
+
+    for i in range(cxcy.size()[0]):  # 遍历每一个框 cxcy.size()[0]  与shape等价
+        '''计算GT落在7x7哪个网格中 同时ij也表示网格的左上角的坐标'''
+        cxcy_sample = cxcy[i]
+        # (cxcy_sample / cell_size).type(torch.int) 等价
+        ij = (cxcy_sample / cell_size).ceil() - 1  # cxcy_sample * 7  ceil上取整数 输出 0~6 index
+        # xy与矩阵行列是相反的
+
+        xy = ij * cell_size  # 所在网格的左上角在原图的位置 0~1
+        delta_xy = (cxcy_sample - xy) / cell_size  # GT相对于所在网格左上角的值, 网格的左上角看做原点 需进行放大
+
+        for j in range(num_bbox):
+            target[int(ij[1]), int(ij[0]), (j + 1) * 5 - 1] = 1
+            start = j * 5
+            target[int(ij[1]), int(ij[0]), start:start + 2] = delta_xy  # 相对于所在网格左上角
+            target[int(ij[1]), int(ij[0]), start + 2:start + 4] = wh[i]  # wh值相对于整幅图像的尺寸
+    return target
+
+
 if __name__ == '__main__':
-    pass
+    path = r'M:\AI\datas\VOC2012\trainval'
+
+    dataset_train = VOCDataSet(
+        path,
+        'train.txt',  # 正式训练要改这里
+        transforms=None,
+        bbox2one=False,
+        isdebug=True
+    )
+    img_pil, target_tensor = dataset_train[0]
+    # bbox = target_tensor['boxes'].numpy()
+    # labels = target_tensor["labels"].numpy()
+
+    bbox = target_tensor['boxes']
+    hw = target_tensor['height_width']
+    wh = hw.numpy()[::-1]
+    whwh = torch.tensor(wh.copy()).repeat(2)
+    bbox /= whwh
+
+    labels = target_tensor["labels"]
+    target = boxes2yolo(bbox, labels)
+    print(target.shape)

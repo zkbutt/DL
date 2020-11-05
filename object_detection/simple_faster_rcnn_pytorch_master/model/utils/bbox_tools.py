@@ -1,4 +1,7 @@
 import numpy as np
+import torch
+
+from f_tools.datas.data_factory import VOCDataSet
 
 
 def xy2xyhw(bboxs):
@@ -161,5 +164,51 @@ def generate_anchor_base(base_size=16, ratios=(0.5, 1, 2),
     return anchor_base
 
 
+def convert_bbox2labels(boxes, labels, num_bbox=2, num_class=20):
+    """
+    将bbox的(cls,x,y,w,h)数据转换为训练时方便计算Loss的数据形式(7,7,5*B+cls_num)
+    注意，输入的bbox的信息是(xc,yc,w,h)格式的，转换为labels后，bbox的信息转换为了(px,py,w,h)格式
+    """
+    gridsize = 1.0 / 7
+    labels_ = np.zeros((7, 7, 5 * num_bbox + num_class))  # 注意，此处需要根据不同数据集的类别个数进行修改
+    for i, box in enumerate(boxes):
+        gridx = int(box[0] // gridsize)  # x -> 第几个网格
+        gridy = int(box[1] // gridsize)  # y -> 第几个网格
+        # (bbox中心坐标 - 网格左上角点的坐标)/网格大小  ==> bbox中心点的相对位置
+        gridpx = box[0] / gridsize - gridx
+        gridpy = box[1] / gridsize - gridy
+        # 将第gridy行，gridx列的网格设置为负责当前ground truth的预测，置信度和对应类别概率均置为1
+        labels_[gridy, gridx, 0:5] = np.array([gridpx, gridpy, labels[i * 5 + 3], labels[i * 5 + 4], 1])
+        labels_[gridy, gridx, 5:10] = np.array([gridpx, gridpy, labels[i * 5 + 3], labels[i * 5 + 4], 1])
+        labels_[gridy, gridx, 10 + int(labels[i * 5])] = 1
+
+    for i in range(len(labels) // 5):
+        gridx = int(labels[i * 5 + 1] // gridsize)  # 当前bbox中心落在第gridx个网格,列
+        gridy = int(labels[i * 5 + 2] // gridsize)  # 当前bbox中心落在第gridy个网格,行
+        # (bbox中心坐标 - 网格左上角点的坐标)/网格大小  ==> bbox中心点的相对位置
+        gridpx = labels[i * 5 + 1] / gridsize - gridx
+        gridpy = labels[i * 5 + 2] / gridsize - gridy
+        # 将第gridy行，gridx列的网格设置为负责当前ground truth的预测，置信度和对应类别概率均置为1
+        labels_[gridy, gridx, 0:5] = np.array([gridpx, gridpy, labels[i * 5 + 3], labels[i * 5 + 4], 1])
+        labels_[gridy, gridx, 5:10] = np.array([gridpx, gridpy, labels[i * 5 + 3], labels[i * 5 + 4], 1])
+        labels_[gridy, gridx, 10 + int(labels[i * 5])] = 1
+    return labels_
+
+
 if __name__ == '__main__':
-    print(generate_anchor_base())
+    # print(generate_anchor_base())
+    path = r'M:\AI\datas\VOC2012\trainval'
+
+    dataset_train = VOCDataSet(
+        path,
+        'train.txt',  # 正式训练要改这里
+        transforms=None,
+        bbox2one=False,
+        isdebug=True
+    )
+    img_pil, target_tensor = dataset_train[0]
+    bbox = target_tensor['boxes'].numpy()
+    labels = target_tensor["labels"].numpy()
+    # labels = np.concatenate((labels[:, None], bbox), axis=1)
+
+    convert_bbox2labels(bbox, labels)

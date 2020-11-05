@@ -348,6 +348,26 @@ def show_pic_np(pic, is_torch=False, is_many=None):
     plt.grid(False)
 
 
+def show_pic_label_np(img_np, boxes, labels):
+    '''
+
+    :param img_np:
+    :param boxes:
+    :param labels: labels中文
+    :return:
+    '''
+    h, w = img_np.shape[:2]
+    print(w, h)
+    for box, label in zip(boxes, labels):
+        print(label)
+        pt1 = (int(box[0] * w - box[2] * w / 2), int(box[1] * h - box[3] * h / 2))
+        pt2 = (int(box[0] * w + box[2] * w / 2), int(box[1] * h + box[3] * h / 2))
+        cv2.putText(img_np, label, pt1, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255))
+        cv2.rectangle(img_np, pt1, pt2, (0, 0, 255, 2))
+    cv2.imshow("img", img_np)
+    cv2.waitKey(0)
+
+
 def show_pics_np(pics, is_torch=False):
     plt.figure(figsize=(12.80, 7.20))
     for i, pic in enumerate(pics):

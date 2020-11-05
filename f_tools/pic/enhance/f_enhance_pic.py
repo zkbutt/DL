@@ -1,8 +1,16 @@
 import os
+import random
 
+import torch
 from PIL import Image, ImageEnhance, ImageDraw
+from cv2 import cv2
 from keras_preprocessing.image import ImageDataGenerator, load_img, img_to_array
 import numpy as np
+
+'''
+np处理
+    https://blog.csdn.net/caihh2017/article/details/85789443
+'''
 
 
 def pic_generator(path, s_num, batch_size=1):
@@ -44,7 +52,7 @@ def pic_generator(path, s_num, batch_size=1):
     print('---------------图片生成完成--------------------')
 
 
-def Enhance_Brightness(image):
+def Enhance_Brightness_pil(image):
     # 变亮，增强因子为0.0将产生黑色图像,为1.0将保持原始图像。
     # 亮度增强
     enh_bri = ImageEnhance.Brightness(image)
@@ -53,7 +61,7 @@ def Enhance_Brightness(image):
     return image_brightened
 
 
-def Enhance_Color(image):
+def Enhance_Color_pil(image):
     # 色度,增强因子为1.0是原始图像
     # 色度增强
     enh_col = ImageEnhance.Color(image)
@@ -62,7 +70,7 @@ def Enhance_Color(image):
     return image_colored
 
 
-def Enhance_contrasted(image):
+def Enhance_contrasted_pil(image):
     # 对比度，增强因子为1.0是原始图片
     # 对比度增强
     enh_con = ImageEnhance.Contrast(image)
@@ -71,7 +79,7 @@ def Enhance_contrasted(image):
     return image_contrasted
 
 
-def Enhance_sharped(image):
+def Enhance_sharped_pil(image):
     # 锐度，增强因子为1.0是原始图片
     # 锐度增强
     enh_sha = ImageEnhance.Sharpness(image)
@@ -80,7 +88,7 @@ def Enhance_sharped(image):
     return image_sharped
 
 
-def Add_pepper_salt(image):
+def Add_pepper_salt_pil(image):
     # 增加椒盐噪声
     img = np.array(image)
     rows, cols, _ = img.shape
@@ -102,97 +110,222 @@ def mem_enhance(image_path, change_bri=1, change_color=1, change_contras=1, chan
     image = Image.open(image_path)
 
     if change_bri == 1:
-        image = Enhance_Brightness(image)
+        image = Enhance_Brightness_pil(image)
     if change_color == 1:
-        image = Enhance_Color(image)
+        image = Enhance_Color_pil(image)
     if change_contras == 1:
-        image = Enhance_contrasted(image)
+        image = Enhance_contrasted_pil(image)
     if change_sha == 1:
-        image = Enhance_sharped(image)
+        image = Enhance_sharped_pil(image)
     if add_noise == 1:
-        image = Add_pepper_salt(image)
+        image = Add_pepper_salt_pil(image)
     # image.save("0.jpg")
     return image  # 返回 PIL.Image.Image 类型
 
 
-from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
+def pic_resize_keep_np(img_np, size):
+    h, w, _ = img_np.shape
+    if h > w:
+        padw = (h - w) // 2
+        img_np = np.pad(img_np, ((0, 0), (padw, padw), (0, 0)), 'constant', constant_values=0)
+    elif w > h:
+        padh = (w - h) // 2
+        img_np = np.pad(img_np, ((padh, padh), (0, 0), (0, 0)), 'constant', constant_values=0)
+    img_np = cv2.resize(img_np, (size[0], size[1]))
+    return img_np
 
 
-def get_random_data(annotation_line, input_shape, max_boxes=20, jitter=.3, hue=.1, sat=1.5, val=1.5, ):
-    '''random preprocessing for real-time data augmentation'''
-    line = annotation_line.split()  # 分解成path和区域
-    img_pil = Image.open(line[0])
-    iw, ih = img_pil.size
-    h, w = input_shape
-    box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]])
+class Enhance4np:
+    def __init__(self) -> None:
+        self.prob = random.random() < 0.5
 
-    def rand(a=0., b=1.):
-        return np.random.rand() * (b - a) + a
+    def BGR2RGB(self, img):
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # 对长宽比进行缩放
-    new_ar = w / h * rand(1. - jitter, 1. + jitter) / rand(1. - jitter, 1. + jitter)
-    scale = rand(.7, 1.3)
-    # 对长宽大的进行缩放
-    if new_ar < 1:
-        nh = int(scale * h)
-        nw = int(nh * new_ar)
-    else:
-        nw = int(scale * w)
-        nh = int(nw / new_ar)
-    # 对
-    img_pil = img_pil.resize((nw, nh), Image.BICUBIC)
+    def BGR2HSV(self, img):
+        return cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    # place image
-    dx = int(rand(0, w - nw))
-    dy = int(rand(0, h - nh))
-    new_image = Image.new('RGB', (w, h), (128, 128, 128))
-    new_image.paste(img_pil, (dx, dy))
-    img_pil = new_image
+    def HSV2BGR(self, img):
+        return cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
 
-    # flip image or not
-    flip = rand() < .5
-    if flip: img_pil = img_pil.transpose(Image.FLIP_LEFT_RIGHT)
+    def RandomBrightness(self, bgr):
+        '''
 
-    # distort image
-    hue = rand(-hue, hue)
-    sat = rand(1, sat) if rand() < .5 else 1 / rand(1, sat)
-    val = rand(1, val) if rand() < .5 else 1 / rand(1, val)
-    x = rgb_to_hsv(np.array(img_pil) / 255.)
-    x[..., 0] += hue
-    x[..., 0][x[..., 0] > 1] -= 1
-    x[..., 0][x[..., 0] < 0] += 1
-    x[..., 1] *= sat
-    x[..., 2] *= val
-    x[x > 1] = 1
-    x[x < 0] = 0
-    image_data = hsv_to_rgb(x)  # numpy array, 0 to 1
+        :param bgr:
+        :return:
+        '''
+        if random.random() < 0.5:
+            hsv = self.BGR2HSV(bgr)
+            h, s, v = cv2.split(hsv)
+            adjust = random.choice([0.5, 1.5])
+            v = v * adjust
+            v = np.clip(v, 0, 255).astype(hsv.dtype)
+            hsv = cv2.merge((h, s, v))
+            bgr = self.HSV2BGR(hsv)
+        return bgr
 
-    # correct boxes
-    box_data = np.zeros((max_boxes, 5))
-    if len(box) > 0:
-        np.random.shuffle(box)
-        box[:, [0, 2]] = box[:, [0, 2]] * nw / iw + dx
-        box[:, [1, 3]] = box[:, [1, 3]] * nh / ih + dy
-        if flip: box[:, [0, 2]] = w - box[:, [2, 0]]
-        box[:, 0:2][box[:, 0:2] < 0] = 0
-        box[:, 2][box[:, 2] > w] = w
-        box[:, 3][box[:, 3] > h] = h
-        box_w = box[:, 2] - box[:, 0]
-        box_h = box[:, 3] - box[:, 1]
-        box = box[np.logical_and(box_w > 1, box_h > 1)]  # discard invalid box
-        if len(box) > max_boxes: box = box[:max_boxes]
-        box_data[:len(box)] = box
+    def RandomSaturation(self, bgr):
+        '''
+        随机饱和度
+        :param bgr:
+        :return:
+        '''
+        if random.random() < 0.5:
+            hsv = self.BGR2HSV(bgr)
+            h, s, v = cv2.split(hsv)
+            adjust = random.choice([0.5, 1.5])
+            s = s * adjust
+            s = np.clip(s, 0, 255).astype(hsv.dtype)
+            hsv = cv2.merge((h, s, v))
+            bgr = self.HSV2BGR(hsv)
+        return bgr
 
-    return image_data, box_data
+    def RandomHue(self, bgr):
+        '''
+        随机色调
+        :param bgr:
+        :return:
+        '''
+        if random.random() < 0.5:
+            hsv = self.BGR2HSV(bgr)
+            h, s, v = cv2.split(hsv)
+            adjust = random.choice([0.5, 1.5])
+            h = h * adjust
+            h = np.clip(h, 0, 255).astype(hsv.dtype)
+            hsv = cv2.merge((h, s, v))
+            bgr = self.HSV2BGR(hsv)
+        return bgr
+
+    def randomBlur(self, bgr):
+        '''
+         随机模糊
+        '''
+        if random.random() < 0.5:
+            bgr = cv2.blur(bgr, (5, 5))
+        return bgr
+
+    def randomShift(self, bgr, boxes, labels):
+        # 平移变换
+        center = (boxes[:, 2:] + boxes[:, :2]) / 2
+        if random.random() < 0.5:
+            height, width, c = bgr.shape
+            after_shfit_image = np.zeros((height, width, c), dtype=bgr.dtype)
+            after_shfit_image[:, :, :] = (104, 117, 123)  # bgr
+            shift_x = random.uniform(-width * 0.2, width * 0.2)
+            shift_y = random.uniform(-height * 0.2, height * 0.2)
+            # print(bgr.shape,shift_x,shift_y)
+            # 原图像的平移
+            if shift_x >= 0 and shift_y >= 0:
+                after_shfit_image[int(shift_y):, int(shift_x):, :] = bgr[:height - int(shift_y), :width - int(shift_x),
+                                                                     :]
+            elif shift_x >= 0 and shift_y < 0:
+                after_shfit_image[:height + int(shift_y), int(shift_x):, :] = bgr[-int(shift_y):, :width - int(shift_x),
+                                                                              :]
+            elif shift_x < 0 and shift_y >= 0:
+                after_shfit_image[int(shift_y):, :width + int(shift_x), :] = bgr[:height - int(shift_y), -int(shift_x):,
+                                                                             :]
+            elif shift_x < 0 and shift_y < 0:
+                after_shfit_image[:height + int(shift_y), :width + int(shift_x), :] = bgr[-int(shift_y):,
+                                                                                      -int(shift_x):, :]
+
+            shift_xy = torch.FloatTensor([[int(shift_x), int(shift_y)]]).expand_as(center)
+            center = center + shift_xy
+            mask1 = (center[:, 0] > 0) & (center[:, 0] < width)
+            mask2 = (center[:, 1] > 0) & (center[:, 1] < height)
+            mask = (mask1 & mask2).view(-1, 1)
+            boxes_in = boxes[mask.expand_as(boxes)].view(-1, 4)
+            if len(boxes_in) == 0:
+                return bgr, boxes, labels
+            box_shift = torch.FloatTensor([[int(shift_x), int(shift_y), int(shift_x), int(shift_y)]]).expand_as(
+                boxes_in)
+            boxes_in = boxes_in + box_shift
+            labels_in = labels[mask.view(-1)]
+            return after_shfit_image, boxes_in, labels_in
+        return bgr, boxes, labels
+
+    def randomScale(self, bgr, boxes):
+        '''
+         # 固定住高度，以0.6-1.4伸缩宽度，做图像形变
+        :param bgr:
+        :param boxes:
+        :return:
+        '''
+        if random.random() < 0.5:
+            scale = random.uniform(0.6, 1.4)
+            height, width, c = bgr.shape
+            bgr = cv2.resize(bgr, (int(width * scale), height))
+            scale_tensor = torch.FloatTensor([[scale, 1, scale, 1]]).expand_as(boxes)
+            boxes = boxes * scale_tensor
+            return bgr, boxes
+        return bgr, boxes
+
+    def randomCrop(self, bgr, boxes, labels):
+        if random.random() < 0.5:
+            center = (boxes[:, 2:] + boxes[:, :2]) / 2
+            height, width, c = bgr.shape
+            h = random.uniform(0.6 * height, height)
+            w = random.uniform(0.6 * width, width)
+            x = random.uniform(0, width - w)
+            y = random.uniform(0, height - h)
+            x, y, h, w = int(x), int(y), int(h), int(w)
+
+            center = center - torch.FloatTensor([[x, y]]).expand_as(center)
+            mask1 = (center[:, 0] > 0) & (center[:, 0] < w)
+            mask2 = (center[:, 1] > 0) & (center[:, 1] < h)
+            mask = (mask1 & mask2).view(-1, 1)
+
+            boxes_in = boxes[mask.expand_as(boxes)].view(-1, 4)
+            if (len(boxes_in) == 0):
+                return bgr, boxes, labels
+            box_shift = torch.FloatTensor([[x, y, x, y]]).expand_as(boxes_in)
+
+            boxes_in = boxes_in - box_shift
+            labels_in = labels[mask.view(-1)]
+            img_croped = bgr[y:y + h, x:x + w, :]
+            return img_croped, boxes_in, labels_in
+        return bgr, boxes, labels
+
+    def subMean(self, bgr, mean):
+        '''
+        self.mean = (123,117,104)
+        :param bgr:
+        :param mean:
+        :return:
+        '''
+        mean = np.array(mean, dtype=np.float32)
+        bgr = bgr - mean
+        return bgr
+
+    def random_flip(self, im, boxes):
+        '''
+        随机翻转
+        '''
+        if random.random() < 0.5:
+            im_lr = np.fliplr(im).copy()
+            h, w, _ = im.shape
+            xmin = w - boxes[:, 2]
+            xmax = w - boxes[:, 0]
+            boxes[:, 0] = xmin
+            boxes[:, 2] = xmax
+            return im_lr, boxes
+        return im, boxes
+
+    def random_bright(self, im, delta=16):
+        alpha = random.random()
+        if alpha > 0.3:
+            im = im * alpha + random.randrange(-delta, delta)
+            im = im.clip(min=0, max=255).astype(np.uint8)
+        return im
 
 
 if __name__ == '__main__':
     # pic_generator(r'E:\datas\t01', 5)
     # print(type(mem_enhance(r'E:\datas\t01\dog.12490.jpg')))
     line = r"E:\datas\t01\dog.12490.jpg 738,279,815,414,0"
-    image_data, box_data = get_random_data(line, [416, 416])
-    left, top, right, bottom = box_data[0][0:4]
-    img = Image.fromarray((image_data * 255).astype(np.uint8))
-    draw = ImageDraw.Draw(img)
-    draw.rectangle([left, top, right, bottom])
-    img.show()
+    path_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2008_000329.jpg'
+    img_np = cv2.imread(path_pic)  # 读取原始图像
+
+    img_np = fun1(img_np, (300, 300))
+
+    cv2.imshow("img", img_np)
+    cv2.waitKey(0)
