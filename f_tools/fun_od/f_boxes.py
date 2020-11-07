@@ -433,7 +433,7 @@ def boxes2yolo(boxes, labels, num_bbox=2, num_class=20, grid=7):
     '''
     将ltrb 转换为 7*7*(2*(4+1)+20) = grid*grid*(num_bbox(4+1)+num_class)
     :param boxes:
-    :param labels:
+    :param labels: 1~n
     :param num_bbox:
     :param num_class:
     :param grid:
@@ -457,10 +457,11 @@ def boxes2yolo(boxes, labels, num_bbox=2, num_class=20, grid=7):
         delta_xy = (cxcy_sample - xy) / cell_size  # GT相对于所在网格左上角的值, 网格的左上角看做原点 需进行放大
 
         for j in range(num_bbox):
-            target[int(ij[1]), int(ij[0]), (j + 1) * 5 - 1] = 1
+            target[int(ij[1]), int(ij[0]), (j + 1) * 5 - 1] = 1  # conf
             start = j * 5
             target[int(ij[1]), int(ij[0]), start:start + 2] = delta_xy  # 相对于所在网格左上角
             target[int(ij[1]), int(ij[0]), start + 2:start + 4] = wh[i]  # wh值相对于整幅图像的尺寸
+        target[int(ij[1]), int(ij[0]), int(labels[i]) + 5 * num_bbox - 1] = 1  # 9指向0~9的最后一位,labels从1开始
     return target
 
 

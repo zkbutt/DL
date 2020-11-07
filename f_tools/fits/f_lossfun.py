@@ -4,7 +4,8 @@ import torch.nn.functional as F
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_pretreatment import f_recover_normalization4ts
-from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints, ltrb2xywh
+from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints, ltrb2xywh, calc_iou4ts, \
+    bbox_iou4ts
 from f_tools.pic.f_show import show_od4ts
 
 
@@ -143,99 +144,197 @@ class LossOD_K(nn.Module):
 
 class LossYOLO(nn.Module):
 
-    def __init__(self, anc, loss_weight=(1., 1., 1.), neg_ratio=3, cfg=None):
+    def __init__(self, grid=7, num_bbox=2, l_coord=5, l_noobj=0.5):
         '''
 
-        :param anc:
-        :param loss_weight:
+        :param grid: 7代表将图像分为7x7的网格
+        :param num_bbox: 2代表一个网格预测两个框
+        :param l_coord:
+        :param l_noobj:
         '''
-        super().__init__()
-        self.location_loss = nn.SmoothL1Loss(reduction='none')
-        # self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
-        self.confidence_loss = nn.BCELoss(reduction='none')
-        self.anc = anc.unsqueeze(dim=0)
-        self.loss_weight = loss_weight
-        self.neg_ratio = neg_ratio
-        self.cfg = cfg
+        super(LossYOLO, self).__init__()
+        self.S = grid
+        self.B = num_bbox
+        self.l_coord = l_coord  # 5代表 λcoord  更重视8维的坐标预测
+        self.l_noobj = l_noobj  # 0.5代表没有object的bbox的confidence loss
 
-    def forward(self, p_bboxs_xywh, mg_bboxs_ltrb, p_cls, mg_labels, imgs_ts=None):
+    def calc_loss_conf_noo(self, p_yolo_ts, g_yolo_ts, mask_noo):
+        # 选出没有目标的所有框拉平 (batch,7,7,30) -> (xx,7,7,30) -> (xxx,30)
+        p_yolo_ts_noo = p_yolo_ts[mask_noo].view(-1, 30)
+        g_yolo_ts_noo = g_yolo_ts[mask_noo].view(-1, 30)
+
+        # 创建布尔索引选出---选出没有目标的置信度
+        mask_conf_noo = torch.ByteTensor(p_yolo_ts_noo.size())  # 例如：[1496,30]
+        mask_conf_noo.zero_()  # 初始化全为0
+        mask_conf_noo[:, 4] = 1  # 选出置信度将第4、9  即有物体的confidence置为1
+        mask_conf_noo[:, 9] = 1
+        # (xxx,30) -> (xxx,2)
+        p_conf_noo = p_yolo_ts_noo[mask_conf_noo]  # 选出没有目标的置信度
+        # 这里恒为0
+        g_conf_zero = g_yolo_ts_noo[mask_conf_noo]
+        # nooobj_loss 一个标量, size_average=False 是对batch里的值求和
+        loss_conf_noo = F.mse_loss(p_conf_noo, g_conf_zero, size_average=False)
+        return loss_conf_noo
+
+    def forward(self, p_yolo_ts, g_yolo_ts):
         '''
-        当只有两个类时，只用p_conf即可
-                p_conf:torch.Size([5, 10647])
-        :param p_bboxs_xywh: torch.Size([5, 10647, 4])
-        :param mg_bboxs_ltrb:torch.Size([5, 10647, 4])
-        :param mg_labels:torch.Size([5, 10647]) 已匹配
-        :param p_cls:torch.Size([5, 10647, 20])
-        :param imgs_ts:
+        4个损失:
+
+        :param p_yolo_ts: (tensor) size(batch,7,7,2x5+20=30) [x,y,w,h,c]
+        :param g_yolo_ts: (tensor) size(batch,7,7,30)
         :return:
         '''
-        # 同维运算
-        mask_pos = mg_labels > 0
-        # 检查匹配是否正确
-        if self.cfg is not None and self.cfg.IS_VISUAL:
-            for i, (img_ts, mask) in enumerate(zip(imgs_ts, mask_pos)):
-                flog.debug('显示匹配的框 %s 个', torch.sum(mask))
-                # 遍历降维 self.anc([1, 16800, 4])
-                img_ts_show = f_recover_normalization4ts(img_ts)
-                _t = self.anc.view(-1, 4).clone()
-                _t[:, ::2] = _t[:, ::2] * self.cfg.IMAGE_SIZE[0]
-                _t[:, 1::2] = _t[:, 1::2] * self.cfg.IMAGE_SIZE[1]
-                _t = _t[mask, :]
-                # _t = _t[:20, :] # 显示框个数
-                show_od4ts(img_ts_show, xywh2ltrb(_t), torch.ones(20))
+        batch = p_yolo_ts.size()[0]  # shape[0]
+        '''生成有目标和没有目标的同维布尔索引'''
+        # 获取有GT的框的布尔索引集,conf为1 4或9可作任选一个,结果一样的
+        mask_coo = g_yolo_ts[:, :, :, 4] > 0  # (batch,7,7,30) -> (batch,7,7)
+        # 没有GT的索引 mask ==0  coo_mask==False
+        mask_noo = g_yolo_ts[:, :, :, 4] == 0  # (batch,7,7,30) ->(batch,7,7)
+        # (batch,7,7) -> (batch,7,7,30) unsqueeze(-1) 扩展最后一维  coo_mask 大部分为0 noo_mask  大部分为1
+        mask_coo = mask_coo.unsqueeze(-1).expand_as(g_yolo_ts)
+        mask_noo = mask_noo.unsqueeze(-1).expand_as(g_yolo_ts)
 
-        # 每一个图片的正样本个数  [batch, 16800] ->[batch]
-        pos_num = mask_pos.sum(dim=1)  # [batch] 这个用于batch中1个图没有正例不算损失和计算反例数
+        '''组装 有GT的对应 box[x1,y1,w1,h1,c1] 及 后20个数'''
+        # 在p_yolo_ts预测中选出有GT的 再拉成二维  (batch,7,7,30) -> (xx,30)
+        p_yolo_ts_coo = p_yolo_ts[mask_coo].view(-1, 30)
+        # 取预测框及置信度 2个展开 (xx,30)-> (xx,10) ->(xxx,5)   box[x1,y1,w1,h1,c1]
+        box_pred = p_yolo_ts_coo[:, :10].contiguous().view(-1, 5)
+        # 取预测类别  每个网格预测的类别  后20
+        class_pred = p_yolo_ts_coo[:, 10:]
 
-        '''-----------bboxs 损失处理-----------'''
-        # 用anc和gt计算出差异 [1, 16800, 4] ^^ [batch, 16800, 4] = [batch, 16800, 4]
-        d_bboxs = diff_bbox(self.anc, ltrb2xywh(mg_bboxs_ltrb), variances=[1, 1])
+        # 对真实标签做同样操作
+        g_yolo_ts_coo = g_yolo_ts[mask_coo].view(-1, 30)
+        box_g = g_yolo_ts_coo[:, :10].contiguous().view(-1, 5)
+        class_g = g_yolo_ts_coo[:, 10:]
 
-        # [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
-        p_bboxs_xywh[:, :, :2] = torch.sigmoid(p_bboxs_xywh[:, :, :2])  # yolo sigmoid归一化xy
-        loss_bboxs = self.location_loss(p_bboxs_xywh, d_bboxs).sum(dim=-1)  # smooth_l1_loss
-        # __d = 1
-        # 正例损失过滤
-        loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)
+        '''计算没有目标的置信度损失'''
+        loss_conf_noo = self.calc_loss_conf_noo(p_yolo_ts, g_yolo_ts, mask_noo)
 
-        '''-----------cls 损失处理-----------'''
-        # 移到中间才能计算
-        p_cls = torch.sigmoid(p_cls)  # sigmoid归一化 各个类独立
-        p_cls = p_cls.permute(0, 2, 1)  # (batch,16800,2) -> (batch,2,16800)
-        # (batch,2,16800)^[batch, 16800] ->[batch, 16800] 得同维每一个元素的损失
-        loss_labels = self.confidence_loss(p_cls, mg_labels.long())
-        # 分类损失 - 负样本选取  选损失最大的
-        labels_neg = loss_labels.clone()
-        labels_neg[mask_pos] = torch.tensor(0.0).to(loss_labels)  # 正样本先置0 使其独立 排除正样本,选最大的
+        # 计算包含obj损失  即本来有，预测有  和  本来有，预测无
+        mask_max = torch.ByteTensor(box_g.size())
+        mask_max.zero_()
+        mask_max_noo = torch.ByteTensor(box_g.size())
+        mask_max_noo.zero_()
+        # 2个预测对一个,选择最好的IOU 0~gt个数 间隔为2
+        for i in range(0, box_g.size()[0], 2):
+            # 计算iou需要ltrb
+            box_pred_2 = box_pred[i:i + 2]  # 取前两个
+            box_pred_ltrb = torch.FloatTensor(box_pred_2.size())  # torch.tensor(x,y...).type(torch.float32)
+            box_pred_ltrb[:, :2] = box_pred_2[:, :2] - 0.5 * box_pred_2[:, 2:4]
+            box_pred_ltrb[:, 2:4] = box_pred_2[:, :2] + 0.5 * box_pred_2[:, 2:4]
 
-        # 输入数组 选出反倒损失最大的N个 [33,11,55] -> 降[2,0,1] ->升[1,2,0] < 2 -> [T,F,T] con_idx(Tensor: [N, 8732])
-        _, labels_idx = labels_neg.sort(dim=1, descending=True)  # descending 倒序
-        # 得每一个图片batch个 最大值索引排序
-        _, labels_rank = labels_idx.sort(dim=1)  # 两次索引排序 用于取最大的n个布尔索引
-        # 计算每一层的反例数   [batch] -> [batch,1]  限制正样本3倍不能超过负样本的总个数  基本不可能超过总数
-        neg_num = torch.clamp(self.neg_ratio * pos_num, max=mask_pos.size(1)).unsqueeze(-1)
-        mask_neg = labels_rank < neg_num  # 选出最大的n个的mask  Tensor [batch, 8732]
-        # 正例索引 + 反例索引 得1 0 索引用于乘积筛选
-        mask_z = mask_pos.float() + mask_neg.float()
-        loss_labels = (loss_labels * (mask_z)).sum(dim=1)
+            box_g_1 = box_g[i].view(-1, 5)  # GT框两个是一样的不需要用两个来比
+            box_g_ltrb = torch.FloatTensor(box_g_1.size())
+            box_g_ltrb[:, :2] = box_g_1[:, :2] - 0.5 * box_g_1[:, 2:4]
+            box_g_ltrb[:, 2:4] = box_g_1[:, :2] + 0.5 * box_g_1[:, 2:4]
+            iou = calc_iou4ts(box_pred_ltrb[:, :4], box_g_ltrb[:, :4])  # 2对1 返回(2,1)
 
-        '''-----------损失合并处理-----------'''
-        # 没有正样本的图像不计算分类损失  pos_num是每一张图片的正例个数 eg. [15, 3, 5, 0] -> [1.0, 1.0, 1.0, 0.0]
-        num_mask = (pos_num > 0).float()  # 统计一个batch中的每张图像中是否存在正样本
-        pos_num = pos_num.float().clamp(min=torch.finfo(torch.float).eps)  # 求平均 排除有0的情况取类型最小值
+            max_iou, max_index = iou.max(0)
+            # max_index = max_index.data.cuda()
+            mask_max[i + max_index] = 1
+            mask_max_noo[i + 1 - max_index] = 1
+        # 1.response loss响应损失，即本来有，预测有   有相应 坐标预测的loss  （x,y,w开方，h开方）参考论文loss公式
+        # box_pred [144,5]   coo_response_mask[144,5]   box_pred_response:[72,5]
+        # 选择IOU最好的box来进行调整  负责检测出某物体
+        box_pred_max = box_pred[mask_max].view(-1, 5)
+        box_g_random = box_g[mask_max].view(-1, 5)  # 维度1随便选一个即可
+        '''计算有目标的iou好的那个的置信度损失'''
+        loss_conf_coo_max = F.mse_loss(box_pred_max[:, 4], box_g_random[:, 4], size_average=False)
+        '''计算有目标的iou好的那个的框损失   （x,y,w开方，h开方）'''
+        loss_loc = F.mse_loss(box_pred_max[:, :2], box_g_random[:, :2], size_average=False) \
+                   + F.mse_loss(torch.sqrt(box_pred_max[:, 2:4]), box_g_random[:, 2:4].sqrt(), size_average=False)
 
-        # 计算总损失平均值 /正样本数量 [n] 加上超参系数
-        loss_bboxs = (loss_bboxs * num_mask / pos_num).mean(dim=0)
-        __d = 1
-        # loss_bboxs.detach().cpu().numpy()
-        loss_labels = (loss_labels * num_mask / pos_num).mean(dim=0)
+        # # 2.not response loss 未响应损失，即本来有，预测无   未响应
+        # box_pred_not_response = box_pred[coo_not_response_mask].view(-1, 5)
+        # box_target_not_response = box_target[coo_not_response_mask].view(-1, 5)
+        # box_target_not_response[:, 4] = 0
+        # box_pred_response: [72, 5]
 
-        loss_total = self.loss_weight[0] * loss_bboxs + self.loss_weight[1] * loss_labels
+        # not_contain_loss = F.mse_loss(box_pred_max[:, 4], box_g_random[:, 4], size_average=False)
+        '''计算有物体的类别loss'''
+        class_loss = F.mse_loss(class_pred, class_g, size_average=False)
+        # 除以N  即平均一张图的总损失
+        return (self.l_coord * loss_loc
+                + loss_conf_noo
+                + loss_conf_coo_max
+                + self.l_noobj * loss_conf_noo
+                + class_loss) / batch
 
-        log_dict = {}
-        log_dict['loss_bboxs'] = loss_bboxs.item()
-        log_dict['loss_labels'] = loss_labels.item()
-        return loss_total, log_dict
+
+class LossYOLOv1(nn.Module):
+
+    def __init__(self, grid=7, num_bbox=1, l_coord=5, l_noobj=0.5, num_cls=20):
+        '''
+
+        :param grid: 7代表将图像分为7x7的网格
+        :param num_bbox: 2代表一个网格预测两个框
+        :param l_coord:
+        :param l_noobj:
+        '''
+        super(LossYOLOv1, self).__init__()
+        self.S = grid
+        self.B = num_bbox
+        self.num_cls = num_cls
+        self.l_coord = l_coord  # 5代表 λcoord  box位置的坐标预测 权重
+        self.l_noobj = l_noobj  # 0.5代表没有目标的bbox的confidence loss 权重
+
+    def forward(self, p_yolo_ts, g_yolo_ts):
+        '''
+        4个损失:
+
+        :param p_yolo_ts: (tensor) size(batch,7,7,4+1+num_class=25) [x,y,w,h,c]
+        :param g_yolo_ts: (tensor) size(batch,7,7,4+1+num_class=25)
+        :return:
+        '''
+        num_dim = self.B * 5 + self.num_cls
+        '''生成有目标和没有目标的同维布尔索引'''
+        # 获取有GT的框的布尔索引集,conf为1 4或9可作任选一个,结果一样的
+        mask_coo = g_yolo_ts[:, :, :, 4] > 0  # (batch,7,7,25) -> (batch,7,7)
+        # 没有GT的索引 mask ==0  coo_mask==False
+        mask_noo = g_yolo_ts[:, :, :, 4] == 0  # (batch,7,7,25) ->(batch,7,7)
+        # (batch,7,7) -> (batch,7,7,30) unsqueeze(-1) 扩展最后一维  coo_mask 大部分为0 noo_mask  大部分为1
+        mask_coo = mask_coo.unsqueeze(-1).expand_as(g_yolo_ts)
+        mask_noo = mask_noo.unsqueeze(-1).expand_as(g_yolo_ts)
+
+        # (batch,7,7,25) -> (xxx) ->(xx,7,7,25)
+        p_coo = p_yolo_ts[mask_coo].view(-1, 7, 7, num_dim)
+        g_coo = g_yolo_ts[mask_coo].view(-1, 7, 7, num_dim)
+        # 有目标的样本 (xxx,7,7,25) -> (xxx,xx,25)
+        p_coo_batch = p_coo.view(p_coo.shape[0], -1, num_dim).contiguous()
+        g_coo_batch = g_coo.view(p_coo.shape[0], -1, num_dim).contiguous()
+
+        '''计算有目标的-------类别loss'''
+        # p_cls_coo = p_coo_batch[:, :, self.B * 5:].reshape(-1,self.num_cls)
+        p_cls_coo = p_coo_batch[:, :, self.B * 5:]
+        # g_cls_coo = g_coo_batch[:, :, self.B * 5:].reshape(-1,self.num_cls)
+        g_cls_coo = g_coo_batch[:, :, self.B * 5:]
+        loss_cls = F.mse_loss(p_cls_coo, g_cls_coo, reduction='sum')
+
+        '''计算有目标的iou好的那个的-------框损失   （x,y,w开方，h开方）'''
+        # (batch, 7, 7, 25) -> (xx, 7, 7, 25) -> (xxx, xx,25) ->  (xxx, xx,4)
+        p_boxes_coo = p_coo_batch[:, :, :4]
+        g_boxes_coo = g_coo_batch[:, :, :4]
+        loss_xy = F.mse_loss(p_boxes_coo[:, :2], g_boxes_coo[:, :2], reduction='sum')
+        # 大小敏感
+        loss_wh = F.mse_loss(p_boxes_coo[:, 2:4].sqrt(), g_boxes_coo[:, 2:4].sqrt(), reduction='sum')
+
+        '''计算有目标的置信度损失???'''
+        p_conf_coo = p_coo_batch[:, :, 4]  # [batch, 49, 25] ->[batch, 49]
+        g_conf_one = torch.ones_like(p_conf_coo)
+        loss_conf_coo = F.mse_loss(p_conf_coo, g_conf_one, reduction='sum')
+
+        '''计算没有目标的置信度损失'''
+        # 选出没有目标的所有框拉平 (batch,7,7,30) -> (xx,7,7,30) -> (xxx,30)
+        p_conf_noo = p_yolo_ts[mask_noo].view(-1, num_dim)[:, 4]
+        # zeros = torch.zeros(p_conf_noo.shape)
+        g_conf_zero = g_yolo_ts[mask_noo].view(-1, num_dim)[:, 4]  # 全0
+        loss_conf_noo = F.mse_loss(p_conf_noo, g_conf_zero, size_average=False)
+
+        batch = p_yolo_ts.shape[0]  # batch数 shape[0]
+        return (self.l_coord * (loss_xy + loss_wh)
+                + loss_conf_coo
+                + self.l_noobj * loss_conf_noo
+                + loss_cls) / batch
 
 
 class ObjectDetectionLoss(nn.Module):
@@ -706,6 +805,120 @@ def f_二值交叉熵1():
     print(bce_loss(p_cls_ts, g_cls_ts))
 
 
+def t_LossYOLO():
+    # yolo = LossYOLO()
+    yolo = LossYOLOv1()
+    num_cls = 20
+    num_boxes = 1
+    num_dim = num_boxes * 5 + num_cls
+
+    p_yolo_ts = torch.rand(7, 7, 7, num_dim, requires_grad=True)
+    g_yolo_ts = torch.rand(7, 7, 7, num_dim, requires_grad=True)
+    print(yolo(p_yolo_ts, g_yolo_ts))
+
+
+class Loss(nn.Module):
+    def __init__(self, lambda_coord, lambda_noobj):
+        super(Loss, self).__init__()
+        self.lambda_coord = lambda_coord
+        self.lambda_noobj = lambda_noobj
+
+    def forward(self, p_yolo, g_yolo):
+        """
+            输入两个变量分别为，通过网络预测的张量和实际标签张量。两个张量的尺寸均为[batch_size，s，s，95]
+        batch_size为批量处理的图像个数，s为网格尺寸，95就是5个box参数加90类，前5个参数为box属性。
+        """
+        """
+            计算网格是否包含有目标，应从实际标签张量的box属性第5各参数来判定，该值表征某网格某box的预测概率为1
+        逻辑mask应与原tensor尺寸相同，只包含0-1两个值，表示原tensor对应位置是否满足条件。
+        """
+        # 具有目标的标签逻辑索引
+        coo_mask = g_yolo[:, :, :, 4] > 0
+        coo_mask = coo_mask.unsqueeze(-1).expand_as(g_yolo)
+        # 没有目标的标签逻辑索引
+        noo_mask = g_yolo[:, :, :, 4] == 0
+        noo_mask = noo_mask.unsqueeze(-1).expand_as(g_yolo)
+        """
+            计算每张图像中，每个目标对应的，最大IOU的预测box的定位误差、confidence误差、类别误差
+            及每个不含目标的box的confidence误差。
+        """
+        xy_loss = 0
+        wh_loss = 0
+        con_obj_loss = 0
+        nocon_obj_loss = 0
+        # 遍历每一个batch
+        for i in range(p_yolo.size()[0]):
+            # (1,7,7,30) 中有目标的 (1,7,7,30) -> (xx,30)
+            coo_targ = g_yolo[i][coo_mask[i]].view(-1, 95)
+            # (xx,30) ->(xx,5)
+            box_targ = coo_targ[:, :5].contiguous().view(-1, 5)
+
+            # 提取预测box属性
+            box_pred = p_yolo[i, :, :, :5].view(-1, 5)
+            # 计算IOU张量，尺寸为N×M。
+            if box_targ.size()[0] != 0:  # 如果有目标
+                iou = self.cal_iou(box_targ, box_pred, coo_mask[i, :, :, 1])
+                # 找到每列的最大值及对应行，即对应的真实box的最大IOU及box序号
+
+                max_iou, max_sort = torch.max(iou, dim=0)
+                # 计算定位误差
+                xy_loss += F.mse_loss(box_pred[max_sort, :2], box_targ[max_sort, :2], reduction='sum')
+                wh_loss += F.mse_loss(box_pred[max_sort, 2:4].sqrt(), box_targ[max_sort, 2:4].sqrt(), reduction='sum')
+
+                # 计算confidence误差
+                """
+                    confidence误差，应为每一个网格内的每一个box的置信概率乘以该box的IOU值，该误差包括两个部分，一个是对于
+                包含目标的box，上面已经计算出IOU值，可以直接进行计算，但对于另一部分，也就是不包含目标的box，由于其不包含
+                box属性，所以真实confidence应该取0。对于预测的IOU可直接设为1。在计算损失函数时，为计算方便实际可分别设置
+                为ones张量和zeros张量。
+                """
+                # 包含目标的box confidence误差
+                con_obj_c = box_pred[max_sort][:, 4] * max_iou
+                con_obj_loss += F.mse_loss(con_obj_c, torch.ones_like(con_obj_c), reduction='sum')
+
+                # 不含目标的box confidence误差
+                no_sort = torch.ones(box_pred.size()[0]).byte()
+                no_sort[max_sort] = 0
+                nocon_obj_c = box_pred[no_sort][:, 4]
+                nocon_obj_loss += F.mse_loss(nocon_obj_c, torch.zeros_like(nocon_obj_c), reduction='sum')
+
+        # 计算类别误差
+        """
+            由于类别是通过网格来确定的，每一个网格无论有几个box，一个所属类概率。
+            在计算类别误差时，只对目标中心落在该其中的网格进行计算。
+        """
+        # coo_mask 表示在整个张量中，包含目标的网格点索引，所以可以不对每一个bitch进行分别计算，直接整体求和
+        con_pre_class = p_yolo[coo_mask].view(-1, 95)[:, 5:]
+        con_tar_class = g_yolo[coo_mask].view(-1, 95)[:, 5:]
+        con_class_loss = F.mse_loss(con_pre_class, con_tar_class, reduction='sum')
+
+        # 总损失函数求和
+        loss_total = (self.lambda_coord * (xy_loss + xy_loss) + con_obj_loss
+                      + self.lambda_noobj * nocon_obj_loss + con_class_loss) / p_yolo.size()[0]
+
+        return loss_total
+
+    def cal_iou(self, box_targ, box_pred, mask):
+        # 计算box数量
+        M = box_targ.size()[0]
+        N = box_pred.size()[0]
+        # 转化box参数，转化为统一坐标
+        row = torch.arange(14, dtype=torch.float).unsqueeze(-1).expand_as(mask)[mask].cuda()
+        col = torch.arange(14, dtype=torch.float).unsqueeze(0).expand_as(mask)[mask].cuda()
+        box_targ[:, 0] = col / 14 + box_targ[:, 0] * 1 / 14
+        box_targ[:, 1] = row / 14 + box_targ[:, 1] * 1 / 14
+
+        exboxM = box_targ.unsqueeze(0).expand(N, M, 5)
+        exboxN = box_pred.unsqueeze(1).expand(N, M, 5)
+        dxy = (exboxM[:, :, :2] - exboxN[:, :, :2])
+        swh = (exboxM[:, :, 2:4] + exboxN[:, :, 2:4])
+        s_inter = swh / 2 - dxy.abs()
+        s_inter = (s_inter[:, :, 0] * s_inter[:, :, 1]).clamp(min=0)
+        s_union = exboxM[:, :, 2] * exboxM[:, :, 3] + exboxN[:, :, 2] * exboxN[:, :, 3] - s_inter
+        iou = s_inter / s_union
+        return iou
+
+
 if __name__ == '__main__':
     import numpy as np
 
@@ -713,7 +926,6 @@ if __name__ == '__main__':
 
     # t_多值交叉熵()
     # f_二值交叉熵2()
-    f_二值交叉熵1()
-    '''
-    每一个输出对应多个目标?多标签
-    '''
+    # f_二值交叉熵1()
+
+    t_LossYOLO()

@@ -35,11 +35,13 @@ if __name__ == '__main__':
     '''
     usage: t001.py [-h] [--name NAME] -f FAMILY t4 integers [integers ...]
     '''
-    box = '11.01,11.02,11.03,11.05'
-    split = box.split(',')
-    # print(map(int, split))
-    print(list(map(int, map(float, split))))
-
+    # box = '11.01,11.02,11.03,11.05'
+    # split = box.split(',')
+    # # print(map(int, split))
+    # print(list(map(int, map(float, split))))
+    rand = torch.rand(3, 2)
+    rand[1:2]
+    print()
 
     # parser = argparse.ArgumentParser(description='命令行中传入一个数字')
     # parser.add_argument('t4', type=str, help='传入数字')  # 必须填
