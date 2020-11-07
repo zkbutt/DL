@@ -286,55 +286,62 @@ class LossYOLOv1(nn.Module):
         :param g_yolo_ts: (tensor) size(batch,7,7,4+1+num_class=25)
         :return:
         '''
+        p_yolo_ts = torch.sigmoid(p_yolo_ts)
+
         num_dim = self.B * 5 + self.num_cls
         '''生成有目标和没有目标的同维布尔索引'''
         # 获取有GT的框的布尔索引集,conf为1 4或9可作任选一个,结果一样的
-        mask_coo = g_yolo_ts[:, :, :, 4] > 0  # (batch,7,7,25) -> (batch,7,7)
+        mask_coo = g_yolo_ts[:, :, :, 4:5] > 0  # 同维(batch,7,7,25) -> (xx,7,7,1)
         # 没有GT的索引 mask ==0  coo_mask==False
-        mask_noo = g_yolo_ts[:, :, :, 4] == 0  # (batch,7,7,25) ->(batch,7,7)
-        # (batch,7,7) -> (batch,7,7,30) unsqueeze(-1) 扩展最后一维  coo_mask 大部分为0 noo_mask  大部分为1
-        mask_coo = mask_coo.unsqueeze(-1).expand_as(g_yolo_ts)
-        mask_noo = mask_noo.unsqueeze(-1).expand_as(g_yolo_ts)
+        mask_noo = g_yolo_ts[:, :, :, 4:5] == 0  # (batch,7,7,25) ->(xx,7,7,1)
+        # (batch,7,7,1) -> (batch,7,7,25) mask_coo 大部分为0 mask_noo  大部分为1
+        mask_coo = mask_coo.expand_as(g_yolo_ts)
+        mask_noo = mask_noo.expand_as(g_yolo_ts)
 
-        # (batch,7,7,25) -> (xxx) ->(xx,7,7,25)
-        p_coo = p_yolo_ts[mask_coo].view(-1, 7, 7, num_dim)
-        g_coo = g_yolo_ts[mask_coo].view(-1, 7, 7, num_dim)
+        # (batch,7,7,25) -> (xx) ->(xxx,25)
+        p_coo = p_yolo_ts[mask_coo].view(-1, num_dim).contiguous()
+        g_coo = g_yolo_ts[mask_coo].view(-1, num_dim).contiguous()
         # 有目标的样本 (xxx,7,7,25) -> (xxx,xx,25)
-        p_coo_batch = p_coo.view(p_coo.shape[0], -1, num_dim).contiguous()
-        g_coo_batch = g_coo.view(p_coo.shape[0], -1, num_dim).contiguous()
+        # p_coo_batch = p_coo.view(p_coo.shape[0], -1, num_dim).contiguous()
+        # g_coo_batch = g_coo.view(p_coo.shape[0], -1, num_dim).contiguous()
 
         '''计算有目标的-------类别loss'''
-        # p_cls_coo = p_coo_batch[:, :, self.B * 5:].reshape(-1,self.num_cls)
-        p_cls_coo = p_coo_batch[:, :, self.B * 5:]
-        # g_cls_coo = g_coo_batch[:, :, self.B * 5:].reshape(-1,self.num_cls)
-        g_cls_coo = g_coo_batch[:, :, self.B * 5:]
+        # (xxx,25) -> (xxx,20)
+        p_cls_coo = p_coo[:, self.B * 5:]
+        g_cls_coo = g_coo[:, self.B * 5:]
         loss_cls = F.mse_loss(p_cls_coo, g_cls_coo, reduction='sum')
 
         '''计算有目标的iou好的那个的-------框损失   （x,y,w开方，h开方）'''
-        # (batch, 7, 7, 25) -> (xx, 7, 7, 25) -> (xxx, xx,25) ->  (xxx, xx,4)
-        p_boxes_coo = p_coo_batch[:, :, :4]
-        g_boxes_coo = g_coo_batch[:, :, :4]
+        # (xxx,25) -> (xxx,4)
+        p_boxes_coo = p_coo[:, :4]
+        g_boxes_coo = g_coo[:, :4]
         loss_xy = F.mse_loss(p_boxes_coo[:, :2], g_boxes_coo[:, :2], reduction='sum')
         # 大小敏感
         loss_wh = F.mse_loss(p_boxes_coo[:, 2:4].sqrt(), g_boxes_coo[:, 2:4].sqrt(), reduction='sum')
 
-        '''计算有目标的置信度损失???'''
-        p_conf_coo = p_coo_batch[:, :, 4]  # [batch, 49, 25] ->[batch, 49]
+        '''计算有目标的置信度损失'''
+        # (xxx,25) -> (xxx)
+        p_conf_coo = p_coo[:, 4]
         g_conf_one = torch.ones_like(p_conf_coo)
         loss_conf_coo = F.mse_loss(p_conf_coo, g_conf_one, reduction='sum')
 
         '''计算没有目标的置信度损失'''
-        # 选出没有目标的所有框拉平 (batch,7,7,30) -> (xx,7,7,30) -> (xxx,30)
+        # 选出没有目标的所有框拉平 (batch,7,7,30) -> (xx,7,7,30) -> (xxx,30) -> (xxx)
         p_conf_noo = p_yolo_ts[mask_noo].view(-1, num_dim)[:, 4]
-        # zeros = torch.zeros(p_conf_noo.shape)
-        g_conf_zero = g_yolo_ts[mask_noo].view(-1, num_dim)[:, 4]  # 全0
-        loss_conf_noo = F.mse_loss(p_conf_noo, g_conf_zero, size_average=False)
+        g_conf_zero = torch.zeros(p_conf_noo.shape)
+        # 等价 g_conf_zero = g_yolo_ts[mask_noo].view(-1, num_dim)[:, 4]
+        loss_conf_noo = F.mse_loss(p_conf_noo, g_conf_zero, reduction='sum')
 
         batch = p_yolo_ts.shape[0]  # batch数 shape[0]
-        return (self.l_coord * (loss_xy + loss_wh)
-                + loss_conf_coo
-                + self.l_noobj * loss_conf_noo
-                + loss_cls) / batch
+        loss_loc = self.l_coord * (loss_xy + loss_wh)
+        loss_conf = loss_conf_coo + self.l_noobj * loss_conf_noo
+        loss_total = (loss_loc + loss_conf + loss_cls) / batch
+
+        log_dict = {}
+        log_dict['loss_loc'] = loss_loc.item()
+        log_dict['loss_conf'] = loss_conf.item()
+        log_dict['loss_cls'] = loss_cls.item()
+        return loss_total, log_dict
 
 
 class ObjectDetectionLoss(nn.Module):

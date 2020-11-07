@@ -70,6 +70,7 @@ class VOCDataSet(Dataset):
         :return:
             image 经预处理后的值 torch.Size([3, 375, 500])
             target对象 全tensor值 bndbox name difficult 输出左上右下
+                box是 ltrb 是否归一化根据参数
         '''
         # ----------解析xml-----------
         path_xml = self.xml_list[idx]
@@ -109,7 +110,7 @@ class VOCDataSet(Dataset):
 
         # list(np数组)   转换   为tensor
         boxes = torch.as_tensor(boxes, dtype=torch.float32)
-        if self.bbox2one: # 归一化
+        if self.bbox2one:  # 归一化
             boxes /= torch.tensor(image.size).repeat(2)  # np高级
         labels = torch.as_tensor(labels, dtype=torch.int64)
         iscrowd = torch.as_tensor(iscrowd, dtype=torch.int64)

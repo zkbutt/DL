@@ -7,8 +7,9 @@ def f布尔同维1():
     zeros[:, ::2] = 1
     print(zeros)
     axis1, axis2 = torch.where(zeros == 1)
-    print(axis1, torch.unique(axis2))
+    print(axis1, torch.unique(axis2))  # tensor([0, 0, 1, 1, 2, 2]) tensor([0, 2])
     t1 = torch.arange(6).reshape(3, 2).type(torch.float)
+
     zeros[:, torch.unique(axis2)] = t1
 
     print(zeros)

@@ -432,14 +432,15 @@ def resize_boxes(boxes, original_size, new_size):
 def boxes2yolo(boxes, labels, num_bbox=2, num_class=20, grid=7):
     '''
     将ltrb 转换为 7*7*(2*(4+1)+20) = grid*grid*(num_bbox(4+1)+num_class)
-    :param boxes:
-    :param labels: 1~n
+    :param boxes:已原图归一化的bbox ltrb
+    :param labels: 1~n值
     :param num_bbox:
     :param num_class:
     :param grid:
     :return:
+        torch.Size([7, 7, 25])
     '''
-    target = torch.zeros((7, 7, 5 * num_bbox + num_class))
+    target = torch.zeros((grid, grid, 5 * num_bbox + num_class))
     # ltrb -> xywh
     wh = boxes[:, 2:] - boxes[:, :2]
     # bbox的中心点坐标
