@@ -98,6 +98,7 @@ def spilt_data2folder(path_root, val_rate=0.3):
 
 
 if __name__ == '__main__':
+    # path = r'M:\AI\datas\VOC2012\test'
     path = r'M:\AI\datas\VOC2012\trainval'
     # spilt_data2folder(r'M:\datas\flower_data\flower_photos')
     # spilt_voc2txt(path, val_rate=256)

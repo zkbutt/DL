@@ -42,7 +42,7 @@ class VOCDataSet(Dataset):
 
         path_txt = os.path.join(path_data_root, path_file_txt)
         _path_xml = os.path.join(path_data_root, 'Annotations')
-        with open(path_txt) as read:
+        with open(path_txt) as read: # {FileNotFoundError}[Errno 2] No such file or directory: '/home/bak3t/bakls299g/AI/datas/VOC2012/trainval/train.txt'
             # 读每一行加上路径和扩展名---完整路径
             self.xml_list = [os.path.join(_path_xml, line.strip() + ".xml")
                              for line in read.readlines()]

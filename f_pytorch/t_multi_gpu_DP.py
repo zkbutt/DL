@@ -19,7 +19,7 @@ if __name__ == '__main__':
     model = torchvision.models.resnet50(num_classes=10)
 
     # model.to(device)
-    rnn = model.cuda()
+    rnn = model.cuda_idx()
     par = torch.nn.DataParallel(rnn)
 
     inp = torch.randn(100, 3, 32, 32).cuda()

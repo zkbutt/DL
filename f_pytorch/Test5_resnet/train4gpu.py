@@ -29,7 +29,7 @@ scaler.update()
 # os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, [0,1,2]))
 # os.environ["CUDA_VISIBLE_DEVICES"] = "1,2"
 # 设置主显卡
-cuda_z = "cuda:1"
+cuda_z = "cuda:1"  # cuda从1开始
 torch.cuda.set_device(cuda_z)
 for i in range(torch.cuda.device_count()):  # 可用GPU
     print(torch.cuda.get_device_name(i))
@@ -131,6 +131,7 @@ for epoch in range(10):
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
+        # optimizer.zero_grad()
 
         # logits = net(images.to(device))
         # loss = loss_function(logits, labels.to(device))

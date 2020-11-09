@@ -124,8 +124,8 @@ def train_model(train_loader, model, criterion, optimizer, scheduler, num_epochs
             for data in train_loader:
                 inputs, labels = data
                 if device == 'gpu':
-                    inputs = Variable(inputs.cuda())
-                    labels = Variable(labels.cuda())
+                    inputs = Variable(inputs.cuda_idx())
+                    labels = Variable(labels.cuda_idx())
                 else:
                     inputs = Variable(inputs)
                     lables = Variable(labels)
@@ -172,7 +172,7 @@ def visualize_model(validate_loader, class_names, model, num_images=6, device='c
     for i, data in enumerate(validate_loader):
         inputs, labels = data
         if device == 'gpu':
-            inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+            inputs, labels = Variable(inputs.cuda_idx()), Variable(labels.cuda_idx())
         else:
             inputs, labels = Variable(inputs), Variable(labels)
 

@@ -39,7 +39,8 @@ from f_tools.GLOBAL_LOG import flog
 # print(torch.sigmoid(input))
 # print(torch.sigmoid(tensor))
 
-ones = torch.rand(4, 3, 4)
-mask = ones > 0.5
-mask_ = ones[mask]
-print(mask_.shape)
+# ones = torch.rand(4, 3, 4)
+# mask = ones > 0.5
+# mask_ = ones[mask]
+# print(mask_.shape)
+print(torchvision.__version__)

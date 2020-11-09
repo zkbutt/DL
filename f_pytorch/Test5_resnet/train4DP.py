@@ -26,10 +26,10 @@ scaler.step(optimizer)
 scaler.update()
 '''
 
-os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, [0,1,2]))
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1,2"
+# os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, [0,1,2]))
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 # 设置主显卡
-cuda_z = "cuda:2"
+cuda_z = "cuda:1"
 torch.cuda.set_device(cuda_z)
 for i in range(torch.cuda.device_count()):  # 可用GPU
     print(torch.cuda.get_device_name(i))

@@ -3,9 +3,10 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms, boxes2yolo
+from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms, boxes2yolo, \
+    fix_bbox4yolo1
 from f_tools.pic.f_show import show_od_keypoints4ts, show_od4ts, show_anc4ts
-from object_detection.yolo3.CONFIG_YOLO3 import CFG
+from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
 
 
 def _preprocessing_data(batch_data, device, grid, num_classes):
@@ -25,6 +26,7 @@ def _preprocessing_data(batch_data, device, grid, num_classes):
         _t = boxes2yolo(target['boxes'], target['labels'],
                         num_bbox=1, num_class=num_classes, grid=grid)
         target_yolo[i] = _t
+    target_yolo = target_yolo.to(device)
     return images, target_yolo
 
 
@@ -71,7 +73,7 @@ class LossHandler(FitBase):
         '''
         模型输出 torch.Size([batch, 13, 13, 25])
         '''
-        p_yolo = self.model(images)  # torch.isnan(p_yolo).any()
+        p_yolo = self.model(images)  # torch.isnan(p_yolo).any() 这里要加显存
         # ---------------损失计算 ----------------------
         # log_dict用于显示
         loss_total, log_dict = self.losser(p_yolo, g_yolo)
@@ -85,11 +87,15 @@ class LossHandler(FitBase):
 
 
 class PredictHandler(FitBase):
-    def __init__(self, model, device, anchors, threshold_conf=0.5, threshold_nms=0.3):
+    def __init__(self, model, device,
+                 grid, num_bbox, num_cls,
+                 threshold_conf=0.5, threshold_nms=0.3):
         super(PredictHandler, self).__init__(model, device)
-        self.anchors = anchors[None]  # (1,xx,4)
         self.threshold_nms = threshold_nms
         self.threshold_conf = threshold_conf
+        self.grid = grid
+        self.num_bbox = num_bbox
+        self.num_cls = num_cls
 
     def output_res(self, p_boxes, p_keypoints, p_scores, img_ts4=None):
         '''
@@ -131,26 +137,37 @@ class PredictHandler(FitBase):
         return p_boxes, p_keypoints, p_scores
 
     @torch.no_grad()
-    def predicting4one(self, img_ts4):
+    def predicting4one(self, img_ts4, whwh):
         '''
         相比 forward 没有预处理
         :param img_ts4:
+        :param size:原始图片
         :return:
         '''
+        num_dim = self.num_bbox * 5 + self.num_cls
         # ------模型输出处理-------
-        # (batch,xx,4)
-        p_loc, p_conf, p_landms = self.model(img_ts4)
-        # (batch,xx,1)->(batch.xx)
-        p_scores = torch.nn.functional.softmax(p_conf, dim=-1)
-        p_scores = p_scores[:, :, 1]
-        # p_scores = p_scores.data.squeeze(0)
-        # p_loc = p_loc.data.squeeze(0)
-        # p_landms = p_landms.squeeze(0)
+        p_yolo = self.model(img_ts4)  # torch.isnan(p_yolo).any()
+        p_yolo = torch.sigmoid(p_yolo)
+        mask_coo = p_yolo[:, :, :, 4:5] > self.threshold_conf
+        axis0, axis1, axis2, axis4 = torch.where(mask_coo)
+        size = torch.cat([axis1, axis2], dim=1)
+        batch = img_ts4.shape[0]
+        for i in range(batch):
+            p_boxes_i = p_yolo[i][:, :, 4:5]
 
-        # ---修复--并转换 xywh --> ltrb--variances = (0.1, 0.2)
-        p_boxes = fix_bbox(self.anchors, p_loc)
-        xywh2ltrb(p_boxes, safe=False)
-        p_keypoints = fix_keypoints(self.anchors, p_landms)
+        p_res = p_yolo[mask_coo].view(-1, num_dim).contiguous()
+        num_res = p_res.shape[0]
+        flog.debug('conf过滤后 %s 个', num_res)
+
+        if num_res > 0:
+            p_boxes_ = p_res[:, :4]
+            p_boxes_ = p_boxes_[:, :2]
+            _, max_index = torch.max(p_res[:, 5:], dim=1)
+            p_cls = max_index[0] + 1
+
+            # ---修复--并转换 xywh --> ltrb--variances = (0.1, 0.2)
+            p_boxes = fix_bbox4yolo1(self.anchors, p_loc)
+            xywh2ltrb(p_boxes, safe=False)
 
         p_boxes, p_keypoints, p_scores = self.output_res(p_boxes, p_keypoints, p_scores, img_ts4)
         '''
@@ -165,8 +182,14 @@ class PredictHandler(FitBase):
 
     @torch.no_grad()
     def handler_map_dt_txt(self, batch_data, path_dt_info, idx_to_class):
-        # (batch,3,640,640)   list(batch{'size','boxes','labels'}) 转换到GPU设备
-        images, targets = _preprocessing_data(batch_data, self.device, mode='bbox')
+        # -----------------------输入模型前的数据处理 开始------------------------
+        images, g_yolo = _preprocessing_data(batch_data, self.device, self.grid, self.num_classes)
+        # -----------------------输入模型前的数据处理 完成------------------------
+        '''
+        模型输出 torch.Size([batch, 13, 13, 25])
+        '''
+        p_yolo = self.model(images)  # torch.isnan(p_yolo).any()
+
         sizes = []
         files_txt = []
         for target in targets:

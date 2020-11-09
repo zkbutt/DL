@@ -322,13 +322,14 @@ class LossYOLOv1(nn.Module):
         '''计算有目标的置信度损失'''
         # (xxx,25) -> (xxx)
         p_conf_coo = p_coo[:, 4]
-        g_conf_one = torch.ones_like(p_conf_coo)
+        g_conf_one = torch.ones_like(p_conf_coo)  # 不需要设备
         loss_conf_coo = F.mse_loss(p_conf_coo, g_conf_one, reduction='sum')
 
         '''计算没有目标的置信度损失'''
         # 选出没有目标的所有框拉平 (batch,7,7,30) -> (xx,7,7,30) -> (xxx,30) -> (xxx)
         p_conf_noo = p_yolo_ts[mask_noo].view(-1, num_dim)[:, 4]
-        g_conf_zero = torch.zeros(p_conf_noo.shape)
+        # g_conf_zero = torch.zeros(p_conf_noo.shape)
+        g_conf_zero = torch.zeros_like(p_conf_noo)
         # 等价 g_conf_zero = g_yolo_ts[mask_noo].view(-1, num_dim)[:, 4]
         loss_conf_noo = F.mse_loss(p_conf_noo, g_conf_zero, reduction='sum')
 
@@ -910,8 +911,8 @@ class Loss(nn.Module):
         M = box_targ.size()[0]
         N = box_pred.size()[0]
         # 转化box参数，转化为统一坐标
-        row = torch.arange(14, dtype=torch.float).unsqueeze(-1).expand_as(mask)[mask].cuda()
-        col = torch.arange(14, dtype=torch.float).unsqueeze(0).expand_as(mask)[mask].cuda()
+        row = torch.arange(14, dtype=torch.float).unsqueeze(-1).expand_as(mask)[mask].cuda_idx()
+        col = torch.arange(14, dtype=torch.float).unsqueeze(0).expand_as(mask)[mask].cuda_idx()
         box_targ[:, 0] = col / 14 + box_targ[:, 0] * 1 / 14
         box_targ[:, 1] = row / 14 + box_targ[:, 1] * 1 / 14
 

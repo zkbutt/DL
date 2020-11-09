@@ -63,9 +63,12 @@ def output_res(p_boxes, p_keypoints, p_scores, threshold_conf=0.5, threshold_nms
 
 
 def init_model(cfg):
-    backbone = models.mobilenet_v2(pretrained=True)
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'mobilenetv2'
-    model = Yolo_v1(backbone, cfg.GRID, cfg.NUM_CLASSES)
+    model = models.densenet121(pretrained=True)
+    out_dim = model.classifier.in_features
+    model = torch.nn.Sequential(*list(model.children())[:-1])  # 去除resnet的最后两层
+    model = Yolo_v1(model, out_dim, cfg.GRID, cfg.NUM_CLASSES)
+
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'densenet121'
     # f_look(model)
     return model
 
@@ -156,14 +159,14 @@ def train_eval(cfg, start_epoch, model, losser, optimizer, lr_scheduler=None,
     learning_rate = []
 
     for epoch in range(start_epoch, cfg.END_EPOCH):
-        # if epoch < 5:
-        #     # 主干网一般要冻结
-        #     for param in model.body.parameters():
-        #         param.requires_grad = False
-        # else:
-        #     # 解冻后训练
-        #     for param in model.body.parameters():
-        #         param.requires_grad = True
+        if epoch < 5:
+            # 主干网一般要冻结
+            for param in model.backbone.parameters():
+                param.requires_grad = False
+        else:
+            # 解冻后训练
+            for param in model.backbone.parameters():
+                param.requires_grad = True
         if cfg.IS_TRAIN:
             process = LossHandler(model, device, losser, cfg.GRID, cfg.NUM_CLASSES)
 
@@ -172,6 +175,7 @@ def train_eval(cfg, start_epoch, model, losser, optimizer, lr_scheduler=None,
                                      epoch=epoch, end_epoch=cfg.END_EPOCH, print_freq=cfg.PRINT_FREQ,
                                      ret_train_loss=train_loss, ret_train_lr=learning_rate,
                                      is_mixture_fix=cfg.IS_MIXTURE_FIX,
+                                     forward_count=cfg.FORWARD_COUNT,
                                      )
 
             if lr_scheduler is not None:

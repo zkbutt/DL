@@ -43,6 +43,9 @@ if __name__ == '__main__':
     rand[1:2]
     print()
 
+    file = '/home/bak3t/bak299g/AI/datas/VOC2012/trainval/train.txt'
+    t = open(file)
+    print(t.name)
     # parser = argparse.ArgumentParser(description='命令行中传入一个数字')
     # parser.add_argument('t4', type=str, help='传入数字')  # 必须填
     # parser.add_argument('integers', type=str, nargs='+', help='传入数字')  # 至少传一个

@@ -71,7 +71,7 @@ def pytorch():
     print('可用gpu数量', torch.cuda.device_count())
     print('输入索引，返回gpu名字', torch.cuda.get_device_name(0))
     print('返回当前设备索引', torch.cuda.current_device())
-    print('返回当前空存使用量',torch.cuda.max_memory_allocated() / (1024.0 * 1024.0))
+    print('返回当前空存使用量', torch.cuda.max_memory_allocated() / (1024.0 * 1024.0))
 
     # 切换gpu
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

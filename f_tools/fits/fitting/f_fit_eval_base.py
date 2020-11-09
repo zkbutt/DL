@@ -8,12 +8,14 @@ import torch.distributed as dist
 from torch.cuda.amp import GradScaler, autocast
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.fits.f_gpu.gpu_mem_track import MemTracker
 
 
 def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                       print_freq=60, lr_scheduler=None,
                       ret_train_loss=None, ret_train_lr=None,
                       is_mixture_fix=True,
+                      forward_count=1,
                       ):
     '''
 
@@ -27,6 +29,11 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
     :param ret_train_lr:  learning_rate[] 返回值
     :return:
     '''
+    import inspect
+    frame = inspect.currentframe()  # define a frame to track
+    # gpu_tracker = MemTracker(frame)  # define a GPU tracker
+    # gpu_tracker.track()
+
     metric_logger = MetricLogger(delimiter="  ")  # 日志记录器
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}/{}]'.format(epoch + 1, end_epoch)
@@ -49,18 +56,21 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                     sys.exit(1)
                 # ---半精度训练2  完成---
 
+            # gpu_tracker.track()  # run function between the code line where uses GPU
             # ---半精度训练3---
             scaler.scale(loss_total).backward()
+            # gpu_tracker.track()
 
             # 每训练n批图片更新一次权重
-            if i % 3 == 0:
+            if i % forward_count == 0:
                 scaler.step(optimizer)
                 scaler.update()  # 查看是否要更新scaler
                 optimizer.zero_grad()
-
             # scaler.step(optimizer)
-            # scaler.update()  # 查看是否要更新scaler
+            # scaler.update()
             # optimizer.zero_grad()
+            # del batch_data
+            # torch.cuda.empty_cache()
         else:
             '''-------------全精度--------------'''
             #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
@@ -258,7 +268,7 @@ class MetricLogger(object):
                                               time=str(iter_time),  # 模型迭代时间(含数据加载) SmoothedValue对象
                                               data=str(data_time),  # 取数据时间 SmoothedValue对象
                                               # r_time=str(int(iter_time.value * (len(iterable) - i))),
-                                              memory=torch.cuda.max_memory_allocated() / MB))
+                                              memory=torch.cuda.max_memory_allocated() / MB))  # 只能取第一个显卡
                 else:
                     flog.debug(log_msg.format(i, len(iterable),
                                               eta=eta_string,

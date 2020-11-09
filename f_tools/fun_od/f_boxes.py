@@ -466,6 +466,30 @@ def boxes2yolo(boxes, labels, num_bbox=2, num_class=20, grid=7):
     return target
 
 
+def fix_bbox4yolo1(anc, p_loc, variances=(0.1, 0.2)):
+    '''
+    用预测的loc 和 anc得到 修复后的框
+    :param anc: xywh  (nn,4)
+    :param p_loc: 修正系数 (nn,4)
+    :return: 修复后的框
+    '''
+    if len(anc.shape) == 2:
+        # 坐标移动
+        _a = anc[:, :2] + p_loc[:, :2] * variances[0] * anc[:, 2:]
+        # 宽高缩放
+        _b = anc[:, 2:] * torch.exp(p_loc[:, 2:] * variances[1])
+        _t = torch.cat([_a, _b], dim=1)
+    elif len(anc.shape) == 3:
+        # 坐标移动
+        _a = anc[:, :, :2] + p_loc[:, :, :2] * variances[0] * anc[:, :, 2:]
+        # 宽高缩放
+        _b = anc[:, :, 2:] * torch.exp(p_loc[:, :, 2:] * variances[1])
+        _t = torch.cat([_a, _b], dim=2)
+    else:
+        raise Exception('维度错误', anc.shape)
+    return _t
+
+
 if __name__ == '__main__':
     path = r'M:\AI\datas\VOC2012\trainval'
 

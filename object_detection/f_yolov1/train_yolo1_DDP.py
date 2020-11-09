@@ -1,5 +1,4 @@
-import math
-import numpy as np
+import argparse
 
 import os
 
@@ -8,59 +7,39 @@ from torch import optim
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
-from f_tools.fits.f_lossfun import LossOD_K, LossYOLO, LossYOLOv1
-from f_tools.fun_od.f_anc import Anchors
+from f_tools.fits.f_lossfun import LossYOLOv1
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
 from object_detection.f_yolov1.process_fun import init_model, data_loader, train_eval
 
 '''
-txt格式：[图片名字 目标个数 左上角坐标x 左上角坐标y 右下角坐标x 右下角坐标y 类别]
-
-
-416x416x3  13x13x(20+1+4)
-c,x,y,w,h
-    直接将每一项进行MSE求误差
-        值域不一致需要权重
-    只对有目标的计算损失
+\home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py
+--nproc_per_node=2  /home/win10_sys/tmp/DL/object_detection/f_yolov1/train_yolo1_DDP.py
 '''
 
 if __name__ == '__main__':
-    '''------------------系统配置---------------------'''
-    # np.set_printoptions(suppress=True)  # 关闭科学计数
-    # torch.set_printoptions(linewidth=320, precision=5, profile='long')
-    # np.set_printoptions(suppress=True, linewidth=320,
-    #                     formatter={'float_kind': '{:11.5g}'.format})  # format short g, %precision=5
-    # matplotlib.rc('font', **{'size': 11})
-
-    # torch.cuda.empty_cache() # 清除显存
-    # torch.backends.cudnn.enabled = True
-    # torch.backends.cudnn.benchmark = True
-
-    # 检查保存权重文件夹是否存在，不存在则创建
-    if not os.path.exists(CFG.PATH_SAVE_WEIGHT):
-        try:
-            os.makedirs(CFG.PATH_SAVE_WEIGHT)
-        except Exception as e:
-            flog.error(' %s %s', CFG.PATH_SAVE_WEIGHT, e)
     CFG.SAVE_FILE_NAME = os.path.basename(__file__)
-
-    # 0开始
-    device = torch.device('cuda:%s' % 0 if torch.cuda.is_available() else "cpu")
-    flog.info('模型当前设备 %s', device)
-
+    CFG.DATA_NUM_WORKERS = 8
+    torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
     if CFG.DEBUG:
-        # device = torch.device("cpu")
-        CFG.PRINT_FREQ = 1
-        CFG.PATH_SAVE_WEIGHT = None
-        CFG.BATCH_SIZE = 5
-        CFG.DATA_NUM_WORKERS = 0
-        pass
-    else:
-        torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
+        raise Exception('调试模式无法使用')
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--local_rank', default=0, type=int, help='node rank for distributed training')
+    args = parser.parse_args()
+    torch.cuda.set_device(args.local_rank)
+    device = torch.device("cuda", args.local_rank)  # 设置单一显卡
+    torch.distributed.init_process_group(backend="nccl", init_method="env://")
+
+    if (int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1) < 2:
+        raise Exception('请查询GPU数据', os.environ["WORLD_SIZE"])
+    print('当前 GPU', torch.cuda.get_device_name(args.local_rank),
+          args.local_rank,  # 进程变量 GPU号 进程号
+          '总GPU个数', os.environ["WORLD_SIZE"],  # 这个变量是共享的
+          "ppid:%s ...pid: %s" % (os.getppid(), os.getpid())
+          )
 
     '''------------------模型定义---------------------'''
     model = init_model(CFG)
-
     model.to(device)  # 这个不需要加等号
     model.train()
 
