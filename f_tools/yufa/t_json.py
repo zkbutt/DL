@@ -35,6 +35,7 @@ if __name__ == '__main__':
     path = r'p.json'  # 这个是字符串
     ids = [9227, 7512, 3808, 279]
 
+    # 读出
     with open(path, 'r') as f:
         data_dict = json.load(f)  # 读进来是字符串
         print()
@@ -47,5 +48,6 @@ if __name__ == '__main__':
                 data_dict['annotations'].remove(ann)
                 flog.debug('del %s', ann)
 
+    # 写出
     with open('p.json', 'w', encoding='utf-8') as f:
         json.dump(data_dict, f, ensure_ascii=False, )

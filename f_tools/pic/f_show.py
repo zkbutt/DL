@@ -185,25 +185,25 @@ def show_od4pil(img_pil, boxs, labels=None):
     '''
     https://blog.csdn.net/qq_36834959/article/details/79921152?utm_medium=distribute.pc_aggpage_search_result.none-task-blog-2~all~first_rank_v2~rank_v25-1-79921152.nonecase&utm_term=imagedraw%E7%94%BB%E7%82%B9%E7%9A%84%E5%A4%A7%E5%B0%8F%20pil&spm=1000.2123.3001.4430
     :param img_np: tensor 或 img_pil
-    :param boxs: np
+    :param boxs: np ltrb
     :return:
     '''
-    if labels is None:
-        flog.info('无分数 %s', labels)
+    if labels is not None:
+        flog.info('%s', labels)
     pil_copy = img_pil.copy()
     draw = ImageDraw.Draw(pil_copy)
     # im_width, im_height = pil_copy.size
     # print(im_width, im_height)
     if isinstance(boxs, torch.Tensor):
         boxs = boxs.numpy()
-    for box in boxs:
+    for i, box in enumerate(boxs):
         l, t, r, b = box.astype(np.int)
         # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=1,
                   # fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)],
                   fill='White',
                   )
-        # _draw_text(draw, box_to_display_str_map, box, left, right, top, bottom, color)
+        # __draw_text(draw, labels[i], box, l, r, t, b, STANDARD_COLORS)
     pil_copy.show()
     # plt.imshow(img_pil)
     # plt.show()
@@ -359,7 +359,7 @@ def show_pic_label_np(img_np, boxes, labels):
     h, w = img_np.shape[:2]
     print(w, h)
     for box, label in zip(boxes, labels):
-        print(label)
+        print(box, label)
         pt1 = (int(box[0] * w - box[2] * w / 2), int(box[1] * h - box[3] * h / 2))
         pt2 = (int(box[0] * w + box[2] * w / 2), int(box[1] * h + box[3] * h / 2))
         cv2.putText(img_np, label, pt1, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255))

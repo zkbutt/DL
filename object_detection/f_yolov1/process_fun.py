@@ -159,14 +159,14 @@ def train_eval(cfg, start_epoch, model, losser, optimizer, lr_scheduler=None,
     learning_rate = []
 
     for epoch in range(start_epoch, cfg.END_EPOCH):
-        if epoch < 5:
-            # 主干网一般要冻结
-            for param in model.backbone.parameters():
-                param.requires_grad = False
-        else:
-            # 解冻后训练
-            for param in model.backbone.parameters():
-                param.requires_grad = True
+        # if epoch < 5:
+        #     # 主干网一般要冻结
+        #     for param in model.backbone.parameters():
+        #         param.requires_grad = False
+        # else:
+        #     # 解冻后训练
+        #     for param in model.backbone.parameters():
+        #         param.requires_grad = True
         if cfg.IS_TRAIN:
             process = LossHandler(model, device, losser, cfg.GRID, cfg.NUM_CLASSES)
 

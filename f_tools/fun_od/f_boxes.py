@@ -443,26 +443,25 @@ def boxes2yolo(boxes, labels, num_bbox=2, num_class=20, grid=7):
     target = torch.zeros((grid, grid, 5 * num_bbox + num_class))
     # ltrb -> xywh
     wh = boxes[:, 2:] - boxes[:, :2]
-    # bbox的中心点坐标
-    cxcy = (boxes[:, 2:] + boxes[:, :2]) / 2
-    cell_size = 1. / grid
+    cxcy = (boxes[:, 2:] + boxes[:, :2]) / 2  # bbox的中心点坐标
+    cell_scale = 1. / grid
 
     for i in range(cxcy.size()[0]):  # 遍历每一个框 cxcy.size()[0]  与shape等价
         '''计算GT落在7x7哪个网格中 同时ij也表示网格的左上角的坐标'''
-        cxcy_sample = cxcy[i]
+        cxcy_sample = cxcy[i]  # 每一个框的归一化xy
         # (cxcy_sample / cell_size).type(torch.int) 等价
-        ij = (cxcy_sample / cell_size).ceil() - 1  # cxcy_sample * 7  ceil上取整数 输出 0~6 index
+        lr = (cxcy_sample / cell_scale).ceil() - 1  # cxcy_sample * 7  ceil上取整数 输出 0~6 index
         # xy与矩阵行列是相反的
 
-        xy = ij * cell_size  # 所在网格的左上角在原图的位置 0~1
-        delta_xy = (cxcy_sample - xy) / cell_size  # GT相对于所在网格左上角的值, 网格的左上角看做原点 需进行放大
+        xy = lr * cell_scale  # 所在网格的左上角在原图的位置 0~1
+        delta_xy = (cxcy_sample - xy) / cell_scale  # GT相对于所在网格左上角的值, 网格的左上角看做原点 需进行放大
 
         for j in range(num_bbox):
-            target[int(ij[1]), int(ij[0]), (j + 1) * 5 - 1] = 1  # conf
+            target[int(lr[1]), int(lr[0]), (j + 1) * 5 - 1] = 1  # conf
             start = j * 5
-            target[int(ij[1]), int(ij[0]), start:start + 2] = delta_xy  # 相对于所在网格左上角
-            target[int(ij[1]), int(ij[0]), start + 2:start + 4] = wh[i]  # wh值相对于整幅图像的尺寸
-        target[int(ij[1]), int(ij[0]), int(labels[i]) + 5 * num_bbox - 1] = 1  # 9指向0~9的最后一位,labels从1开始
+            target[int(lr[1]), int(lr[0]), start:start + 2] = delta_xy  # 相对于所在网格左上角
+            target[int(lr[1]), int(lr[0]), start + 2:start + 4] = wh[i]  # wh值相对于整幅图像的尺寸
+        target[int(lr[1]), int(lr[0]), int(labels[i]) + 5 * num_bbox - 1] = 1  # 9指向0~9的最后一位,labels从1开始
     return target
 
 

@@ -1,3 +1,4 @@
+import json
 import os
 
 import torch
@@ -6,6 +7,7 @@ from PIL import Image
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
+from f_tools.pic.f_show import show_pic_label_np, show_od4pil
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
 from object_detection.f_yolov1.process_fun import DATA_TRANSFORM, init_model
 from object_detection.f_yolov1.train_eval_fun import PredictHandler
@@ -32,27 +34,28 @@ if __name__ == '__main__':
     '''------------------系统配置---------------------'''
     device = torch.device('cpu')
     flog.info('模型当前设备 %s', device)
+    file_class = 'M:\AI\datas\VOC2012/classes_ids_voc.json'
+    idx_to_class = {}
+    with open(file_class, 'r') as f:
+        class_to_idx = json.load(f)  # 读进来是字符串
+        for k, v in class_to_idx.items():
+            idx_to_class[v] = k
 
     '''------------------模型定义---------------------'''
     model = init_model(CFG)
     model.eval()
 
-    # if use_y:
-    #     file_weight = r'D:\tb\tb\ai_code\DL\object_detection\retinaface\file\Retinaface_mobilenet0.25.pth'
-    #     state_dict = torch.load(file_weight, map_location=device)
-    #     model_dict = model.state_dict()
-    #     keys_missing, keys_unexpected = model.load_state_dict(state_dict)
-    # else:
-    #     start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, device=device)
+    start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, device=device)
 
     path_img = r'D:\tb\tb\ai_code\DL\_test_pic'
     files = os.listdir(path_img)
     for file in files:
         '''---------------数据加载及处理--------------'''
         img_pil = Image.open(os.path.join(path_img, file)).convert('RGB')
-        w, h = img_pil.size
+        w, h = img_pil.size #500,335
         # 用于恢复bbox及ke
-        szie_scale4bbox = torch.Tensor([w, h] * 2)
+        # szie_scale4bbox = torch.Tensor([w, h] * 2)
+        szie_scale4bbox = torch.Tensor([w, h] * 2)[None]
 
         '''feadre处理方法'''
         img_ts = DATA_TRANSFORM['val'](img_pil)[0][None]
@@ -62,16 +65,11 @@ if __name__ == '__main__':
         predict_handler = PredictHandler(model, device,
                                          grid=CFG.GRID, num_bbox=CFG.NUM_BBOX, num_cls=CFG.NUM_CLASSES,
                                          threshold_conf=0.5, threshold_nms=0.3)
-        p_boxes, p_label, p_scores = predict_handler.predicting4one(img_ts, szie_scale4bbox)
+        res = predict_handler.predicting4one(img_ts, szie_scale4bbox)
+        for img_index, r in res.items():
+            # img_np = np.array(img_pil)
+            r_ = np.array(r)
+            lables = [idx_to_class[i] for i in r_[:,4]]
 
-        if p_boxes is not None:
-            # 恢复尺寸
-            p_boxes = p_boxes * szie_scale4bbox
-            # p_boxes = resize_boxes(p_boxes, (CFG.IMAGE_SIZE), ((w, h)))
-
-            p_keypoints = p_keypoints * szie_scale4landmarks
-
-            # 显示结果
-            show_od_keypoints4pil(img_pil, p_boxes, p_keypoints, p_scores)
-
-    flog.info('---%s--main执行完成------ ', os.path.basename(__file__))
+            show_od4pil(img_pil, r_[:, :4],lables)
+        flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

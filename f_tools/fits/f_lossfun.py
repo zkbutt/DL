@@ -286,7 +286,7 @@ class LossYOLOv1(nn.Module):
         :param g_yolo_ts: (tensor) size(batch,7,7,4+1+num_class=25)
         :return:
         '''
-        p_yolo_ts = torch.sigmoid(p_yolo_ts)
+        # p_yolo_ts = torch.sigmoid(p_yolo_ts)
 
         num_dim = self.B * 5 + self.num_cls
         '''生成有目标和没有目标的同维布尔索引'''
@@ -334,9 +334,10 @@ class LossYOLOv1(nn.Module):
         loss_conf_noo = F.mse_loss(p_conf_noo, g_conf_zero, reduction='sum')
 
         batch = p_yolo_ts.shape[0]  # batch数 shape[0]
-        loss_loc = self.l_coord * (loss_xy + loss_wh)
-        loss_conf = loss_conf_coo + self.l_noobj * loss_conf_noo
-        loss_total = (loss_loc + loss_conf + loss_cls) / batch
+        loss_loc = self.l_coord * (loss_xy + loss_wh) / batch
+        loss_conf = (loss_conf_coo + self.l_noobj * loss_conf_noo) / batch
+        loss_cls = loss_cls / batch
+        loss_total = loss_loc + loss_conf + loss_cls
 
         log_dict = {}
         log_dict['loss_loc'] = loss_loc.item()

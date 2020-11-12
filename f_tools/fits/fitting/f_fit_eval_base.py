@@ -51,8 +51,8 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                     ret_train_loss.append(loss_total.detach())
 
                 if not math.isfinite(loss_total):  # 当计算的损失为无穷大时停止训练
-                    flog.error("Loss is {}, stopping training".format(loss_total))
-                    flog.error(log_dict)
+                    flog.critical("Loss is {}, stopping training".format(loss_total))
+                    flog.critical(log_dict)
                     sys.exit(1)
                 # ---半精度训练2  完成---
 
@@ -80,8 +80,8 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                 ret_train_loss.append(loss_total.detach())
 
             if not math.isfinite(loss_total):  # 当计算的损失为无穷大时停止训练
-                flog.error("Loss is {}, stopping training 请使用torch.isnan(x).any() 检测".format(loss_total))
-                flog.error(log_dict)
+                flog.critical("Loss is {}, stopping training 请使用torch.isnan(x).any() 检测".format(loss_total))
+                flog.critical(log_dict)
                 sys.exit(1)
 
             loss_total.backward()

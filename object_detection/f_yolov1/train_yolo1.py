@@ -72,9 +72,10 @@ if __name__ == '__main__':
     )
 
     # 最初学习率
-    lr0 = 1e-3
+    lr0 = 1e-4
     optimizer = optim.Adam(model.parameters(), lr=lr0, weight_decay=5e-4)  # 权重衰减(如L2惩罚)(默认: 0)
     # optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=lr0, momentum=0.9, weight_decay=0.0005)
 
     # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)

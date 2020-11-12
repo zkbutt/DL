@@ -45,7 +45,7 @@ class Yolo_v1(nn.Module):
             nn.Linear(grid * grid * dim_layer, dim_layer * 4),
             nn.LeakyReLU(),
             nn.Linear(dim_layer * 4, grid * grid * (1 + 4 + self.num_classes)),
-            nn.Sigmoid()  # 增加sigmoid函数是为了将输出全部映射到(0,1)之间，因为如果出现负数或太大的数，后续计算loss会很麻烦
+            nn.Sigmoid()  # 增加sigmoid函数是为了将输出全部映射到(0,1)之间
         )
         '''层权重初始化'''
         # self.init_weight()
