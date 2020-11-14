@@ -1,5 +1,4 @@
 import math
-import numpy as np
 
 import os
 
@@ -7,11 +6,10 @@ import torch
 from torch import optim
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.f_torch_tools import load_weight
-from f_tools.fits.f_lossfun import LossOD_K, LossYOLO
+from f_tools.fits.f_lossfun import LossYOLO
 from f_tools.fun_od.f_anc import Anchors
-from object_detection.yolo3.utils.process_fun import init_model, data_loader, train_eval
-from object_detection.yolo3.CONFIG_YOLO3 import CFG
+from object_detection.f_yolov3.process_fun import init_model, data_loader, train_eval
+from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 
 '''
 416x416x3  13x13x(20+1+4)
@@ -20,12 +18,6 @@ tensorboard.exe --logdir "./"
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
-    # np.set_printoptions(suppress=True)  # 关闭科学计数
-    # torch.set_printoptions(linewidth=320, precision=5, profile='long')
-    # np.set_printoptions(suppress=True, linewidth=320,
-    #                     formatter={'float_kind': '{:11.5g}'.format})  # format short g, %precision=5
-    # matplotlib.rc('font', **{'size': 11})
-
     # 检查保存权重文件夹是否存在，不存在则创建
     if not os.path.exists(CFG.PATH_SAVE_WEIGHT):
         try:
@@ -49,9 +41,10 @@ if __name__ == '__main__':
 
     # CFG.FILE_FIT_WEIGHT = None
 
-    # accumulate = max(round(64 / CFG.BATCH_SIZE), 1)  # 每64次才更新一次参数
+    # 前向每64个数据才更新一次参数
+    accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
     small_conf = CFG.FEATURE_MAP_STEPS[-1]  # 模型下采样倍数
-    # 尺寸必须是
+    # 预设尺寸必须是下采样倍数的整数倍
     assert math.fmod(CFG.IMAGE_SIZE[0], small_conf) == 0, "尺寸 %s must be a %s 的倍数" % (CFG.IMAGE_SIZE, small_conf)
     assert math.fmod(CFG.IMAGE_SIZE[1], small_conf) == 0, "尺寸 %s must be a %s 的倍数" % (CFG.IMAGE_SIZE, small_conf)
 

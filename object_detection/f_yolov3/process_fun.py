@@ -1,20 +1,18 @@
 import torch
 
 from f_pytorch.backbone_t.f_models.darknet import darknet53
-from f_pytorch.backbone_t.model_look import f_look
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_factory import MapDataSet, VOCDataSet
-from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
-    Normalization4TS, Resize, SSDCroppingPIL
-from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
+from f_tools.datas.data_factory import VOCDataSet
+from f_tools.datas.data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
+    Normalization4TS, Resize
 from f_tools.f_torch_tools import save_weight
 
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
 from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate
 from f_tools.fun_od.f_boxes import nms
-from object_detection.yolo3.CONFIG_YOLO3 import CFG
-from object_detection.yolo3.nets.fyolo3 import YoloBody
-from object_detection.yolo3.utils.train_eval_fun import LossHandler
+from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
+from object_detection.f_yolov3.nets.fyolo3 import YoloBody
+from object_detection.f_yolov3.train_eval_fun import LossHandler
 
 DATA_TRANSFORM = {
     "train": Compose([
@@ -70,6 +68,17 @@ def init_model(cfg):
     # cfg.BATCH_SIZE = 16
 
     nums_anc = [len(i) for i in cfg.ANCHORS_SIZE]
+    model = models.densenet121(pretrained=True)
+    dim_layer1_out = model.features.transition2.conv.in_channels  # 512
+    dim_layer2_out = model.features.transition3.conv.in_channels  # 1024
+    dim_layer3_out = model.classifier.in_features  # 1024
+    dims_out = [dim_layer1_out, dim_layer2_out, dim_layer3_out]
+
+    model = OneInOutMore(model)
+    nums_anc = [3, 3, 3]
+    num_classes = 20
+    model = YoloBody(model, nums_anc, num_classes, dims_out)
+
     model = YoloBody(backbone, nums_anc, cfg.NUM_CLASSES)
 
     # ------------------------自定义backbone完成-------------------------------

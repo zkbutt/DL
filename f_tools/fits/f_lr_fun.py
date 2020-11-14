@@ -12,7 +12,7 @@ def f_cos_diminish(optimizer, start_epoch, epochs, lrf_scale):
     :param epochs: 总迭代次数
     :return:
     '''
-    # cos渐减小学习率 余弦值首先缓慢下降吗然后加速下降, 再次缓慢下降
+    # cos渐减小学习率 余弦值首先缓慢下降吗然后加速下降, 再次缓慢下降 从  初始 ~ 0.1
     fun = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - lrf_scale) + lrf_scale
 
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=fun)
@@ -68,6 +68,7 @@ def op_example():
     lr0 = 1e-3
     optimizer = optim.Adam(model.parameters(), lr=lr0, weight_decay=5e-4)  # 权重衰减(如L2惩罚)(默认: 0)
     optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
+    optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.9, weight_decay=0.005)
 
 
 def f_show_scheduler(scheduler, epochs):

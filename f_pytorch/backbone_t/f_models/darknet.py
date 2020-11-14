@@ -1,89 +1,80 @@
 import torch
 import torch.nn as nn
-import math
-from collections import OrderedDict
+
+from f_pytorch.backbone_t.model_look import f_look
 
 
-class BasicBlock(nn.Module):
-    def __init__(self, inplanes, planes):
-        super(BasicBlock, self).__init__()
-        self.conv1 = nn.Conv2d(inplanes, planes[0], kernel_size=1,
-                               stride=1, padding=0, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes[0])
-        self.relu1 = nn.LeakyReLU(0.1)
+def Conv3x3BNReLU(in_channels, out_channels, stride=1):
+    return nn.Sequential(
+        nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1),
+        nn.BatchNorm2d(out_channels),
+        nn.ReLU6(inplace=True)
+    )
 
-        self.conv2 = nn.Conv2d(planes[0], planes[1], kernel_size=3,
-                               stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes[1])
-        self.relu2 = nn.LeakyReLU(0.1)
+
+def Conv1x1BNReLU(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1, padding=0),
+        nn.BatchNorm2d(out_channels),
+        nn.ReLU6(inplace=True)
+    )
+
+
+class Residual(nn.Module):
+    def __init__(self, nchannels):
+        super(Residual, self).__init__()
+        mid_channels = nchannels // 2
+        self.conv1x1 = Conv1x1BNReLU(in_channels=nchannels, out_channels=mid_channels)
+        self.conv3x3 = Conv3x3BNReLU(in_channels=mid_channels, out_channels=nchannels)
 
     def forward(self, x):
-        residual = x
+        out = self.conv3x3(self.conv1x1(x))
+        return out + x
 
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu1(out)
 
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out = self.relu2(out)
+class Darknet(nn.Module):
+    def __init__(self, nums_layer=[1, 2, 8, 8, 4], num_classes=1000):
+        super(Darknet, self).__init__()
+        self.first_conv = Conv3x3BNReLU(in_channels=3, out_channels=32)
 
-        out += residual
+        self.block1 = self._make_layers(in_channels=32, out_channels=64, block_num=1)
+        self.block2 = self._make_layers(in_channels=64, out_channels=128, block_num=2)
+        self.block3 = self._make_layers(in_channels=128, out_channels=256, block_num=8)
+        self.block4 = self._make_layers(in_channels=256, out_channels=512, block_num=8)
+        self.block5 = self._make_layers(in_channels=512, out_channels=1024, block_num=4)
+
+        self.avg_pool = nn.AvgPool2d(kernel_size=8, stride=1)
+        self.linear = nn.Linear(in_features=1024, out_features=num_classes)
+        self.softmax = nn.Softmax(dim=1)
+
+    def _make_layers(self, in_channels, out_channels, block_num):
+        _layers = []
+        _layers.append(Conv3x3BNReLU(in_channels=in_channels, out_channels=out_channels, stride=2))
+        for _ in range(block_num):
+            _layers.append(Residual(nchannels=out_channels))
+        return nn.Sequential(*_layers)
+
+    def forward(self, x):
+        x = self.first_conv(x)
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.block5(x)
+
+        x = self.avg_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
+        out = self.softmax(x)
         return out
 
 
-class DarkNet(nn.Module):
-    def __init__(self, layers):
-        super(DarkNet, self).__init__()
-        self.inplanes = 32
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(self.inplanes)
-        self.relu1 = nn.LeakyReLU(0.1)
+if __name__ == '__main__':
+    model = Darknet()
 
-        self.layer1 = self._make_layer([32, 64], layers[0])
-        self.layer2 = self._make_layer([64, 128], layers[1])
-        self.layer3 = self._make_layer([128, 256], layers[2])
-        self.layer4 = self._make_layer([256, 512], layers[3])
-        self.layer5 = self._make_layer([512, 1024], layers[4])
-
-        self.layers_out_filters = [64, 128, 256, 512, 1024]
-
-        # 进行权值初始化
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-
-    def _make_layer(self, planes, blocks):
-        layers = []
-        # 下采样，步长为2，卷积核大小为3
-        layers.append(("ds_conv", nn.Conv2d(self.inplanes, planes[1], kernel_size=3,
-                                            stride=2, padding=1, bias=False)))
-        layers.append(("ds_bn", nn.BatchNorm2d(planes[1])))
-        layers.append(("ds_relu", nn.LeakyReLU(0.1)))
-        # 加入darknet模块   
-        self.inplanes = planes[1]
-        for i in range(0, blocks):
-            layers.append(("residual_{}".format(i), BasicBlock(self.inplanes, planes)))
-        return nn.Sequential(OrderedDict(layers))
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu1(x)
-
-        x = self.layer1(x)
-        x = self.layer2(x)
-        out3 = self.layer3(x)
-        out4 = self.layer4(out3)
-        out5 = self.layer5(out4)
-
-        return out3, out4, out5
-
-
-def darknet53():
-    model = DarkNet([1, 2, 8, 8, 4])
-    return model
+    print(model)
+    data_inputs_list = [1, 3, 416, 416]
+    f_look(model, data_inputs_list)
+    input = torch.randn(*data_inputs_list)
+    out = model(input)
+    print(out.shape)

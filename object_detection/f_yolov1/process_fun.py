@@ -8,7 +8,7 @@ from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ColorJitter, To
 from f_tools.f_torch_tools import save_weight
 
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate, f_train_one_epoch2
 from f_tools.fun_od.f_boxes import nms
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
 from object_detection.f_yolov1.nets.model_YOLOv1 import Yolo_v1
@@ -151,8 +151,65 @@ def data_loader(cfg, device):
     return loader_train, loader_val
 
 
+def data_loader4mgpu(cfg):
+    loader_train, loader_val, train_sampler = None, None, None
+    # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
+    if cfg.IS_TRAIN:
+        dataset_train = VOCDataSet(
+            cfg.PATH_DATA_ROOT,
+            'train.txt',  # 正式训练要改这里
+            DATA_TRANSFORM["train"],
+            bbox2one=False,
+            isdebug=cfg.DEBUG
+        )
+        # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
+        train_sampler = torch.utils.data.distributed.DistributedSampler(dataset_train,
+                                                                        shuffle=True,
+                                                                        seed=20201114,
+                                                                        )
+        # 按定义为每一个 BATCH_SIZE 生成一批的索引
+        train_batch_sampler = torch.utils.data.BatchSampler(train_sampler, cfg.BATCH_SIZE, drop_last=True)
+
+        loader_train = torch.utils.data.DataLoader(
+            dataset_train,
+            # batch_size=cfg.BATCH_SIZE,
+            batch_sampler=train_batch_sampler,  # 按样本定义加载
+            num_workers=cfg.DATA_NUM_WORKERS,
+            # shuffle=True,
+            pin_memory=True,  # 不使用虚拟内存 GPU要报错
+            # drop_last=True,  # 除于batch_size余下的数据
+            collate_fn=_collate_fn,
+        )
+
+    # loader_train = Data_Prefetcher(loader_train)
+    if cfg.IS_EVAL:
+        class_to_idx = {'face': 1}
+        dataset_val = MapDataSet(cfg.PATH_DT_ROOT, cfg.PATH_DT_RES, class_to_idx, transforms=DATA_TRANSFORM['val'],
+                                 is_debug=cfg.DEBUG)
+        val_sampler = torch.utils.data.distributed.DistributedSampler(dataset_val,
+                                                                      shuffle=False,
+                                                                      )
+
+        loader_val = torch.utils.data.DataLoader(
+            dataset_val,
+            batch_size=cfg.BATCH_SIZE,
+            sampler=val_sampler,
+            num_workers=cfg.DATA_NUM_WORKERS,
+            # shuffle=True,
+            pin_memory=True,  # 不使用虚拟内存 GPU要报错
+            # drop_last=True,  # 除于batch_size余下的数据
+            collate_fn=_collate_fn,
+        )
+        pass
+
+    # iter(data_loader).__next__()
+    return loader_train, loader_val, train_sampler
+
+
 def train_eval(cfg, start_epoch, model, losser, optimizer, lr_scheduler=None,
-               loader_train=None, loader_val=None, device=torch.device('cpu'), ):
+               loader_train=None, loader_val=None, device=torch.device('cpu'),
+               train_sampler=None,
+               ):
     # 返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数l
     # 特图的步距
     train_loss = []
@@ -171,25 +228,17 @@ def train_eval(cfg, start_epoch, model, losser, optimizer, lr_scheduler=None,
             process = LossHandler(model, device, losser, cfg.GRID, cfg.NUM_CLASSES)
 
             flog.info('训练开始 %s', epoch + 1)
-            loss = f_train_one_epoch(data_loader=loader_train, loss_process=process, optimizer=optimizer,
-                                     epoch=epoch, end_epoch=cfg.END_EPOCH, print_freq=cfg.PRINT_FREQ,
-                                     ret_train_loss=train_loss, ret_train_lr=learning_rate,
-                                     is_mixture_fix=cfg.IS_MIXTURE_FIX,
-                                     forward_count=cfg.FORWARD_COUNT,
-                                     )
+            loss = f_train_one_epoch2(
+                model=model, loss=losser,
+                data_loader=loader_train, loss_process=process, optimizer=optimizer,
+                epoch=epoch, cfg=cfg,
+                lr_scheduler=None,
+                ret_train_loss=train_loss, ret_train_lr=learning_rate,
+                train_sampler=train_sampler,
+            )
 
             if lr_scheduler is not None:
                 lr_scheduler.step(loss)  # 更新学习
-
-            # 每个epoch保存
-            save_weight(
-                path_save=cfg.PATH_SAVE_WEIGHT,
-                model=model,
-                name=cfg.SAVE_FILE_NAME,
-                loss=loss,
-                optimizer=optimizer,
-                lr_scheduler=lr_scheduler,
-                epoch=epoch)
 
         '''------------------模型验证---------------------'''
         if cfg.IS_EVAL:

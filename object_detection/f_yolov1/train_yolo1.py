@@ -26,16 +26,6 @@ c,x,y,w,h
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
-    # np.set_printoptions(suppress=True)  # 关闭科学计数
-    # torch.set_printoptions(linewidth=320, precision=5, profile='long')
-    # np.set_printoptions(suppress=True, linewidth=320,
-    #                     formatter={'float_kind': '{:11.5g}'.format})  # format short g, %precision=5
-    # matplotlib.rc('font', **{'size': 11})
-
-    # torch.cuda.empty_cache() # 清除显存
-    # torch.backends.cudnn.enabled = True
-    # torch.backends.cudnn.benchmark = True
-
     # 检查保存权重文件夹是否存在，不存在则创建
     if not os.path.exists(CFG.PATH_SAVE_WEIGHT):
         try:
@@ -73,9 +63,9 @@ if __name__ == '__main__':
 
     # 最初学习率
     lr0 = 1e-4
-    optimizer = optim.Adam(model.parameters(), lr=lr0, weight_decay=5e-4)  # 权重衰减(如L2惩罚)(默认: 0)
+    # optimizer = optim.Adam(model.parameters(), lr=lr0, weight_decay=5e-4)  # 权重衰减(如L2惩罚)(默认: 0)
     # optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
-    # optimizer = torch.optim.SGD(model.parameters(), lr=lr0, momentum=0.9, weight_decay=0.0005)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr0, momentum=0.9, weight_decay=0.0005)
 
     # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.95)
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)

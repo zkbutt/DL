@@ -1,10 +1,10 @@
 class CFG:
-    DEBUG = False
+    DEBUG = True
     IS_VISUAL = False
     IS_TRAIN = True
     IS_MIXTURE_FIX = True
-    # PATH_ROOT = 'M:/'
-    PATH_ROOT = '/home/win10_sys/'
+    PATH_ROOT = 'M:/'
+    # PATH_ROOT = '/home/win10_sys/'
     # PATH_ROOT = '/home/bak3t/bakls299g/'
 
     '''EVAL---MAP运算'''

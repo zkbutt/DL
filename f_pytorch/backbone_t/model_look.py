@@ -53,8 +53,10 @@ class FRebuild4densenet161(nn.Module):
         self.layer3 = nn.Sequential(layer3_od)
 
     def forward(self, inputs):
-        out = self.body(inputs)
-        return out
+        out1 = self.layer1(inputs)
+        out2 = self.layer2(out1)
+        out3 = self.layer2(out2)
+        return out1, out2, out3
 
     def handler_pool(self, name, module, od):
         pool = module._modules.pop('pool')

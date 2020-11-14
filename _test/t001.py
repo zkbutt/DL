@@ -1,4 +1,5 @@
 import datetime
+import glob
 import json
 import os
 import random
@@ -39,13 +40,7 @@ if __name__ == '__main__':
     # split = box.split(',')
     # # print(map(int, split))
     # print(list(map(int, map(float, split))))
-    rand = torch.rand(3, 2)
-    rand[1:2]
-    print()
-
-    file = '/home/bak3t/bak299g/AI/datas/VOC2012/trainval/train.txt'
-    t = open(file)
-    print(t.name)
+    print(glob.glob('*.py'))
     # parser = argparse.ArgumentParser(description='命令行中传入一个数字')
     # parser.add_argument('t4', type=str, help='传入数字')  # 必须填
     # parser.add_argument('integers', type=str, nargs='+', help='传入数字')  # 至少传一个

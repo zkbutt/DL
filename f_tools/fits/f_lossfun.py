@@ -316,7 +316,7 @@ class LossYOLOv1(nn.Module):
         p_boxes_coo = p_coo[:, :4]
         g_boxes_coo = g_coo[:, :4]
         loss_xy = F.mse_loss(p_boxes_coo[:, :2], g_boxes_coo[:, :2], reduction='sum')
-        # 大小敏感
+        # 偏移相同的距离 小目录损失要大些
         loss_wh = F.mse_loss(p_boxes_coo[:, 2:4].sqrt(), g_boxes_coo[:, 2:4].sqrt(), reduction='sum')
 
         '''计算有目标的置信度损失'''

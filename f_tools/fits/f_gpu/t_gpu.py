@@ -62,3 +62,5 @@ def pro_weight(p, x, w, alpha=1.0, cnn=True, stride=1):
         p.sub_(torch.mm(k, torch.t(k)) / (alpha + torch.mm(r, k)))
         w.grad.data = torch.mm(w.grad.data, torch.t(p.data))
 
+if __name__ == '__main__':
+    pass

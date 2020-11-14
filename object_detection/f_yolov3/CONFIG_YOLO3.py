@@ -60,7 +60,7 @@ class CFG:
     FEATURE_MAP_STEPS = [8, 16, 32]  # 特图的步距 下采倍数
     # ANCHORS_VARIANCE = [0.1, 0.2]  # 修复系数 中心0.1 长宽0.2
     ANCHORS_CLIP = True  # 是否剔除超边界
-    # ANCHOR_NUM = 2
+    NUMS_ANC = [3, 3, 3]
 
     '''模型参数'''
     FILE_WEIGHT = PATH_ROOT + 'AI/weights/retinaface/mobilenetV1X0.25_pretrain.tar'

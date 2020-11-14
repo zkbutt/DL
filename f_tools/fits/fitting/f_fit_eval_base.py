@@ -4,36 +4,57 @@ import time
 import datetime
 import torch
 from collections import defaultdict, deque
-import torch.distributed as dist
 from torch.cuda.amp import GradScaler, autocast
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.f_gpu.gpu_mem_track import MemTracker
+from f_tools.f_torch_tools import save_weight
 
 
-def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
-                      print_freq=60, lr_scheduler=None,
-                      ret_train_loss=None, ret_train_lr=None,
-                      is_mixture_fix=True,
-                      forward_count=1,
-                      ):
+def is_mgpu():
+    '''是否多GPU'''
+    if not torch.distributed.is_available():
+        return False
+    if not torch.distributed.is_initialized():
+        return False
+    return True
+
+
+def calc_average_loss(value, log_dict):
+    if is_mgpu():
+        num_gpu = torch.distributed.get_world_size()  # 总GPU个数
+    else:
+        return log_dict['loss_total']
+    with torch.no_grad():  # 多GPU重算loss
+        torch.distributed.all_reduce(value)  # 所有设备求和
+        value /= num_gpu
+        value = value.detach().item()
+        _t = log_dict['loss_total']
+        log_dict['loss_total'] = value
+        log_dict['loss_g'] = _t
+        return value
+
+
+def f_train_one_base(data_loader, loss_process, optimizer, epoch, end_epoch,
+                     print_freq=60, lr_scheduler=None,
+                     ret_train_loss=None, ret_train_lr=None,
+                     is_mixture_fix=True,
+                     forward_count=1,
+                     ):
     '''
 
     :param data_loader:
-    :param loss_process: 前向和反向 loss过程函数
+    :param loss_process: 返回loss 和 log_dict
     :param optimizer:
-    :param epoch: 当前次数
-    :param print_freq:  每隔50批打印一次
-    :param lr_scheduler:  每批训练lr更新器
-    :param ret_train_loss:  train_loss[] 返回值
-    :param ret_train_lr:  learning_rate[] 返回值
+    :param epoch:
+    :param end_epoch:
+    :param print_freq: 打印周期
+    :param lr_scheduler:  每批更新学习率
+    :param ret_train_loss:  传入结果保存的list
+    :param ret_train_lr: 传入结果保存的list
+    :param is_mixture_fix:
+    :param forward_count:
     :return:
     '''
-    import inspect
-    frame = inspect.currentframe()  # define a frame to track
-    # gpu_tracker = MemTracker(frame)  # define a GPU tracker
-    # gpu_tracker.track()
-
     metric_logger = MetricLogger(delimiter="  ")  # 日志记录器
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}/{}]'.format(epoch + 1, end_epoch)
@@ -47,37 +68,24 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
                 #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
                 loss_total, log_dict = loss_process(batch_data)
 
-                if ret_train_loss:
-                    ret_train_loss.append(loss_total.detach())
-
                 if not math.isfinite(loss_total):  # 当计算的损失为无穷大时停止训练
                     flog.critical("Loss is {}, stopping training".format(loss_total))
                     flog.critical(log_dict)
                     sys.exit(1)
                 # ---半精度训练2  完成---
 
-            # gpu_tracker.track()  # run function between the code line where uses GPU
             # ---半精度训练3---
             scaler.scale(loss_total).backward()
-            # gpu_tracker.track()
 
             # 每训练n批图片更新一次权重
             if i % forward_count == 0:
                 scaler.step(optimizer)
                 scaler.update()  # 查看是否要更新scaler
                 optimizer.zero_grad()
-            # scaler.step(optimizer)
-            # scaler.update()
-            # optimizer.zero_grad()
-            # del batch_data
-            # torch.cuda.empty_cache()
         else:
             '''-------------全精度--------------'''
             #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
             loss_total, log_dict = loss_process(batch_data)
-
-            if ret_train_loss:
-                ret_train_loss.append(loss_total.detach())
 
             if not math.isfinite(loss_total):  # 当计算的损失为无穷大时停止训练
                 flog.critical("Loss is {}, stopping training 请使用torch.isnan(x).any() 检测".format(loss_total))
@@ -88,16 +96,85 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
             optimizer.step()
             optimizer.zero_grad()
 
-        if lr_scheduler is not None:  # 每批训练lr更新器
-            lr_scheduler.step()
+        #  多GPU输出均值 对loss_total 进行修正'loss_total'  'loss_g'
+        loss_total = calc_average_loss(loss_total, log_dict)
+
+        # if lr_scheduler is not None:  # 每批训练lr更新器 感觉没必要
+        #     lr_scheduler.step()
 
         # 这里记录日志输出 直接用字典输入
         metric_logger.update(**log_dict)
         now_lr = optimizer.param_groups[0]["lr"]
         metric_logger.update(lr=now_lr)
-        if isinstance(ret_train_lr, list):
-            ret_train_lr.append(now_lr)  # 这个是返回值
+
+        # 返回结果处理  看作每批的记录值
+        if ret_train_loss is not None and isinstance(ret_train_loss, list):
+            ret_train_loss.append(loss_total)
+        if ret_train_lr is not None and isinstance(ret_train_lr, list):
+            ret_train_lr.append(now_lr)
+    # 这里返回的是该设备的平均loss ,不是所有GPU的
     return metric_logger.meters['loss_total'].avg  # 默认这epoch使用平均值
+
+
+def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
+                      print_freq=60, lr_scheduler=None,
+                      ret_train_loss=None, ret_train_lr=None,
+                      is_mixture_fix=True,
+                      forward_count=1,
+                      train_sampler=None,
+                      ):
+    # import inspect
+    # frame = inspect.currentframe()  # define a frame to track
+    # gpu_tracker = MemTracker(frame)  # define a GPU tracker
+    # gpu_tracker.track()
+
+    if train_sampler is not None:
+        train_sampler.set_epoch(epoch)  # 使每一轮多gpu获取的数据不一样
+
+    ret = f_train_one_base(data_loader, loss_process, optimizer, epoch, end_epoch,
+                           print_freq=print_freq, lr_scheduler=lr_scheduler,
+                           ret_train_loss=ret_train_loss, ret_train_lr=ret_train_lr,
+                           is_mixture_fix=is_mixture_fix,
+                           forward_count=forward_count, )
+
+    return ret
+
+
+def f_train_one_epoch2(model, loss, data_loader, loss_process, optimizer, epoch, cfg,
+                       lr_scheduler=None,
+                       ret_train_loss=None, ret_train_lr=None,
+                       train_sampler=None,
+                       ):
+    end_epoch = cfg.END_EPOCH
+    print_freq = cfg.PRINT_FREQ
+    is_mixture_fix = cfg.IS_MIXTURE_FIX
+    forward_count = cfg.FORWARD_COUNT
+
+    if train_sampler is not None:
+        train_sampler.set_epoch(epoch)  # 使每一轮多gpu获取的数据不一样
+
+    ret = f_train_one_base(data_loader, loss_process, optimizer, epoch, end_epoch,
+                           print_freq=print_freq, lr_scheduler=lr_scheduler,
+                           ret_train_loss=ret_train_loss, ret_train_lr=ret_train_lr,
+                           is_mixture_fix=is_mixture_fix,
+                           forward_count=forward_count, )
+
+    if is_mgpu() and torch.distributed.get_rank() != 0:
+        # 只有0进程才需要保存
+        return ret
+
+    # 每个epoch保存
+    flog.info('训练完成正在保存模型...')
+    save_weight(
+        path_save=cfg.PATH_SAVE_WEIGHT,
+        model=model,
+        name=cfg.SAVE_FILE_NAME,
+        loss=ret,
+        optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
+        epoch=epoch)
+
+    return ret
 
 
 @torch.no_grad()
@@ -142,7 +219,7 @@ class SmoothedValue(object):
         """
         Warning: does not synchronize the deque!
         """
-        if not is_dist_avail_and_initialized():
+        if not is_mgpu():
             return
         t = torch.tensor([self.count, self.total], dtype=torch.float64, device="cuda")
         dist.barrier()
@@ -180,15 +257,6 @@ class SmoothedValue(object):
             global_avg=self.global_avg,
             max=self.max,
             value=self.value)
-
-
-def is_dist_avail_and_initialized():
-    """检查是否支持分布式环境"""
-    if not dist.is_available():
-        return False
-    if not dist.is_initialized():
-        return False
-    return True
 
 
 class MetricLogger(object):

@@ -1,66 +1,69 @@
-import tensorflow as tf
 import os
-from tensorflow.python.client import device_lib
 import torch
 import time
 
+from f_tools.GLOBAL_LOG import flog
+'''f_multi_gpu'''
 
-def tf_time_matmul(x, number):
-    start = time.time()
-    # 10加矩阵相乘
-    for loop in range(number):
-        tf.matmul(x, x)
-    result = time.time() - start
-    print("10 loops: {:0.2f}ms".format(1000 * result))
-
-
-def tf_cpu_vs_gpu(shap=(1000, 1000), number=100):
-    # Force execution on CPU
-    print("On CPU:")
-    with tf.device("CPU:0"):
-        x = tf.random.uniform(shap)
-        assert x.device.endswith("CPU:0")
-        tf_time_matmul(x, number)
-
-    # Force execution on GPU #0 if available
-    if tf.config.experimental.list_physical_devices("GPU"):
-        print("On GPU:")
-        with tf.device("GPU:0"):  # Or GPU:1 for the 2nd GPU, GPU:2 for the 3rd etc.
-            x = tf.random.uniform(shap)
-            assert x.device.endswith("GPU:0")
-            tf_time_matmul(x, number)
-
-    x_gpu0 = x.gpu()
-    x_cpu = x.cpu()
-    _ = tf.matmul(x_cpu, x_cpu)  # Runs on CPU
-    _ = tf.matmul(x_gpu0, x_gpu0)  # Runs on GPU:0
-
-
-# cpu_vs_gpu()
-def tensorflow():
-    print("查看可用的GPU列表: ", tf.config.experimental.list_physical_devices("GPU")),
-    print("GPU is", "available" if tf.config.experimental.list_physical_devices("GPU") else "NOT AVAILABLE")
-
-    print("Is the Tensor on GPU #0:  "),
-    print(x.device.endswith('GPU:0'))
-    print('查看可用运算设备', device_lib.list_local_devices())
-    print(tf.test.is_built_with_cuda())
-
-    # 查看正在使用的GPU
-    print(tf.__version__)
-    if tf.test.gpu_device_name():
-        print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
-    else:
-        print("Please install GPU version of TF")
-
-    # 查看可用运算设备
-    print('查看可用运算设备', device_lib.list_local_devices())
-
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 指定GPU  0开始
-    # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 不显示等级2以下的提示信息
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "-1" # # 全局使用CPU配置
-    print('测试 tf 是不是运行在GPU', tf.test.is_gpu_available())
+#
+# def tf_time_matmul(x, number):
+#     import tensorflow as tf
+#     start = time.time()
+#     # 10加矩阵相乘
+#     for loop in range(number):
+#         tf.matmul(x, x)
+#     result = time.time() - start
+#     print("10 loops: {:0.2f}ms".format(1000 * result))
+#
+#
+# def tf_cpu_vs_gpu(shap=(1000, 1000), number=100):
+#     # Force execution on CPU
+#     print("On CPU:")
+#     with tf.device("CPU:0"):
+#         x = tf.random.uniform(shap)
+#         assert x.device.endswith("CPU:0")
+#         tf_time_matmul(x, number)
+#
+#     # Force execution on GPU #0 if available
+#     if tf.config.experimental.list_physical_devices("GPU"):
+#         print("On GPU:")
+#         with tf.device("GPU:0"):  # Or GPU:1 for the 2nd GPU, GPU:2 for the 3rd etc.
+#             x = tf.random.uniform(shap)
+#             assert x.device.endswith("GPU:0")
+#             tf_time_matmul(x, number)
+#
+#     x_gpu0 = x.gpu()
+#     x_cpu = x.cpu()
+#     _ = tf.matmul(x_cpu, x_cpu)  # Runs on CPU
+#     _ = tf.matmul(x_gpu0, x_gpu0)  # Runs on GPU:0
+#
+#
+# # cpu_vs_gpu()
+# def tensorflow():
+#     from tensorflow.python.client import device_lib
+#     print("查看可用的GPU列表: ", tf.config.experimental.list_physical_devices("GPU")),
+#     print("GPU is", "available" if tf.config.experimental.list_physical_devices("GPU") else "NOT AVAILABLE")
+#
+#     print("Is the Tensor on GPU #0:  "),
+#     print(x.device.endswith('GPU:0'))
+#     print('查看可用运算设备', device_lib.list_local_devices())
+#     print(tf.test.is_built_with_cuda())
+#
+#     # 查看正在使用的GPU
+#     print(tf.__version__)
+#     if tf.test.gpu_device_name():
+#         print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
+#     else:
+#         print("Please install GPU version of TF")
+#
+#     # 查看可用运算设备
+#     print('查看可用运算设备', device_lib.list_local_devices())
+#
+#     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+#     os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 指定GPU  0开始
+#     # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 不显示等级2以下的提示信息
+#     # os.environ["CUDA_VISIBLE_DEVICES"] = "-1" # # 全局使用CPU配置
+#     print('测试 tf 是不是运行在GPU', tf.test.is_gpu_available())
 
 
 def pytorch():
@@ -101,4 +104,4 @@ def tf_set():
 
 
 if __name__ == '__main__':
-    pass
+    flog.debug(' %s', os.cpu_count())  # 显示CPU进程数

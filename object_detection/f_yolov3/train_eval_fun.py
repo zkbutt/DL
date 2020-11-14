@@ -4,8 +4,8 @@ import torch
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms
-from f_tools.pic.f_show import show_od_keypoints4ts, show_od4ts, show_anc4ts
-from object_detection.yolo3.CONFIG_YOLO3 import CFG
+from f_tools.pic.f_show import show_anc4ts
+from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 
 
 def _preprocessing_data(batch_data, device):
