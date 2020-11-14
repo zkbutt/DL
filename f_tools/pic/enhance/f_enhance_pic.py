@@ -7,13 +7,15 @@ from cv2 import cv2
 from keras_preprocessing.image import ImageDataGenerator, load_img, img_to_array
 import numpy as np
 
+from f_tools.f_general import rand
+
 '''
 np处理
     https://blog.csdn.net/caihh2017/article/details/85789443
 '''
 
 
-def pic_generator(path, s_num, batch_size=1):
+def pic_generator_keras(path, s_num, batch_size=1):
     datagen = ImageDataGenerator(
         rotation_range=10,  # 旋转范围
         width_shift_range=0.1,  # 水平平移范围
@@ -318,14 +320,38 @@ class Enhance4np:
         return im
 
 
+def c_hsv_n(img_np, h_gain=0.5, s_gain=0.5, v_gain=0.5):
+    '''
+    随机色域 is_safe
+    :param img_np:
+    :param h_gain:
+    :param s_gain:
+    :param v_gain:
+    :return:
+    '''
+    r = np.random.uniform(-1, 1, 3) * [h_gain, s_gain, v_gain] + 1  # 0.5~1.5之间
+    hue, sat, val = cv2.split(cv2.cvtColor(img_np, cv2.COLOR_BGR2HSV))
+    dtype = img_np.dtype  # uint8
+
+    x = np.arange(0, 256, dtype=np.int16)
+    lut_hue = ((x * r[0]) % 180).astype(dtype)
+    lut_sat = np.clip(x * r[1], 0, 255).astype(dtype)
+    lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
+
+    img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
+    cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img_np)  # no return needed
+
+
 if __name__ == '__main__':
-    # pic_generator(r'E:\datas\t01', 5)
-    # print(type(mem_enhance(r'E:\datas\t01\dog.12490.jpg')))
-    line = r"E:\datas\t01\dog.12490.jpg 738,279,815,414,0"
-    path_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2008_000329.jpg'
-    img_np = cv2.imread(path_pic)  # 读取原始图像
+    file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_006046.jpg'
 
-    img_np = fun1(img_np, (300, 300))
+    # img_pil = Image.open(file_pic)
 
-    cv2.imshow("img", img_np)
-    cv2.waitKey(0)
+    # img_np 测试
+    img_np = cv2.imread(file_pic)  # 读取原始图像
+
+    # c_hsv_n(img_np)
+    img_pil = Image.fromarray(img_np, mode="RGB")
+    img_pil.show()
+    # cv2.imshow("img", img_np)
+    # cv2.waitKey(0)

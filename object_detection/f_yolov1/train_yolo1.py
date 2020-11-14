@@ -1,6 +1,3 @@
-import math
-import numpy as np
-
 import os
 
 import torch
@@ -8,10 +5,9 @@ from torch import optim
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
-from f_tools.fits.f_lossfun import LossOD_K, LossYOLO, LossYOLOv1
-from f_tools.fun_od.f_anc import Anchors
+from f_tools.fits.f_lossfun import LossYOLOv1
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
-from object_detection.f_yolov1.process_fun import init_model, data_loader, train_eval
+from object_detection.f_yolov1.utils.process_fun import init_model, data_loader, train_eval
 
 '''
 txt格式：[图片名字 目标个数 左上角坐标x 左上角坐标y 右下角坐标x 右下角坐标y 类别]

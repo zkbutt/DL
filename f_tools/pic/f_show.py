@@ -1,17 +1,15 @@
-import collections
 import random
 
 import cv2
-import pylab
 import torch
-import torchvision
-from PIL import ImageDraw, ImageFont, Image
+from PIL import ImageDraw, ImageFont
 from torchvision import transforms
 import numpy as np
 import matplotlib.pyplot as plt
 
 from f_tools.GLOBAL_LOG import flog
 
+# 126种颜色
 STANDARD_COLORS = [
     'AliceBlue', 'Chartreuse', 'Aqua', 'Aquamarine', 'Azure', 'Beige', 'Bisque',
     'BlanchedAlmond', 'BlueViolet', 'BurlyWood', 'CadetBlue', 'AntiqueWhite',
@@ -37,101 +35,6 @@ STANDARD_COLORS = [
     'Teal', 'Thistle', 'Tomato', 'Turquoise', 'Violet', 'Wheat', 'White',
     'WhiteSmoke', 'Yellow', 'YellowGreen'
 ]
-
-
-def __filter_low_thresh(boxes, scores, classes, category_index,
-                        difficult, thresh, box_to_display_str_map,
-                        box_to_color_map):
-    for i in range(boxes.shape[0]):
-        if scores[i] > thresh:
-            box = tuple(boxes[i].tolist())  # numpy -> list -> tuple
-            if classes[i] in category_index.keys():
-                class_name = category_index[classes[i]]
-            else:
-                class_name = 'N/A'
-            display_str = str(class_name)
-            display_str = '{}: {}%-{}'.format(display_str, int(100 * scores[i]), difficult[i])
-            print(display_str)
-            box_to_display_str_map[box].append(display_str)
-            box_to_color_map[box] = STANDARD_COLORS[
-                classes[i] % len(STANDARD_COLORS)]
-        else:
-            break  # 网络输出概率已经排序过，当遇到一个不满足后面的肯定不满足
-
-
-def __draw_text(draw, box_to_display_str_map, box, left, right, top, bottom, color):
-    try:
-        font = ImageFont.truetype('arial.ttf', 24)
-    except IOError:
-        font = ImageFont.load_default()
-
-    # If the total height of the display strings added to the top of the bounding
-    # box exceeds the top of the image, stack the strings below the bounding box
-    # instead of above.
-    display_str_heights = [font.getsize(ds)[1] for ds in box_to_display_str_map[box]]
-    # Each display_str has a top and bottom margin of 0.05x.
-    total_display_str_height = (1 + 2 * 0.05) * sum(display_str_heights)
-
-    if top > total_display_str_height:
-        text_bottom = top
-    else:
-        text_bottom = bottom + total_display_str_height
-    # Reverse list and print from bottom to top.
-    for display_str in box_to_display_str_map[box][::-1]:
-        text_width, text_height = font.getsize(display_str)
-        margin = np.ceil(0.05 * text_height)
-        draw.rectangle([(left, text_bottom - text_height - 2 * margin),
-                        (left + text_width, text_bottom)], fill=color)
-        draw.text((left + margin, text_bottom - text_height - margin),
-                  display_str,
-                  fill='black',
-                  font=font)
-        text_bottom -= text_height - 2 * margin
-
-
-def draw_box(image, boxes, classes, scores, category_index, difficult=None, thresh=0.5, line_thickness=8):
-    flog.debug('最终额 %s 个目标框 ', (scores > thresh).sum())
-    if not difficult:
-        difficult = np.zeros(boxes.shape[0])
-    box_to_display_str_map = collections.defaultdict(list)
-    box_to_color_map = collections.defaultdict(str)
-
-    __filter_low_thresh(boxes, scores, classes, category_index, difficult, thresh, box_to_display_str_map,
-                        box_to_color_map)
-
-    # Draw all boxes onto image.
-    draw = ImageDraw.Draw(image)
-    im_width, im_height = image.size
-    for box, color in box_to_color_map.items():
-        xmin, ymin, xmax, ymax = box
-        (left, right, top, bottom) = (xmin * 1, xmax * 1,
-                                      ymin * 1, ymax * 1)
-        draw.line([(left, top), (left, bottom), (right, bottom),
-                   (right, top), (left, top)], width=line_thickness, fill=color)
-        __draw_text(draw, box_to_display_str_map, box, left, right, top, bottom, color)
-
-
-def show_od4dataet(train_data_set, num=5):
-    '''
-    随机选5张
-    :param train_data_set:
-    :param num:
-    :return:
-    '''
-    for index in random.sample(range(0, len(train_data_set)), k=num):
-        img, target = train_data_set[index]
-        img = transforms.ToPILImage()(img)
-        draw_box(img,
-                 target['boxes'].numpy(),
-                 target['labels'].numpy(),
-                 [1 for i in range(len(target['labels'].numpy()))],  # 预测概率
-                 dict((val, key) for key, val in train_data_set.class_dict.items()),  # 交换
-                 target['difficult'].numpy(),
-                 thresh=0.5,  # 阈值
-                 line_thickness=5,  # 框宽度
-                 )
-        plt.imshow(img)
-        plt.show()
 
 
 def show_od_keypoints4np(img_np, bboxs, keypoints, scores):
@@ -181,7 +84,7 @@ def show_od4np(img_np, bboxs, scores):
     cv2.waitKey(0)
 
 
-def show_od4pil(img_pil, boxs, labels=None):
+def show_bbox4pil(img_pil, boxs, labels=None):
     '''
     https://blog.csdn.net/qq_36834959/article/details/79921152?utm_medium=distribute.pc_aggpage_search_result.none-task-blog-2~all~first_rank_v2~rank_v25-1-79921152.nonecase&utm_term=imagedraw%E7%94%BB%E7%82%B9%E7%9A%84%E5%A4%A7%E5%B0%8F%20pil&spm=1000.2123.3001.4430
     :param img_np: tensor 或 img_pil
@@ -209,9 +112,9 @@ def show_od4pil(img_pil, boxs, labels=None):
     # plt.show()
 
 
-def show_od4ts(img_ts, boxs, labels=None):
+def show_bbox4ts(img_ts, boxs, labels=None):
     img_pil = transforms.ToPILImage(mode="RGB")(img_ts)
-    show_od4pil(img_pil, boxs.numpy(), labels)
+    show_bbox4pil(img_pil, boxs.numpy(), labels)
 
 
 def show_anc4pil(img_pil, anc, size):
@@ -237,7 +140,7 @@ def show_anc4ts(img_ts, anc, size):
     show_anc4pil(img_pil, anc, size)
 
 
-def show_od_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
+def show_bbox_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
     '''
 
     :param img_np: tensor 或 img_pil
@@ -274,52 +177,9 @@ def show_od_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
     # plt.show()
 
 
-def show_od_keypoints4ts(img_ts, bboxs, keypoints, scores=None):
+def show_bbox_keypoints4ts(img_ts, bboxs, keypoints, scores=None):
     img_pil = transforms.ToPILImage()(img_ts)
-    show_od_keypoints4pil(img_pil, bboxs.numpy(), keypoints.numpy(), scores=scores.numpy())
-
-
-def __matplotlib_imshow(img, one_channel=False):
-    if one_channel:
-        img = img.mean(dim=0)
-    # img = img / 2 + 0.5  # unnormalize
-    npimg = img.numpy()
-    if one_channel:
-        plt.imshow(npimg, cmap='Greys')
-    else:
-        plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.show()
-
-
-def show_pics_ts(images, labels=None, one_channel=True):
-    '''
-
-    :param images: tensors N,H,W,C
-    :param labels:
-    :return:
-    '''
-    # dataiter = iter(trainloader)
-    # images, labels = dataiter.next()
-    flog.debug('show_pics_ts %s', labels)
-    if isinstance(images, (np.ndarray)):
-        flog.debug(str(images.shape) + '%s', type(labels))  # N,H,W,C
-        col = int(np.ceil(np.sqrt(images.shape[0])))
-    elif isinstance(images, (list, tuple)):
-        # dataload已处理这里条件不会生效
-        if len(images) > 0:
-            col = int(np.ceil(np.sqrt(len(images))))
-            # 组装tensor list ts -> ts
-            _t = images[0][None]
-            for i in range(len(images) - 1):
-                _t = torch.cat([_t, images[i + 1][None]], dim=0)
-            images = _t
-        else:
-            raise Exception('images为空')
-    else:
-        col = 4
-    # 组合
-    img_grid = torchvision.utils.make_grid(images, nrow=col, padding=4)
-    __matplotlib_imshow(img_grid, one_channel=one_channel)
+    show_bbox_keypoints4pil(img_pil, bboxs.numpy(), keypoints.numpy(), scores=scores.numpy())
 
 
 def show_pic_ts(img_ts, labels=None):
@@ -337,15 +197,22 @@ def show_pic_ts(img_ts, labels=None):
     plt.show()
 
 
-def show_pic_np(pic, is_torch=False, is_many=None):
+def show_pic_np(pic, is_many=None):
     plt.figure(figsize=(12.80, 7.20))
-    if is_torch:
-        pic = np.transpose(pic, (1, 2, 0))  # H W C
     if is_many:
         plt.subplot(*is_many)
     plt.imshow(pic)
     plt.colorbar()
     plt.grid(False)
+
+
+def show_pics_np(pics):
+    plt.figure(figsize=(12.80, 7.20))
+    for i, pic in enumerate(pics):
+        col = int(np.ceil(np.sqrt(len(pics))))
+        row = int(np.ceil(len(pics) / col))
+        show_pic_np(pic, is_many=(row, col, i + 1))
+    plt.show()
 
 
 def show_pic_label_np(img_np, boxes, labels):
@@ -368,10 +235,46 @@ def show_pic_label_np(img_np, boxes, labels):
     cv2.waitKey(0)
 
 
-def show_pics_np(pics, is_torch=False):
-    plt.figure(figsize=(12.80, 7.20))
-    for i, pic in enumerate(pics):
-        col = int(np.ceil(np.sqrt(len(pics))))
-        row = int(np.ceil(len(pics) / col))
-        show_pic_np(pic, is_torch=is_torch, is_many=(row, col, i + 1))
-    plt.show()
+def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, text_fill=True):
+    '''
+    需扩展按conf排序  或conf过滤的功能
+    :param img_pil: 一张 pil
+    :param boxes_confs: np(9, 5)  前4 bbox  后1 conf
+    :param labels: list(int)
+    :param id_to_class: dict{id,name}
+    :return:
+    '''
+    img_pil_copy = img_pil.copy()
+    try:
+        font = ImageFont.truetype('arial.ttf', font_size)  # 参数1：字体文件路径，参数2：字体大小
+    except IOError:
+        font = ImageFont.load_default()
+
+    # print(len(STANDARD_COLORS))
+    # color = random.randint(0, len(STANDARD_COLORS))
+    for box, conf, label in zip(boxes_confs[:, :4], boxes_confs[:, 4], labels):
+        left, top, right, bottom = box
+        if id_to_class:
+            show_text = 'type={}:{:.1%}'.format(id_to_class[label], conf)
+        else:
+            show_text = 'type={}:{:.1%}'.format(label, conf)
+        text_width, text_height = font.getsize(show_text)
+        margin = np.ceil(0.05 * text_height)
+        # 超出屏幕判断
+        if top > text_height:
+            text_bottom = top
+        else:
+            text_bottom = bottom + text_height
+        color = STANDARD_COLORS[label]
+
+        draw = ImageDraw.Draw(img_pil_copy)
+        draw.rectangle([left, top, right, bottom], outline=color, width=2)
+        if text_fill:
+            draw.rectangle([(left, text_bottom - text_height - 2 * margin),
+                            (left + text_width + 2 * margin, text_bottom)], fill=color)
+            draw.text((left + margin, text_bottom - text_height - margin),
+                      show_text, fill='black', font=font)
+        else:
+            draw.text((left + margin, text_bottom - text_height - margin),
+                      show_text, fill=color, font=font)
+    img_pil_copy.show()

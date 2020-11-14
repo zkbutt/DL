@@ -12,13 +12,13 @@ def t_argparse():
     global i
     '''
        usage: t001.py [-h] [--name NAME] -f FAMILY t4 integers [integers ...]
-       '''
+    '''
     parser = argparse.ArgumentParser(description='命令行中传入一个数字')
     parser.add_argument('t4', type=str, help='传入数字')  # 必须填
     parser.add_argument('integers', type=str, nargs='+', help='传入数字')  # 至少传一个
     parser.add_argument('--name', type=str, help='传入姓名', )  # --表示可选参数, required必填
     parser.add_argument('-f', '--family', default='张三的家', type=str, help='传入姓名', required=True)  # --表示可选参数
-    args = parser.parse_args()
+    args = parser.parse_args()  # 解析出来是一个命名空间对象 直接.属性使用
     print(args)
     print(args.integers)
     print(args.name)
@@ -64,10 +64,12 @@ def t_random(a, b):
     np.random.seed(seed)
     torch_utils.init_seeds(seed=seed)
 
+    r = np.random.uniform(-1, 1, 3) * [h_gain, s_gain, v_gain] + 1  # 0.5~1.5之间
+
 
 if __name__ == '__main__':
-    t_tqdm()
+    # t_tqdm()
 
-    # t_argparse()
+    t_argparse()
 
-    t_random(0.7, 2.1)
+    # t_random(0.7, 2.1)

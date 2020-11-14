@@ -221,41 +221,6 @@ def bbox_iou4np(bbox_a, bbox_b):
     return area_i / _area_all  # (2002,2)
 
 
-def bbox_iou4ts(box_a, box_b):
-    '''
-       通过左上右下计算 IoU  全是 ltrb
-       calc_iou4ts 这个方法更优雅
-       :param box_a:  bboxs
-       :param box_b: 先验框
-       :return: (a.shape[0] b.shape[0])
-   '''
-    a = box_a.shape[0]
-    b = box_b.shape[0]
-    # x,2 -> x,1,2 -> x b 2  ,选出rb最大的
-    # rb = torch.min(boxes1[:, None, 2:], boxes2[:, 2:])  # right-bottom [N,M,2]
-    max_xy = torch.min(
-        box_a[:, 2:].unsqueeze(1).expand(a, b, 2),
-        box_b[:, 2:].unsqueeze(0).expand(a, b, 2)
-    )
-    # 选出lt最小的
-    # lt = torch.max(boxes1[:, None, :2], boxes2[:, :2])  # left-top [N,M,2]
-    min_xy = torch.max(
-        box_a[:, :2].unsqueeze(1).expand(a, b, 2),
-        box_b[:, :2].unsqueeze(0).expand(a, b, 2)
-    )
-    # 得有有效的长宽 np高级
-    inter = torch.clamp((max_xy - min_xy), min=0)
-    inter = inter[:, :, 0] * inter[:, :, 1]  # torch.Size([a个, b个, 2])
-
-    # # x,2 -> x,1,2 -> x b 2 直接算面积
-    area_a = ((box_a[:, 2] - box_a[:, 0]) * (box_a[:, 3] - box_a[:, 1])).unsqueeze(1).expand_as(inter)
-    area_b = ((box_b[:, 2] - box_b[:, 0]) * (box_b[:, 3] - box_b[:, 1])).unsqueeze(0).expand_as(inter)
-
-    union = area_a + area_b - inter
-    iou = inter / union
-    return iou
-
-
 def box_area(boxes):
     return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
@@ -282,19 +247,13 @@ def calc_iou4ts(bboxs, ancs):
     return iou
 
 
-def calc_ious4ts(box1, box2, is_ltrb=True, GIoU=False, DIoU=False, CIoU=False):
+def calc_ious4ts(box1, box2, GIoU=False, DIoU=False, CIoU=False):
     # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
     box2 = box2.t()
 
     # Get the coordinates of bounding boxes
-    if is_ltrb:  # x1, y1, x2, y2 = box1
-        b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
-        b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
-    else:  # transform from xywh to xyxy
-        b1_x1, b1_x2 = box1[0] - box1[2] / 2, box1[0] + box1[2] / 2
-        b1_y1, b1_y2 = box1[1] - box1[3] / 2, box1[1] + box1[3] / 2
-        b2_x1, b2_x2 = box2[0] - box2[2] / 2, box2[0] + box2[2] / 2
-        b2_y1, b2_y2 = box2[1] - box2[3] / 2, box2[1] + box2[3] / 2
+    b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
+    b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
 
     # Intersection area
     inter = (torch.min(b1_x2, b2_x2) - torch.max(b1_x1, b2_x1)).clamp(0) * \
@@ -403,30 +362,18 @@ def pos_match(ancs, bboxs, criteria):
     return label_neg_mask, anc_bbox_ind
 
 
-def resize_boxes(boxes, original_size, new_size):
+def resize_boxes4np(boxes, original_size, new_size):
     '''
     用于预处理 和 最后的测试(预测还原)
-    :param boxes: 输入多个
-    :param original_size: 图像缩放前的尺寸
-    :param new_size: 图像缩放后的尺寸
+    :param boxes: 输入多个 np shape(n,4)
+    :param original_size: np (w,h)
+    :param new_size: np (w,h)
     :return:
     '''
     # 输出数组   新尺寸 /旧尺寸 = 对应 h w 的缩放因子
-    ratios = [
-        torch.tensor(s, dtype=torch.float32, device=boxes.device)
-        / torch.tensor(s_orig, dtype=torch.float32, device=boxes.device)
-        for s, s_orig in zip(new_size, original_size)
-    ]
-
-    ratios_height, ratios_width = ratios
-    # Removes a tensor dimension, boxes [minibatch, 4]
-    # Returns a tuple of all slices along a given dimension, already without it.
-    xmin, ymin, xmax, ymax = boxes.unbind(dim=1)  # 分列
-    xmin = xmin * ratios_width
-    xmax = xmax * ratios_width
-    ymin = ymin * ratios_height
-    ymax = ymax * ratios_height
-    return torch.stack((xmin, ymin, xmax, ymax), dim=1)
+    ratios = new_size / original_size
+    boxes = boxes * np.concatenate([ratios, ratios])
+    return boxes
 
 
 def boxes2yolo(boxes, labels, num_bbox=2, num_class=20, grid=7):
@@ -463,30 +410,6 @@ def boxes2yolo(boxes, labels, num_bbox=2, num_class=20, grid=7):
             target[int(lr[1]), int(lr[0]), start + 2:start + 4] = wh[i]  # wh值相对于整幅图像的尺寸
         target[int(lr[1]), int(lr[0]), int(labels[i]) + 5 * num_bbox - 1] = 1  # 9指向0~9的最后一位,labels从1开始
     return target
-
-
-def fix_bbox4yolo1(anc, p_loc, variances=(0.1, 0.2)):
-    '''
-    用预测的loc 和 anc得到 修复后的框
-    :param anc: xywh  (nn,4)
-    :param p_loc: 修正系数 (nn,4)
-    :return: 修复后的框
-    '''
-    if len(anc.shape) == 2:
-        # 坐标移动
-        _a = anc[:, :2] + p_loc[:, :2] * variances[0] * anc[:, 2:]
-        # 宽高缩放
-        _b = anc[:, 2:] * torch.exp(p_loc[:, 2:] * variances[1])
-        _t = torch.cat([_a, _b], dim=1)
-    elif len(anc.shape) == 3:
-        # 坐标移动
-        _a = anc[:, :, :2] + p_loc[:, :, :2] * variances[0] * anc[:, :, 2:]
-        # 宽高缩放
-        _b = anc[:, :, 2:] * torch.exp(p_loc[:, :, 2:] * variances[1])
-        _t = torch.cat([_a, _b], dim=2)
-    else:
-        raise Exception('维度错误', anc.shape)
-    return _t
 
 
 if __name__ == '__main__':

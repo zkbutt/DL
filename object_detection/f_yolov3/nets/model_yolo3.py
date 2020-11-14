@@ -2,10 +2,8 @@ import torch
 import torch.nn as nn
 from collections import OrderedDict
 
-from torchvision import models
-from torchvision.models import _utils
-
-from f_pytorch.backbone_t.model_look import f_look
+from f_pytorch.backbone_t.f_models.darknet import Darknet
+from f_pytorch.backbone_t.model_look import f_look, f_look2
 from object_detection.yolo3.nets.darknet import darknet53
 
 
@@ -14,7 +12,7 @@ def conv2d(filter_in, filter_out, kernel_size):
     return nn.Sequential(OrderedDict([
         ("conv", nn.Conv2d(filter_in, filter_out, kernel_size=kernel_size, stride=1, padding=pad, bias=False)),
         ("bn", nn.BatchNorm2d(filter_out)),
-        ("relu", nn.LeakyReLU(0.1)),
+        ("relu", nn.LeakyReLU()),
     ]))
 
 
@@ -26,50 +24,78 @@ def make_last_layers(filters_list, in_filters, out_filter):
     :param out_filter: 输出 维度 （20+1+4）*anc数
     :return:
     '''
-    m = nn.ModuleList([
+    m = nn.ModuleList([  # 共7层
         conv2d(in_filters, filters_list[0], 1),  # 1卷积 + 3卷积 交替
         conv2d(filters_list[0], filters_list[1], 3),
-        conv2d(filters_list[1], filters_list[0], 1),
+        conv2d(filters_list[1], filters_list[0], 1),  # 这里加spp
         conv2d(filters_list[0], filters_list[1], 3),
         conv2d(filters_list[1], filters_list[0], 1),  # 这里输出上采样
         conv2d(filters_list[0], filters_list[1], 3),
-        nn.Conv2d(filters_list[1], out_filter, kernel_size=1,
-                  stride=1, padding=0, bias=True)
+        nn.Conv2d(filters_list[1], out_filter, kernel_size=1, stride=1, padding=0, bias=True)
     ])
     return m
 
 
-class YoloBody(nn.Module):
-    def __init__(self, backbone, nums_anc, num_classes, dims_rpn_in):
-        super(YoloBody, self).__init__()
+class SPP(nn.Module):
+    '''
+    长宽不变, 深度是原来的4倍 calc_oshape_pytorch
+    '''
+
+    def __init__(self, in_channel):
+        super(SPP, self).__init__()
+        self.maxpool5X5 = nn.MaxPool2d(kernel_size=5, stride=1, padding=2)
+        self.maxpool9X9 = nn.MaxPool2d(kernel_size=9, stride=1, padding=4)
+        self.maxpool13X13 = nn.MaxPool2d(kernel_size=13, stride=1, padding=6)
+        self.spp_out = conv2d(in_channel * 4, in_channel, 1)
+
+    def forward(self, inputs):
+        maxpool5X5 = self.maxpool5X5(inputs)  # torch.Size([1, 512, 13, 13])
+        maxpool9X9 = self.maxpool9X9(inputs)
+        maxpool13X13 = self.maxpool13X13(inputs)
+        out = torch.cat([inputs, maxpool5X5, maxpool9X9, maxpool13X13], dim=1)
+        out = self.spp_out(out)
+        return out
+
+
+class YoloV3SPP(nn.Module):
+    def __init__(self, backbone, nums_anc, num_classes, dims_rpn_in, is_spp=False):
+        '''
+        层属性可以是 nn.Module nn.ModuleList(封装Sequential) nn.Sequential
+        '''
+        super(YoloV3SPP, self).__init__()
         assert len(dims_rpn_in) == 3, 'yolo_in_dims 的长度必须是3'
         #  backbone
         self.backbone = backbone
         self.nums_anc = nums_anc
+        if is_spp:
+            self.is_spp = is_spp
+            self.spp = SPP(int(dims_rpn_in[2] / 2))
+        else:
+            is_spp = None
 
         '''根据不同的输出层的anc参数，确定输出结果'''
-        dim_out = dims_rpn_in[-1]
         final_out_filter1 = nums_anc[0] * (1 + 4 + num_classes)
-        self.last_layer1 = make_last_layers([int(dim_out / (2 * 2 * 2)), int(dim_out / (2 * 2))],
-                                            dims_rpn_in[0],
+        self.last_layer1 = make_last_layers([int(dims_rpn_in[0] / 2), dims_rpn_in[0]],
+                                            dims_rpn_in[0] + int(dims_rpn_in[1] / 4),  # # 叠加上层的输出
                                             final_out_filter1)
 
         final_out_filter2 = nums_anc[1] * (1 + 4 + num_classes)
-        self.last_layer2 = make_last_layers([int(dim_out / 4), int(dim_out / 2)],
-                                            dims_rpn_in[1] + int(dim_out / 4),  # 输入叠加
+        self.last_layer2 = make_last_layers([int(dims_rpn_in[1] / 2), dims_rpn_in[1]],  # 小大震荡
+                                            dims_rpn_in[1] + int(dims_rpn_in[2] / 4),  # 叠加上层的输出
                                             final_out_filter2)
-        self.last_layer2_conv = conv2d(int(dim_out / 2), int(dim_out / (2 * 2)), 1)
+        self.last_layer2_conv = conv2d(int(dims_rpn_in[1] / 2), int(dims_rpn_in[1] / 4), 1)
         self.last_layer2_upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
         final_out_filter3 = nums_anc[2] * (1 + 4 + num_classes)
-        self.last_layer3 = make_last_layers([int(dim_out / 2), dim_out],
+        self.last_layer3 = make_last_layers([int(dims_rpn_in[2] / 2), dims_rpn_in[2]],  # 小大震荡 输入的一半 and 还原
                                             dims_rpn_in[2],
                                             final_out_filter3)
-        self.last_layer3_conv = conv2d(int(dim_out/2), int(dim_out / 4), 1)  # 决定上采的维度
+        self.last_layer3_conv = conv2d(int(dims_rpn_in[2] / 2), int(dims_rpn_in[2] / 4), 1)  # 决定上采的维度
+        # F.interpolate(x,scale_factor=2,mode='nearest')
         self.last_layer3_upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
     def forward(self, x):
-        def _branch(last_layer, layer_in):
+        def _branch(last_layer, layer_in, is_spp=False):
             '''
 
             :param last_layer: 五层CONV
@@ -79,7 +105,9 @@ class YoloBody(nn.Module):
                 out_branch 上采样输入
             '''
             for i, e in enumerate(last_layer):
-                layer_in = e(layer_in)  #
+                layer_in = e(layer_in)
+                if i == 2 and is_spp:
+                    layer_in = self.spp(layer_in)
                 if i == 4:
                     out_branch = layer_in
             return layer_in, out_branch
@@ -87,7 +115,7 @@ class YoloBody(nn.Module):
         #  backbone ([batch, 512, 52, 52]) ([batch, 1024, 26, 26])  ([batch, 1024, 13, 13])
         backbone_out1, backbone_out2, backbone_out3 = self.backbone(x)
         #  [batch, 1024, 13, 13] -> [batch, 75, 13, 13],[batch, 2048, 13, 13]
-        out3, out3_branch = _branch(self.last_layer3, backbone_out3)
+        out3, out3_branch = _branch(self.last_layer3, backbone_out3, self.is_spp)
         # [batch, 2048, 13, 13] -> [batch, 1024, 13, 13]
         _out = self.last_layer3_conv(out3_branch)
         _out = self.last_layer3_upsample(_out)
@@ -120,65 +148,28 @@ class YoloBody(nn.Module):
         return torch.cat(_ts, dim=1)
 
 
-class OIMO4Densenet(nn.Module):
-
-    def __init__(self, backbone):
-        super().__init__()
-        layer1_od = OrderedDict()
-        layer2_od = OrderedDict()
-        layer3_od = OrderedDict()
-        # pool = AvgPool2d(kernel_size=2, stride=2, padding=0)
-
-        for name1, module1 in backbone._modules.items():
-            if name1 == 'features':
-                _od = layer1_od
-                for name2, module2 in module1._modules.items():
-                    if name2 == 'transition2':
-                        _od = layer2_od
-                    elif name2 == 'transition3':
-                        _od = layer3_od
-                    elif name2 == 'norm5':
-                        break
-                    _od[name2] = module2
-            break
-
-        self.layer1 = nn.Sequential(layer1_od)
-        self.layer2 = nn.Sequential(layer2_od)
-        self.layer3 = nn.Sequential(layer3_od)
-
-    def forward(self, inputs):
-        out1 = self.layer1(inputs)  # torch.Size([1, 512, 52, 52])
-        out2 = self.layer2(out1)  # torch.Size([1, 1024, 26, 26])
-        out3 = self.layer3(out2)
-        return out1, out2, out3
-
-
-class OIMO4Resnext(nn.Module):
-
-    def __init__(self, backbone, return_layers) -> None:
-        super().__init__()
-        self.layer_out = _utils.IntermediateLayerGetter(backbone, return_layers)
-
-    def forward(self, inputs):
-        out = self.layer_out(inputs)
-        out = list(out.values())
-        return out
-
-
 if __name__ == '__main__':
+    from f_pytorch.backbone_t.f_model_api import Output4Return
+
     # model = models.densenet121(pretrained=True)
     # dim_layer1_out = model.features.transition2.conv.in_channels  # 512
     # dim_layer2_out = model.features.transition3.conv.in_channels  # 1024
     # dim_layer3_out = model.classifier.in_features  # 1024
     # dims_out = [dim_layer1_out, dim_layer2_out, dim_layer3_out]
-    # model = OIMO4Densenet(model)
+    # model = Output4Densenet(model)
 
-    model = models.resnext50_32x4d(pretrained=True)
-    return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
-    model = OIMO4Resnext(model, return_layers)
-    dims_out = [512, 1024, 2048]
+    # model = models.resnext50_32x4d(pretrained=True)
+    # return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
+    # model = Output4Return(model, return_layers)
+    # dims_out = [512, 1024, 2048]
+
+    model = Darknet(nums_layer=(1, 2, 8, 8, 4))
+    return_layers = {'block3': 1, 'block4': 2, 'block5': 3}
+    model = Output4Return(model, return_layers)
+    dims_out = [256, 512, 1024]
 
     nums_anc = [3, 3, 3]
     num_classes = 20
-    model = YoloBody(model, nums_anc, num_classes, dims_out)
+    model = YoloV3SPP(model, nums_anc, num_classes, dims_out, is_spp=True)
     f_look(model, input=(1, 3, 416, 416))
+    f_look2(model, input=(3, 416, 416))

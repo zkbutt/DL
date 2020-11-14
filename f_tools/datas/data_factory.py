@@ -42,16 +42,27 @@ class VOCDataSet(Dataset):
 
         path_txt = os.path.join(path_data_root, path_file_txt)
         _path_xml = os.path.join(path_data_root, 'Annotations')
-        with open(path_txt) as read: # {FileNotFoundError}[Errno 2] No such file or directory: '/home/bak3t/bakls299g/AI/datas/VOC2012/trainval/train.txt'
+        with open(
+                path_txt) as read:  # {FileNotFoundError}[Errno 2] No such file or directory: '/home/bak3t/bakls299g/AI/datas/VOC2012/trainval/train.txt'
             # 读每一行加上路径和扩展名---完整路径
             self.xml_list = [os.path.join(_path_xml, line.strip() + ".xml")
                              for line in read.readlines()]
 
         try:
             # {"类别1": 1, "类别2":2}
-            json_file = open(os.path.join(
-                os.path.abspath(os.path.join(path_data_root, "..")), 'classes_ids_voc.json'), 'r')
-            self.class_dict = json.load(json_file)
+            path_json_class = os.path.abspath(os.path.join(path_data_root, ".."))
+            json_file = open(os.path.join(path_json_class, 'classes_ids_voc.json'), 'r')
+            self.class_to_ids = json.load(json_file)
+            self.ids_to_class = dict((val, key) for key, val in self.class_to_ids.items())
+
+            file_json_ids_class = os.path.join(path_json_class, 'ids_classes_voc.json')
+            if not os.path.exists(file_json_ids_class):
+                json_str = json.dumps(self.ids_to_class, indent=4)
+                file_json_ids_class = os.path.join(path_json_class, 'ids_classes_voc.json')
+                with open(file_json_ids_class, 'w') as json_file:
+                    json_file.write(json_str)
+
+
         except Exception as e:
             flog.error(e)
             exit(-1)
@@ -93,7 +104,7 @@ class VOCDataSet(Dataset):
             xmax = float(_objs['bndbox']['xmax'])
             ymax = float(_objs['bndbox']['ymax'])
             boxes = np.concatenate((boxes, np.array([xmin, ymin, xmax, ymax])[None]), axis=0)
-            labels.append(self.class_dict[_objs['name']])
+            labels.append(self.class_to_ids[_objs['name']])
             iscrowd.append(int(_objs['difficult']))
         else:
             for obj in _objs:
@@ -103,7 +114,7 @@ class VOCDataSet(Dataset):
                 xmax = float(obj['bndbox']['xmax'])
                 ymax = float(obj['bndbox']['ymax'])
                 boxes = np.concatenate((boxes, np.array([xmin, ymin, xmax, ymax])[None]), axis=0)
-                labels.append(self.class_dict[obj['name']])
+                labels.append(self.class_to_ids[obj['name']])
                 iscrowd.append(int(obj['difficult']))
 
         # show_od4boxs(image,boxes) # 原图测试
@@ -464,7 +475,7 @@ def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, is
     )
 
     # iter(train_data_set).__next__()  # VOC2012DataSet 测试
-    class_dict = train_data_set.class_dict
+    class_dict = train_data_set.class_to_ids
     flog.debug('class_dict %s', class_dict)
 
     # 默认通过 torch.stack() 进行拼接

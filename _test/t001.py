@@ -55,3 +55,17 @@ if __name__ == '__main__':
     # for i in r:
     #     print(i)
     # print(sys.float_info.min)
+
+    print(random.randint(1,3))
+    # a = np.arange(1, 5).reshape(2, 2)
+    # print(a)
+    # print(np.repeat(a, 2))
+    # print(np.repeat(a, 2, axis=0))
+    # print(np.repeat(a, 2, axis=1))  # 看着个体
+    # print(np.concatenate([a, a], axis=0))  # 看着整体扩展,默认为 axis=0
+    # print(np.concatenate([a, a], axis=1))  # 看着整体
+    # b = torch.tensor(a)
+    # print(b.repeat(1, 2))  # 看着整体扩展
+    # print(torch.cat([b, b], dim=0))  # 与上面等价,看着整体扩展 默认为 dim=0
+    # print(torch.cat([b, b], dim=1))  # 与上面等价,看着整体扩展
+    # print(torch.cat([b[:, :1].repeat(1, 2), b[:, 1:2].repeat(1, 3)], dim=1))  # 交替扩展

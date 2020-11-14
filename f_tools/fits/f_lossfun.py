@@ -4,9 +4,8 @@ import torch.nn.functional as F
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_pretreatment import f_recover_normalization4ts
-from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints, ltrb2xywh, calc_iou4ts, \
-    bbox_iou4ts
-from f_tools.pic.f_show import show_od4ts
+from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints, ltrb2xywh, calc_iou4ts
+from f_tools.pic.f_show import show_bbox4ts
 
 
 class FocalLoss(nn.Module):
@@ -77,7 +76,7 @@ class LossOD_K(nn.Module):
                 _t[:, ::2] = _t[:, ::2] * CFG.IMAGE_SIZE[0]
                 _t[:, 1::2] = _t[:, 1::2] * CFG.IMAGE_SIZE[1]
                 _t = _t[mask, :]
-                show_od4ts(img_ts, xywh2ltrb(_t), torch.ones(200))
+                show_bbox4ts(img_ts, xywh2ltrb(_t), torch.ones(200))
 
         # 每一个图片的正样本个数  [batch, 16800] ->[batch]
         pos_num = mask_pos.sum(dim=1)  # [batch] 这个用于batch中1个图没有正例不算损失和计算反例数

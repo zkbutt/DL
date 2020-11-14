@@ -7,10 +7,10 @@ from PIL import Image
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
-from f_tools.pic.f_show import show_pic_label_np, show_od4pil
+from f_tools.pic.f_show import show_bbox4pil
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
-from object_detection.f_yolov1.process_fun import DATA_TRANSFORM, init_model
-from object_detection.f_yolov1.train_eval_fun import PredictHandler
+from object_detection.f_yolov1.utils.process_fun import DATA_TRANSFORM, init_model
+from object_detection.f_yolov1.utils.train_eval_fun import PredictHandler
 
 
 def other(img_pil):
@@ -71,5 +71,5 @@ if __name__ == '__main__':
             r_ = np.array(r)
             lables = [idx_to_class[i] for i in r_[:,4]]
 
-            show_od4pil(img_pil, r_[:, :4],lables)
+            show_bbox4pil(img_pil, r_[:, :4], lables)
         flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

@@ -6,8 +6,6 @@ import torchvision.models as models
 from torch import nn
 from torch.nn import AvgPool2d
 
-from f_pytorch.backbone_t.f_models.darknet import darknet53
-from f_pytorch.backbone_t.f_models.mobilenet025 import MobileNetV1
 from f_pytorch.backbone_t.modelsize_estimate import modelsize
 from f_tools.GLOBAL_LOG import flog
 
@@ -88,6 +86,15 @@ def f_look(model, input=(1, 3, 416, 416)):
     # 用这个即可---查看网络的统计结果---
     args_pd = tw.model_stats(model, input)
     args_pd.to_excel('model_look.xlsx')
+    flog.info('文件生成成功')
+
+
+def f_look2(model, input=(3, 416, 416)):
+    from torchsummary import summary
+    if not isinstance(input, tuple):
+        input = tuple(input)
+    summary1 = summary(model, input)
+    print(type(summary1))
 
 
 if __name__ == '__main__':
@@ -95,16 +102,18 @@ if __name__ == '__main__':
     '''
     # data_inputs_list = [1, 3, 640, 640]
     data_inputs_list = [1, 3, 416, 416]
+
     torch.random.manual_seed(20201025)  # 3746401707500
     data_inputs_ts = torch.rand(data_inputs_list, dtype=torch.float)
 
-    model = models.densenet161(pretrained=True)  # 能力 22.35  6.20  ---top2
+    # model = models.AlexNet()
+    # model = models.densenet161(pretrained=True)  # 能力 22.35  6.20  ---top2
     # model = FRebuild4densenet161(model, None)
     # return_layers = {'layer1': 1, 'layer2': 2, 'layer3': 3}
 
-    model = models.wide_resnet50_2(pretrained=True)  # 能力 21.49 5.91  ---top1
-    model = models.resnext50_32x4d(pretrained=True)  # 能力 22.38 6.30 ---top3
-    # model = models.mobilenet_v2(pretrained=True)  # 能力 28.12 9.71 ---速度top1
+    # model = models.wide_resnet50_2(pretrained=True)  # 能力 21.49 5.91  ---top1
+    # model = models.resnext50_32x4d(pretrained=True)  # 能力 22.38 6.30 ---top3
+    model = models.mobilenet_v2(pretrained=True)  # 能力 28.12 9.71 ---速度top1
 
     # model = models.resnet50(pretrained=True)  # 下采样倍数32 能力23.85 7.13
     # return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
@@ -115,8 +124,11 @@ if __name__ == '__main__':
 
     # f替换(model)
 
+    # f_look(model, data_inputs_list)
+    f_look2(model, data_inputs_list[-3:])
+
     # model = darknet53()
-    modelsize(model, torch.rand(1, 3, 416, 416))
+    # modelsize(model, torch.rand(1, 3, 416, 416))
     '''
     torch.Size([1, 512, 80, 80])
     torch.Size([1, 1024, 40, 40])
@@ -141,7 +153,7 @@ if __name__ == '__main__':
     # # print(type(args_pd))
     # print(args_pd)
 
-    from torchsummary import summary
+    # from torchsummary import summary
 
     # summary1 = summary(model, (3, 640, 640))
     # print(type(summary1))

@@ -7,7 +7,7 @@ from PIL import Image
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
 from f_tools.fun_od.f_anc import AnchorsFound
-from f_tools.pic.f_show import show_od_keypoints4pil
+from f_tools.pic.f_show import show_bbox_keypoints4pil
 from object_detection.f_retinaface.CONFIG_F_RETINAFACE import *
 from object_detection.f_retinaface.utils.process_fun import init_model, DATA_TRANSFORM
 from object_detection.f_retinaface.utils.train_eval_fun import PredictHandler
@@ -88,6 +88,6 @@ if __name__ == '__main__':
             p_keypoints = p_keypoints * szie_scale4landmarks
 
             # 显示结果
-            show_od_keypoints4pil(img_pil, p_boxes, p_keypoints, p_scores)
+            show_bbox_keypoints4pil(img_pil, p_boxes, p_keypoints, p_scores)
 
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

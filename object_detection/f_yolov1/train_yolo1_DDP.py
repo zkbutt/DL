@@ -9,7 +9,7 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_lossfun import LossYOLOv1
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
-from object_detection.f_yolov1.process_fun import init_model, train_eval, data_loader4mgpu
+from object_detection.f_yolov1.utils.process_fun import init_model, train_eval, data_loader4mgpu
 
 '''
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py

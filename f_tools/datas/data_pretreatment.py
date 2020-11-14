@@ -7,7 +7,7 @@ from torchvision.transforms import functional as F, transforms
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fun_od.f_boxes import calc_iou4ts
-from f_tools.pic.f_show import show_od_keypoints4pil, show_od4pil
+from f_tools.pic.f_show import show_bbox_keypoints4pil, show_bbox4pil
 from f_tools.pic.size_handler import resize_img_keep_np
 
 
@@ -18,7 +18,7 @@ def _show(img_ts, target, cfg, name):
         concatenate = np.concatenate([target['boxes'], target['keypoints']], axis=1)
         concatenate[:, ::2] = concatenate[:, ::2] * cfg.IMAGE_SIZE[0]
         concatenate[:, 1::2] = concatenate[:, 1::2] * cfg.IMAGE_SIZE[1]
-        show_od_keypoints4pil(
+        show_bbox_keypoints4pil(
             img_pil,
             concatenate[:, :4],
             concatenate[:, 4:14],
@@ -33,7 +33,7 @@ def _show(img_ts, target, cfg, name):
             raise Exception('类型错误', type(boxes))
         bboxs_[:, ::2] = bboxs_[:, ::2] * cfg.IMAGE_SIZE[0]
         bboxs_[:, 1::2] = bboxs_[:, 1::2] * cfg.IMAGE_SIZE[1]
-        show_od4pil(img_pil, bboxs_, target['labels'])
+        show_bbox4pil(img_pil, bboxs_, target['labels'])
 
 
 class BasePretreatment:
@@ -80,13 +80,13 @@ class ResizeKeep():
                 target['keypoints'] = target['keypoints'] * ratio
                 if cfg.IS_VISUAL and cfg.IS_VISUAL_PRETREATMENT:
                     flog.debug('ResizeKeep 后%s')
-                    show_od_keypoints4pil(
+                    show_bbox_keypoints4pil(
                         img_pil,
                         target['boxes'],
                         target['keypoints'],
                         target['labels'])
             elif cfg.IS_VISUAL and cfg.IS_VISUAL_PRETREATMENT:
-                show_od4pil(img_pil, target['boxes'], target['labels'])
+                show_bbox4pil(img_pil, target['boxes'], target['labels'])
         return img_pil, target
 
 
@@ -119,9 +119,9 @@ class Resize(object):
                 keypoints[:, 1::2] = keypoints[:, 1::2] / h_ratio
                 if cfg.IS_VISUAL and cfg.IS_VISUAL_PRETREATMENT:
                     flog.debug('缩放后%s', img_pil.size)
-                    show_od_keypoints4pil(img_pil, bbox, keypoints, target['labels'])
+                    show_bbox_keypoints4pil(img_pil, bbox, keypoints, target['labels'])
             elif cfg.IS_VISUAL and cfg.IS_VISUAL_PRETREATMENT:
-                show_od4pil(img_pil, bbox, target['labels'])
+                show_bbox4pil(img_pil, bbox, target['labels'])
 
         return img_pil, target
 
@@ -309,7 +309,7 @@ class SSDCroppingPIL(object):
                 target['boxes'] = boxes_ * size
                 target['labels'] = labels
                 if cfg.IS_VISUAL and cfg.IS_VISUAL_PRETREATMENT:
-                    show_od4pil(img_pil, target['boxes'], target['labels'])
+                    show_bbox4pil(img_pil, target['boxes'], target['labels'])
                 return img_pil, target
 
 

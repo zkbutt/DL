@@ -4,16 +4,17 @@ from torch import optim
 from torchvision import models
 
 
-def f_cos_diminish(optimizer, start_epoch, epochs, lrf_scale):
+def f_lr_cos(optimizer, start_epoch, end_epoch, lrf_scale):
     '''
     自定义调整策略
     :param optimizer:
     :param start_epoch:
-    :param epochs: 总迭代次数
+    :param end_epoch: 总迭代次数
+    :param lrf_scale: 最终值
     :return:
     '''
     # cos渐减小学习率 余弦值首先缓慢下降吗然后加速下降, 再次缓慢下降 从  初始 ~ 0.1
-    fun = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - lrf_scale) + lrf_scale
+    fun = lambda x: ((1 + math.cos(x * math.pi / end_epoch)) / 2) * (1 - lrf_scale) + lrf_scale
 
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=fun)
     scheduler.last_epoch = start_epoch  # 指定从哪个epoch开始
@@ -89,11 +90,11 @@ if __name__ == '__main__':
     model = models.resnext50_32x4d(pretrained=True)
     lr0 = 1e-3
     optimizer = optim.Adam(model.parameters(), lr0)
-    lrf_scale = 0.01
+    lrf_scale = 0.1
     start_epoch = 0
     epochs = 10
 
-    scheduler = f_cos_diminish(optimizer, start_epoch, epochs, lrf_scale)
+    scheduler = f_lr_cos(optimizer, start_epoch, epochs, lrf_scale)
     # scheduler = lr_example(optimizer)
     f_show_scheduler(scheduler, 100)
     pass

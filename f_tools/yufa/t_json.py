@@ -51,3 +51,8 @@ if __name__ == '__main__':
     # 写出
     with open('p.json', 'w', encoding='utf-8') as f:
         json.dump(data_dict, f, ensure_ascii=False, )
+
+    cla_dict = dict((val, key) for key, val in flower_list.items())
+    json_str = json.dumps(cla_dict, indent=4)
+    with open('class_indices.json', 'w') as json_file:
+        json_file.write(json_str)

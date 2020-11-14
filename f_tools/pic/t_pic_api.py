@@ -59,7 +59,7 @@ def f转换():
     print(img_pil.size)  # w,h
 
     # ---------PIL2numpy---------
-    img_np = np.array(img_pil)
+    img_np = np.array(img_pil,cv2.COLOR_RGB2BGR)
 
     # ---------ts2numpy---------
     img_pil = transforms.ToPILImage()(img_ts)

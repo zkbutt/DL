@@ -7,6 +7,10 @@ import time
 import numpy as np
 
 
+def rand(a=0., b=1.):
+    return np.random.rand() * (b - a) + a
+
+
 def get_path_root():
     debug_vars = dict((a, b) for a, b in os.environ.items() if a.find('IPYTHONENABLE') >= 0)
     # 根据不同场景获取根目录

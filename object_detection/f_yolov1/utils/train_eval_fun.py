@@ -5,7 +5,7 @@ import torch
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms, boxes2yolo, \
     fix_bbox4yolo1
-from f_tools.pic.f_show import show_od_keypoints4ts, show_od4ts, show_anc4ts
+from f_tools.pic.f_show import show_bbox_keypoints4ts, show_bbox4ts, show_anc4ts
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
 
 

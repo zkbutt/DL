@@ -5,6 +5,8 @@ from torch import nn, optim
 from torch.cuda.amp import GradScaler, autocast
 from torchvision import models
 
+from f_pytorch.backbone_t.model_look import f_look, f_look2
+
 
 class Yolo_v1(nn.Module):
     def __init__(self, backbone, out_dim, grid, num_classes):
@@ -74,38 +76,15 @@ class Yolo_v1(nn.Module):
 
 import torch.nn.functional as F
 
-if __name__ == '__main__':
-    cuda_idx = 1
-    is_mixture_fix = True
-    device = torch.device("cuda:%s" % cuda_idx if torch.cuda.is_available() else "cpu")
 
-    # model = models.mobilenet_v2(pretrained=True)
-    # in_features = list(model.classifier.children())[-1].in_features
-    # model = nn.Sequential(*list(model.children())[:-1])  # 去除resnet的最后两层
-
-    model = models.densenet121(pretrained=True)
-    out_dim = model.classifier.in_features
-    model = nn.Sequential(*list(model.children())[:-1])  # 去除resnet的最后两层
-
-    model = Yolo_v1(model, out_dim=out_dim, grid=7, num_classes=20)
+def t_yolov1():
+    global optimizer
     model.to(device)
-    batch = 2
-    input_shape = [batch, 3, 416, 416]
     out_shape = [batch, 7, 7, 25]
-    # data_inputs_list = [batch, 3, 224, 224]
-    # import tensorwatch as tw
-
-    # args_pd = tw.model_stats(yolo_v1, data_inputs_list)
-    # args_pd.to_excel('model_log.xlsx')
-
-    # from torchsummary import summary
-    # summary = summary(yolo_v1, (3, 416, 416))
     lr0 = 1e-3
     optimizer = optim.Adam(model.parameters(), lr=lr0, weight_decay=5e-4)  # 权重衰减(如L2惩罚)(默认: 0)
-
     MB = 1024.0 * 1024.0
     scaler = GradScaler(enabled=is_mixture_fix)
-
     for i in range(999):
         input = torch.rand(input_shape).to(device)
         label = torch.rand(out_shape).to(device)
@@ -130,3 +109,25 @@ if __name__ == '__main__':
 
         print('loss', loss)
         print("{}:{}".format(i + 1, torch.cuda.memory_allocated(1)))
+
+
+if __name__ == '__main__':
+    cuda_idx = 1
+    is_mixture_fix = True
+    device = torch.device("cuda:%s" % cuda_idx if torch.cuda.is_available() else "cpu")
+
+    # model = models.mobilenet_v2(pretrained=True)
+    # in_features = list(model.classifier.children())[-1].in_features
+    # model = nn.Sequential(*list(model.children())[:-1])  # 去除resnet的最后两层
+
+    model = models.densenet121(pretrained=True)
+    out_dim = model.classifier.in_features
+    model = nn.Sequential(*list(model.children())[:-1])  # 去除resnet的最后两层
+
+    model = Yolo_v1(model, out_dim=out_dim, grid=7, num_classes=20)
+    batch = 2
+    input_shape = [batch, 3, 416, 416]
+    f_look(model, input_shape)
+    f_look2(model, input_shape[-3:])
+
+    # t_yolov1()

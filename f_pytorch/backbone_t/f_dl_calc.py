@@ -87,7 +87,7 @@ if __name__ == '__main__':
     # print(calc_oshape_tf(w=606, k=7, s=2))
     # print(calc_oshape_tf(w=300, k=2, s=2, p='same'))
     # print(calc_oshape_pytorch(w=416, k=7, s=2, p=3))
-    print(calc_oshape_pytorch(w=208, k=3, s=1, p=0))
+    print(calc_oshape_pytorch(w=208, k=13, s=1, p=6))
     # print(calc_oshape_tf(224, 7, s=2, p='same'))
     # print(calc_oshape_tf(299, 3, s=2))
     # __t_calc_IOU()

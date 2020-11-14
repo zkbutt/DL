@@ -3,16 +3,15 @@ from torchvision import models
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet, VOCDataSet
-from f_tools.datas.data_pretreatment import Compose, ResizeKeep, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
-    Normalization4TS, Resize, SSDCroppingPIL
-from f_tools.f_torch_tools import save_weight
+from f_tools.datas.data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
+    Normalization4TS, Resize
 
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate, f_train_one_epoch2
+from f_tools.fits.fitting.f_fit_eval_base import f_evaluate, f_train_one_epoch2
 from f_tools.fun_od.f_boxes import nms
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
 from object_detection.f_yolov1.nets.model_YOLOv1 import Yolo_v1
-from object_detection.f_yolov1.train_eval_fun import LossHandler, PredictHandler
+from object_detection.f_yolov1.utils.train_eval_fun import LossHandler, PredictHandler
 
 DATA_TRANSFORM = {
     "train": Compose([

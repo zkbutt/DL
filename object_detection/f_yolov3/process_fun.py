@@ -1,6 +1,7 @@
 import torch
 
-from f_pytorch.backbone_t.f_models.darknet import darknet53
+from f_pytorch.backbone_t.f_model_api import Output4Return
+from f_pytorch.backbone_t.f_models.darknet import Darknet
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import VOCDataSet
 from f_tools.datas.data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
@@ -11,7 +12,7 @@ from f_tools.fits.f_show_fit_res import plot_loss_and_lr
 from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate
 from f_tools.fun_od.f_boxes import nms
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
-from object_detection.f_yolov3.nets.fyolo3 import YoloBody
+from object_detection.f_yolov3.nets.model_yolo3 import YoloV3SPP
 from object_detection.f_yolov3.train_eval_fun import LossHandler
 
 DATA_TRANSFORM = {
@@ -63,24 +64,16 @@ def output_res(p_boxes, p_keypoints, p_scores, threshold_conf=0.5, threshold_nms
 
 
 def init_model(cfg):
-    backbone = darknet53()
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'darknet53'
-    # cfg.BATCH_SIZE = 16
+    model = Darknet(nums_layer=(1, 2, 8, 8, 4))
+    return_layers = {'block3': 1, 'block4': 2, 'block5': 3}
+    model = Output4Return(model, return_layers)
+    dims_out = [256, 512, 1024]
 
-    nums_anc = [len(i) for i in cfg.ANCHORS_SIZE]
-    model = models.densenet121(pretrained=True)
-    dim_layer1_out = model.features.transition2.conv.in_channels  # 512
-    dim_layer2_out = model.features.transition3.conv.in_channels  # 1024
-    dim_layer3_out = model.classifier.in_features  # 1024
-    dims_out = [dim_layer1_out, dim_layer2_out, dim_layer3_out]
-
-    model = OneInOutMore(model)
     nums_anc = [3, 3, 3]
     num_classes = 20
-    model = YoloBody(model, nums_anc, num_classes, dims_out)
+    model = YoloV3SPP(model, nums_anc, num_classes, dims_out, is_spp=True)
 
-    model = YoloBody(backbone, nums_anc, cfg.NUM_CLASSES)
-
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'darknet53'
     # ------------------------自定义backbone完成-------------------------------
     # f_look(model)
 
@@ -173,14 +166,7 @@ def train_eval(cfg, start_epoch, model, anchors, losser, optimizer, lr_scheduler
     learning_rate = []
 
     for epoch in range(start_epoch, cfg.END_EPOCH):
-        # if epoch < 5:
-        #     # 主干网一般要冻结
-        #     for param in model.body.parameters():
-        #         param.requires_grad = False
-        # else:
-        #     # 解冻后训练
-        #     for param in model.body.parameters():
-        #         param.requires_grad = True
+
         if cfg.IS_TRAIN:
             process = LossHandler(model, device, anchors, losser, cfg.NEG_IOU_THRESHOLD)
 
@@ -192,7 +178,7 @@ def train_eval(cfg, start_epoch, model, anchors, losser, optimizer, lr_scheduler
                                      )
 
             if lr_scheduler is not None:
-                lr_scheduler.step(loss)  # 更新学习
+                lr_scheduler.step()  # 更新学习
 
             # 每个epoch保存
             save_weight(
