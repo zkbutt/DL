@@ -94,6 +94,8 @@ class YoloV3SPP(nn.Module):
         # F.interpolate(x,scale_factor=2,mode='nearest')
         self.last_layer3_upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
+        self.sigmoid_out = nn.Sigmoid()
+
     def forward(self, x):
         def _branch(last_layer, layer_in, is_spp=False):
             '''
@@ -129,6 +131,8 @@ class YoloV3SPP(nn.Module):
 
         # 自定义数据重装函数 torch.Size([1, 10647, 25])
         outs = self.data_packaging([out1, out2, out3], self.nums_anc)
+        outs = self.sigmoid_out(outs)  # 支持多标签
+        '''为每一个特图预测三个尺寸的框,拉平堆叠'''
         return outs
 
     def data_packaging(self, outs, nums_anc):
@@ -171,5 +175,7 @@ if __name__ == '__main__':
     nums_anc = [3, 3, 3]
     num_classes = 20
     model = YoloV3SPP(model, nums_anc, num_classes, dims_out, is_spp=True)
-    f_look(model, input=(1, 3, 416, 416))
-    f_look2(model, input=(3, 416, 416))
+    # f_look(model, input=(1, 3, 416, 416))
+    # f_look2(model, input=(3, 416, 416))
+
+    # torch.save(model, 'yolov3spp.pth')

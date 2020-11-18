@@ -4,7 +4,8 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from tqdm import tqdm
 
-from f_tools.datas.kmeans_anc.kmeans import kmeans, avg_iou
+from f_tools.f_general import show_time
+from f_tools.fun_od.kmeans_anc.kmeans import kmeans, avg_iou
 
 
 def load_dataset(path):
@@ -31,25 +32,29 @@ def load_dataset(path):
     return np.array(dataset)
 
 
-if __name__ == '__main__':
-    ANNOTATIONS_PATH = r"M:\AI\datas\VOC2012\trainval\Annotations"
-    CLUSTERS = 9
-    size = [416, 416]
-
-    data = load_dataset(ANNOTATIONS_PATH)
-    out = kmeans(data, k=CLUSTERS)  # 输出5,2
+def t_anc_size(data, clusters):
+    out = kmeans(data, k=clusters)  # 输出5,2
     print("Accuracy: {:.2f}%".format(avg_iou(data, out) * 100))
-    print("Boxes:\n {}".format(out))
-
     # 计算尺寸大小排序后的索引
     a = out[:, 0] + out[:, 1]
-    # indexs = np.argsort(a)  # 默认升序
-    indexs = np.argsort(-a)  # 降序
-
+    indexs = np.argsort(a)  # 默认升序
+    # indexs = np.argsort(-a)  # 降序
+    print("Boxes:\n {}".format(out[indexs]))
     print("size:\n {}".format((out * size)[indexs]))
-
     ratios = np.around(out[:, 0] / out[:, 1], decimals=2).tolist()
     print("Ratios:\n {}".format(sorted(ratios)))
 
-    # voc_ = TestVoc2007()
-    # voc_.test_kmeans_5(path=ANNOTATIONS_PATH)
+
+if __name__ == '__main__':
+    '''
+    VOC2012 17125 6 Accuracy: 63.18%
+    VOC2012 17125 9 Accuracy: 67.88%
+    VOC2012 17125 18 Accuracy: 75.18%
+    输出anc的归一化比例
+    '''
+    ANNOTATIONS_PATH = r"M:\AI\datas\VOC2012\trainval\Annotations"
+    CLUSTERS = 9
+    size = [416, 416]
+    data = load_dataset(ANNOTATIONS_PATH)
+
+    show_time(t_anc_size, data, CLUSTERS)

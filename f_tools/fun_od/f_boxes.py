@@ -2,7 +2,9 @@ import math
 import torch
 import numpy as np
 
+from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import VOCDataSet
+from f_tools.pic.f_show import f_show_iou
 
 
 def ltrb2xywh(bboxs, safe=True):
@@ -15,16 +17,12 @@ def ltrb2xywh(bboxs, safe=True):
         else:
             raise Exception('类型错误', type(bboxs))
 
-    if dim == 3:
-        bboxs[:, :, 2] = bboxs[:, :, 2] - bboxs[:, :, 0]
-        bboxs[:, :, 3] = bboxs[:, :, 3] - bboxs[:, :, 1]
-        bboxs[:, :, 0] = bboxs[:, :, 0] + 0.5 * bboxs[:, :, 2]
-        bboxs[:, :, 1] = bboxs[:, :, 1] + 0.5 * bboxs[:, :, 3]
+    if dim == 3:  # 可优化
+        bboxs[:, :, 2:] = bboxs[:, :, 2:] - bboxs[:, :, :2]
+        bboxs[:, :, :2] = bboxs[:, :, :2] + 0.5 * bboxs[:, :, 2:]
     elif dim == 2:
-        bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
-        bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
-        bboxs[:, 0] = bboxs[:, 0] + 0.5 * bboxs[:, 2]
-        bboxs[:, 1] = bboxs[:, 1] + 0.5 * bboxs[:, 3]
+        bboxs[:, 2:] = bboxs[:, 2:] - bboxs[:, :2]
+        bboxs[:, :2] = bboxs[:, :2] + 0.5 * bboxs[:, 2:]
     else:
         raise Exception('维度错误', bboxs.shape)
     return bboxs
@@ -41,11 +39,9 @@ def ltrb2ltwh(bboxs, safe=True):
             raise Exception('类型错误', type(bboxs))
 
     if dim == 3:
-        bboxs[:, :, 2] = bboxs[:, :, 2] - bboxs[:, :, 0]
-        bboxs[:, :, 3] = bboxs[:, :, 3] - bboxs[:, :, 1]
+        bboxs[:, :, 2:] = bboxs[:, :, 2:] - bboxs[:, :, :2]
     elif dim == 2:
-        bboxs[:, 2] = bboxs[:, 2] - bboxs[:, 0]
-        bboxs[:, 3] = bboxs[:, 3] - bboxs[:, 1]
+        bboxs[:, 2:] = bboxs[:, 2:] - bboxs[:, :2]
     else:
         raise Exception('维度错误', bboxs.shape)
     return bboxs
@@ -62,11 +58,9 @@ def ltwh2ltrb(bboxs, safe=True):
             raise Exception('类型错误', type(bboxs))
 
     if dim == 3:
-        bboxs[:, :, 2] = bboxs[:, 2] + bboxs[:, :, 0]
-        bboxs[:, :, 3] = bboxs[:, 3] + bboxs[:, :, 1]
+        bboxs[:, :, 2:] = bboxs[:, :, 2:] + bboxs[:, :, :2]
     elif dim == 2:
-        bboxs[:, 2] = bboxs[:, 2] + bboxs[:, 0]
-        bboxs[:, 3] = bboxs[:, 3] + bboxs[:, 1]
+        bboxs[:, 2:] = bboxs[:, 2:] + bboxs[:, :2]
     else:
         raise Exception('维度错误', bboxs.shape)
     return bboxs
@@ -87,6 +81,24 @@ def xywh2ltrb(bboxs, safe=True):
     elif dim == 3:
         bboxs[:, :, :2] -= bboxs[:, :, 2:] / 2  # 中点移左上
         bboxs[:, :, 2:] += bboxs[:, :, :2]
+    else:
+        raise Exception('维度错误', bboxs.shape)
+    return bboxs
+
+
+def xywh2ltwh(bboxs, safe=True):
+    dim = len(bboxs.shape)
+    if safe:
+        if isinstance(bboxs, np.ndarray):
+            bboxs = np.copy(bboxs)
+        elif isinstance(bboxs, torch.Tensor):
+            bboxs = torch.clone(bboxs)
+        else:
+            raise Exception('类型错误', type(bboxs))
+    if dim == 2:
+        bboxs[:, :2] = bboxs[:, :2] - bboxs[:, 2:] / 2.
+    elif dim == 3:
+        bboxs[:, :, :2] = bboxs[:, :, :2] - bboxs[:, :, 2:] / 2.
     else:
         raise Exception('维度错误', bboxs.shape)
     return bboxs
@@ -180,14 +192,6 @@ def fix_keypoints(anc, p_keypoints, variances=(0.1, 0.2)):
     return _t
 
 
-def recover_bbox(bbox, size):
-    pass
-
-
-def recover_keypoints(keypoints, size):
-    pass
-
-
 def bbox_iou4np(bbox_a, bbox_b):
     '''
     求所有bboxs 与所有标定框 的交并比 ltrb
@@ -225,66 +229,61 @@ def box_area(boxes):
     return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
 
-def calc_iou4ts(bboxs, ancs):
+def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
     '''
 
-    :param bboxs: (Tensor[N, 4])  bboxs  ltrb
-    :param ancs: (Tensor[M, 4])  ancs   xywh
-    :return: (Tensor[N, M])
+    :param box1:torch.Size([m, 4]) ltrb
+    :param box2:torch.Size([n, 4]) ltrb
+    :param is_giou: 重合度++
+    :param is_diou: +中心点
+    :param is_ciou: +宽高
+    :return:(m,n)
     '''
-    area1 = box_area(bboxs)
-    area2 = box_area(ancs)
+    # 交集面积
+    max_lt = torch.max(box1[:, None, :2], box2[:, :2])  # left-top [N,M,2] 多维组合用法
+    min_rb = torch.min(box1[:, None, 2:], box2[:, 2:])  # right-bottom [N,M,2]
+    inter_wh = (min_rb - max_lt).clamp(min=0)  # [N,M,2]
+    inter_area = inter_wh[:, :, 0] * inter_wh[:, :, 1]  # [N,M] 降维
 
-    #  When the shapes do not match,
-    #  the shape of the returned output tensor follows the broadcasting rules
-    lt = torch.max(bboxs[:, None, :2], ancs[:, :2])  # left-top [N,M,2]
-    rb = torch.min(bboxs[:, None, 2:], ancs[:, 2:])  # right-bottom [N,M,2]
+    # 并的面积
+    area1 = box_area(box1)  # 降维 n
+    area2 = box_area(box2)  # 降维 m
+    union_area = area1[:, None] + area2 - inter_area  # 升维n m
 
-    wh = (rb - lt).clamp(min=0)  # [N,M,2]
-    inter = wh[:, :, 0] * wh[:, :, 1]  # [N,M]
+    iou = inter_area / union_area
 
-    iou = inter / (area1[:, None] + area2 - inter)
-    return iou
+    if not (is_giou or is_diou or is_ciou):
+        return iou
+    else:
+        # 最大矩形面积
+        min_lt = torch.min(box1[:, None, :2], box2[:, :2])
+        max_rb = torch.max(box1[:, None, 2:], box2[:, 2:])
+        max_wh = max_rb - min_lt
+        if is_giou:
+            max_area = max_wh[:, :, 0] * max_wh[:, :, 1] + torch.finfo(torch.float32).eps  # 降维运算
+            giou = iou - (max_area - union_area) / max_area
+            return giou
 
+        c2 = max_wh[:, :, 0] ** 2 + max_wh[:, :, 1] ** 2 + torch.finfo(torch.float32).eps  # 最大矩形的矩离的平方
+        box1_xywh = ltrb2xywh(box1)
+        box2_xywh = ltrb2xywh(box2)
+        xw2_xh2 = torch.pow(box1_xywh[:, None, :2] - box2_xywh[:, :2], 2)  # 中心点距离的平方
+        d2 = xw2_xh2[:, :, 0] + xw2_xh2[:, :, 1]
+        dxy = d2 / c2  # 中心比例距离
+        if is_diou:
+            diou = iou - dxy
+            return diou
 
-def calc_ious4ts(box1, box2, GIoU=False, DIoU=False, CIoU=False):
-    # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
-    box2 = box2.t()
-
-    # Get the coordinates of bounding boxes
-    b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
-    b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
-
-    # Intersection area
-    inter = (torch.min(b1_x2, b2_x2) - torch.max(b1_x1, b2_x1)).clamp(0) * \
-            (torch.min(b1_y2, b2_y2) - torch.max(b1_y1, b2_y1)).clamp(0)
-
-    # Union Area
-    w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1
-    w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1
-    union = (w1 * h1 + 1e-16) + w2 * h2 - inter
-
-    iou = inter / union  # iou
-    if GIoU or DIoU or CIoU:
-        cw = torch.max(b1_x2, b2_x2) - torch.min(b1_x1, b2_x1)  # convex (smallest enclosing box) width
-        ch = torch.max(b1_y2, b2_y2) - torch.min(b1_y1, b2_y1)  # convex height
-        if GIoU:  # Generalized IoU https://arxiv.org/pdf/1902.09630.pdf
-            c_area = cw * ch + 1e-16  # convex area
-            return iou - (c_area - union) / c_area  # GIoU
-        if DIoU or CIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
-            # convex diagonal squared
-            c2 = cw ** 2 + ch ** 2 + 1e-16
-            # centerpoint distance squared
-            rho2 = ((b2_x1 + b2_x2) - (b1_x1 + b1_x2)) ** 2 / 4 + ((b2_y1 + b2_y2) - (b1_y1 + b1_y2)) ** 2 / 4
-            if DIoU:
-                return iou - rho2 / c2  # DIoU
-            elif CIoU:  # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
-                v = (4 / math.pi ** 2) * torch.pow(torch.atan(w2 / h2) - torch.atan(w1 / h1), 2)
-                with torch.no_grad():
-                    alpha = v / (1 - iou + v)
-                return iou - (rho2 / c2 + v * alpha)  # CIoU
-
-    return iou
+        if is_ciou:
+            box1_atan_wh = torch.atan(box1_xywh[:, 2:3] / box1_xywh[:, 3:])
+            box2_atan_wh = torch.atan(box2_xywh[:, 2:3] / box2_xywh[:, 3:])
+            # torch.squeeze(ts)
+            v = torch.pow(box1_atan_wh[:, None, :] - box2_atan_wh, 2) * (4 / math.pi ** 2)
+            v = torch.squeeze(v, -1)  # m,n,1 -> m,n 去掉最后一维
+            v.squeeze_(-1)  # m,n,1 -> m,n 去掉最后一维
+            alpha = v / (1 - iou + v)
+            ciou = iou - (dxy + v * alpha)
+            return ciou
 
 
 def nms(boxes, scores, iou_threshold):
@@ -294,7 +293,6 @@ def nms(boxes, scores, iou_threshold):
          iou_threshold (float) – IoU过滤阈值
      返回:NMS过滤后的bouding boxes索引（降序排列）
      '''
-    # type: (Tensor, Tensor, float) -> Tensor
     return torch.ops.torchvision.nms(boxes, scores, iou_threshold)
 
 
@@ -307,7 +305,6 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
     :param iou_threshold:float 0.5
     :return:
     '''
-    # type: (Tensor, Tensor, Tensor, float) -> Tensor
     if boxes.numel() == 0:
         return torch.empty((0,), dtype=torch.int64, device=boxes.device)
 
@@ -328,7 +325,7 @@ def pos_match(ancs, bboxs, criteria):
     正样本选取策略
         1. 每一个bboxs框 尽量有一个anc与之对应
         2. 每一个anc iou大于大于阀值的保留
-    :param ancs:  anc模板 ltrb
+    :param ancs:  xywh
     :param bboxs: 标签框 (xx,4)
     :param criteria: 小于等于0.35的反例
     :return:
@@ -362,6 +359,36 @@ def pos_match(ancs, bboxs, criteria):
     return label_neg_mask, anc_bbox_ind
 
 
+def pos_match4yolo(ancs, bboxs, criteria):
+    '''
+    3个anc 一个GT
+    :param ancs:  ltrb
+    :param bboxs: 标签框 (xx,4)
+    :param criteria: 小于等于0.35的反例
+    :return:
+        返回 1~3个anc的索引 0,1,2
+    '''
+    # (bboxs个,anc个)
+    iou = calc_iou4ts(bboxs, ancs)
+
+    '''实现强制保留一个'''
+    # (1,anc个值)  每一个anc对应的bboxs  最大的iou和index
+    iou_max_gt_anc, anc_ind = iou.max(dim=0)  # 存的是 bboxs的index
+    # (bbox个,1) 每一个bbox对应的anc  最大的iou和index
+    iou_max_anc_gt, gt_ind = iou.max(dim=1)  # 存的是 anc的index
+    # 强制保留 将每一个bbox对应的最大的anc索引 的anc_bbox_iou值强设为2 大于阀值即可
+    iou_max_gt_anc.index_fill_(0, gt_ind, 2)  # dim index val
+
+    # gt_ind.size(0) = GT的个数  确保保留的 anc 的 gt  index 不会出错 exp:一个anc对应多个bboxs, bbox只有这一个anc时
+    _ids = torch.arange(0, gt_ind.size(0), dtype=torch.int64).to(anc_ind)
+    _gt = gt_ind[_ids]
+    anc_ind[_gt] = _ids
+
+    mask_pos = iou_max_gt_anc.view(-1) > criteria  # anc 的正例index
+
+    return mask_pos
+
+
 def resize_boxes4np(boxes, original_size, new_size):
     '''
     用于预处理 和 最后的测试(预测还原)
@@ -376,39 +403,126 @@ def resize_boxes4np(boxes, original_size, new_size):
     return boxes
 
 
-def boxes2yolo(boxes, labels, num_bbox=2, num_class=20, grid=7):
+def boxes2yolo(boxes, labels, num_anc=1, num_bbox=2, num_class=20, grid=7,
+               device=None):
     '''
     将ltrb 转换为 7*7*(2*(4+1)+20) = grid*grid*(num_bbox(4+1)+num_class)
+    这个必须和anc的顺序一致
     :param boxes:已原图归一化的bbox ltrb
     :param labels: 1~n值
     :param num_bbox:
     :param num_class:
     :param grid:
     :return:
-        torch.Size([7, 7, 25])
+        torch.Size([7, 7, 25])  c r
+
     '''
     target = torch.zeros((grid, grid, 5 * num_bbox + num_class))
+    if device is not None:
+        target = target.to(device)
     # ltrb -> xywh
     wh = boxes[:, 2:] - boxes[:, :2]
     cxcy = (boxes[:, 2:] + boxes[:, :2]) / 2  # bbox的中心点坐标
-    cell_scale = 1. / grid
 
     for i in range(cxcy.size()[0]):  # 遍历每一个框 cxcy.size()[0]  与shape等价
         '''计算GT落在7x7哪个网格中 同时ij也表示网格的左上角的坐标'''
-        cxcy_sample = cxcy[i]  # 每一个框的归一化xy
-        # (cxcy_sample / cell_size).type(torch.int) 等价
-        lr = (cxcy_sample / cell_scale).ceil() - 1  # cxcy_sample * 7  ceil上取整数 输出 0~6 index
-        # xy与矩阵行列是相反的
+        # cxcy * 7  这里是 col row的索引, int(0.1,0.5)*3(格子) =(0,1)
+        colrow_index = (cxcy[i] * grid).type(torch.int16)
+        # 计算格子与大图的偏移(0,1) /3 =(0,0.3333)
+        offset_xy = torch.true_divide(colrow_index, grid)
+        # 大图xy-格子xy /格子 = 该格子的相对距离
+        grid_xy = (cxcy[i] - offset_xy) / grid  # GT相对于所在网格左上角的值, 网格的左上角看做原点 需进行放大
 
-        xy = lr * cell_scale  # 所在网格的左上角在原图的位置 0~1
-        delta_xy = (cxcy_sample - xy) / cell_scale  # GT相对于所在网格左上角的值, 网格的左上角看做原点 需进行放大
-
+        # 这里如果有两个GT在一个格子里将丢失
         for j in range(num_bbox):
-            target[int(lr[1]), int(lr[0]), (j + 1) * 5 - 1] = 1  # conf
+            target[colrow_index[1], colrow_index[0], (j + 1) * 5 - 1] = 1  # conf
             start = j * 5
-            target[int(lr[1]), int(lr[0]), start:start + 2] = delta_xy  # 相对于所在网格左上角
-            target[int(lr[1]), int(lr[0]), start + 2:start + 4] = wh[i]  # wh值相对于整幅图像的尺寸
-        target[int(lr[1]), int(lr[0]), int(labels[i]) + 5 * num_bbox - 1] = 1  # 9指向0~9的最后一位,labels从1开始
+            target[colrow_index[1], colrow_index[0], start:start + 2] = grid_xy  # 相对于所在网格左上角
+            target[colrow_index[1], colrow_index[0], start + 2:start + 4] = wh[i]  # wh值相对于整幅图像的尺寸
+        target[colrow_index[1], colrow_index[0], labels[i] + 5 * num_bbox - 1] = 1
+    target = target.repeat(1, 1, num_anc)
+    return target
+
+
+def xy2offxy(p1, p2):
+    '''
+
+    :param p1:[n,2]
+    :param p2: [m,2]  [[52, 52], [26, 26], [13, 13]]
+    :return:
+        返回offset_xy_wh
+        返回 colrow
+    '''
+    colrow_index = (p1 * p2).type(torch.int16)  # 向下取整
+    offset_xy = colrow_index / p2  # 格式偏移
+    offset_xy_wh = (p1 - offset_xy) / p2  # 实偏 - 格式偏移 / 对应格子数
+    return offset_xy_wh, colrow_index
+
+
+def match4yolo3(targets, anchors_obj, num_anc=(3, 3, 3), num_class=20, device=None):
+    '''
+
+    :param targets:
+    :param anchors_obj:
+    :param num_anc: 只支持每层相同的anc数
+    :param num_class:
+    :param device:
+    :return:
+    '''
+    batch = len(targets)
+    # 层索引
+    num_ceng = np.array(anchors_obj.feature_sizes).prod(axis=1)
+
+    # 匹配完成的数据
+    _num_total = sum(num_ceng * num_anc)
+    _dim = 4 + 1 + num_class
+    target_yolo = torch.empty(batch, _num_total, _dim).to(device)
+
+    # 分批处理
+    for i in range(batch):
+        target = targets[i]
+        # 只能一个个的处理
+        boxes = target['boxes'].to(device)
+        labels = target['labels'].to(device)
+        boxes_xywh = ltrb2xywh(boxes)
+
+        _n = np.array(num_anc).sum()  # anc总和数
+        # 每个bbox重复9次
+        p1 = boxes_xywh.repeat_interleave(_n, dim=0)  # 单体复制 3,4 -> 6,4
+        # 每套尺寸有三个anc 整体复制3,2 ->6,2
+        _n = boxes_xywh.shape[0] * num_anc[0]  # 只支持每层相同的anc数
+        p2 = torch.tensor(np.array(anchors_obj.feature_sizes), dtype=torch.float32).repeat(_n, 1)  # 整体复制
+        # colrow_index 每一个bbox 对应的的3种尺寸的3个anc 共9个 的wh 和索引
+        # tensor([[33, 25], 大特图 有可能有多个批
+        #         [16, 12], 中特图
+        #         [ 8,  6], 小特图
+        #         [33, 25],
+        #         [16, 12],
+        #         [ 8,  6],
+        #         [33, 25],
+        #         [16, 12],
+        #         [ 8,  6]], dtype=torch.int16)
+        offxy_xy, colrow_index = xy2offxy(p1[:, :2], p2)  # 用于最终结果
+
+        # 使用网络求出anc的中心点
+        _ancs_xy = colrow_index / p2
+        _ancs_wh = torch.tensor(anchors_obj.ancs_scale).reshape(-1, 2).repeat(boxes_xywh.shape[0], 1)  # 拉平后整体复制
+        ancs_xywh = torch.cat([_ancs_xy, _ancs_wh], dim=1)
+
+        f_show_iou(ltrb2ltwh(boxes), xywh2ltwh(ancs_xywh))
+
+        ids = torch.tensor([i for i in range(boxes.shape[0])])  # 9个anc 0,1,2 只支持每层相同的anc数
+        _boxes_offset = boxes + ids[:, None]
+        ids_offset = ids.repeat_interleave(sum(num_anc))  # 1,2,3 -> 000 111 222
+        # p1 = xywh2ltrb(p1)  # 匹配的bbox
+        p2 = xywh2ltrb(ancs_xywh)
+
+        iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None])
+        iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_giou=True)
+        iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_diou=True)
+        iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_ciou=True)
+        d = 1
+
     return target
 
 

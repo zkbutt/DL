@@ -9,7 +9,7 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_lossfun import LossYOLO
 from f_tools.fits.f_lr_fun import f_lr_cos
-from f_tools.fun_od.f_anc import Anchors
+from f_tools.fun_od.f_anc import FAnchors
 from object_detection.f_yolov3.process_fun import init_model, data_loader, train_eval
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 
@@ -56,8 +56,12 @@ if __name__ == '__main__':
         # 将给定的最大，最小输入尺寸向下调整到32的整数倍
         grid_min, grid_max = imgsz_min // down_sample, imgsz_max // down_sample
         imgsz_min, imgsz_max = int(grid_min * down_sample), int(grid_max * down_sample)
-        imgsz_train = imgsz_max  # initialize with max size
-        flog.info("输入画像的尺寸范围为[{}, {}]".format(imgsz_min, imgsz_max))
+        sizes_in = []
+        for i in range(imgsz_min, imgsz_max + 1, down_sample):
+            sizes_in.append(i)
+        # imgsz_train = imgsz_max  # initialize with max size
+        # img_size = random.randrange(grid_min, grid_max + 1) * gs
+        flog.info("输入画像的尺寸范围为[{}, {}] 可选尺寸为{}".format(imgsz_min, imgsz_max, sizes_in))
 
     '''------------------模型定义---------------------'''
     model = init_model(CFG)
@@ -65,9 +69,10 @@ if __name__ == '__main__':
     model.to(device)  # 这个不需要加等号
     model.train()
 
-    anchors = Anchors(CFG.IMAGE_SIZE, CFG.ANCHORS_SIZE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP).get_anchors()
-    anchors = anchors.to(device)
-    losser = LossYOLO(anchors, CFG.LOSS_WEIGHT, CFG.NEGATIVE_RATIO, cfg=CFG)
+    anc_obj = FAnchors(CFG.IMAGE_SIZE, CFG.ANC_SCALE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP, device=device)
+    # anchors = anchors.to(device)
+    # losser = LossYOLO(anchors, CFG.LOSS_WEIGHT, CFG.NEGATIVE_RATIO, cfg=CFG)
+    losser = LossYOLO()
 
     '''对模型进行冻结定义, 取出需要优化的的参数'''
     # if epoch < 5:
@@ -93,7 +98,7 @@ if __name__ == '__main__':
 
     flog.debug('---训练开始---epoch %s', start_epoch + 1)
     # 有些参数可通过模型来携带  model.nc = nc
-    train_eval(CFG, start_epoch, model, anchors, losser, optimizer, lr_scheduler,
+    train_eval(CFG, start_epoch, model, anc_obj, losser, optimizer, lr_scheduler,
                loader_train=loader_train, loader_val=loader_val, device=device,
                )
 

@@ -1,6 +1,50 @@
+import torch
 import torch.nn as nn
 from torchvision.models import _utils
 from collections import OrderedDict
+
+'''-----------------模型方法区-----------------------'''
+
+
+def init_weights(model):
+    for m in model.modules():
+        t = type(m)
+        if t is nn.Conv2d:
+            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        elif t is nn.BatchNorm2d:
+            m.eps = 1e-4
+            m.momentum = 0.03
+        elif t in [nn.LeakyReLU, nn.ReLU, nn.ReLU6]:
+            m.inplace = True
+
+
+'''-----------------模型层区-----------------------'''
+
+
+class Flatten(nn.Module):
+    # Use after nn.AdaptiveAvgPool2d(1) to remove last 2 dimensions
+    def forward(self, x):
+        return x.view(x.size(0), -1)
+
+
+class Concat(nn.Module):
+    # Concatenate a list of tensors along dimension
+    def __init__(self, dimension=1):
+        super(Concat, self).__init__()
+        self.d = dimension
+
+    def forward(self, x):
+        return torch.cat(x, self.d)
+
+
+class FeatureConcat(nn.Module):
+    def __init__(self, layers):
+        super(FeatureConcat, self).__init__()
+        self.layers = layers  # layer indices
+        self.multiple = len(layers) > 1  # multiple layers flag
+
+    def forward(self, x, outputs):
+        return torch.cat([outputs[i] for i in self.layers], 1) if self.multiple else outputs[self.layers[0]]
 
 
 class Output4Densenet(nn.Module):
@@ -46,3 +90,6 @@ class Output4Return(nn.Module):
         out = self.layer_out(inputs)
         out = list(out.values())
         return out
+
+
+'''-----------------模型层区-----------------------'''

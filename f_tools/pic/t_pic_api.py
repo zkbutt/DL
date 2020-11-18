@@ -59,7 +59,7 @@ def f转换():
     print(img_pil.size)  # w,h
 
     # ---------PIL2numpy---------
-    img_np = np.array(img_pil,cv2.COLOR_RGB2BGR)
+    img_np = np.array(img_pil, cv2.COLOR_RGB2BGR)
 
     # ---------ts2numpy---------
     img_pil = transforms.ToPILImage()(img_ts)
@@ -68,4 +68,9 @@ def f转换():
 
 if __name__ == '__main__':
     # f转换()
+    file_img = r'D:\tb\tb\ai_code\DL\_test_pic\2007_000042.jpg'  # 500 335
+    img_pil = Image.open(file_img).convert('RGB') #
+    img_tensor = F.to_tensor(img_pil)  # c,h,w == c,row,col
+    print(img_tensor.shape)
+    print(img_pil.size)
     pass

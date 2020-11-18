@@ -45,7 +45,7 @@ def translate_boxes(boxes):
     return np.delete(new_boxes, [0, 1], axis=1)
 
 
-def kmeans(boxes, k, dist=np.median, seed=1):
+def kmeans(boxes, k, dist=np.median, seed=None):
     """
     Calculates k-means clustering with the Intersection over Union (IoU) metric.
     :param boxes: numpy array of shape (r, 2), where r is the number of rows
@@ -58,7 +58,8 @@ def kmeans(boxes, k, dist=np.median, seed=1):
     distances = np.empty((rows, k))
     last_clusters = np.zeros((rows,))
 
-    np.random.seed(seed)
+    if seed is not None:
+        np.random.seed(seed)
 
     # the Forgy method will fail if the whole array contains the same rows
     clusters = boxes[np.random.choice(rows, k, replace=False)]

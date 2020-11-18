@@ -3,32 +3,29 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms
+from f_tools.fits.f_fit_fun import FitBase
+from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms, boxes2yolo, \
+    match4yolo3
 from f_tools.pic.f_show import show_anc4ts
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
+import numpy as np
 
 
-def _preprocessing_data(batch_data, device):
+def _preprocessing_data(batch_data, device, anchors_obj, cfg):
     '''
-    cpu转gpu 输入模型前数据处理方法 定制
+    使用GPU处理
     :param batch_data:
     :param device:
-    :return: 转GPU的数据
+    :param feature_sizes:
+    :param cfg:
+    :return:
+        torch.Size([5, 10647, 25])
     '''
     images, targets = batch_data
     images = images.to(device)
-    for target in targets:
-        target['boxes'] = target['boxes'].to(device)
-        target['labels'] = target['labels'].to(device)
-        target['height_width'] = target['height_width'].to(device)
-    return images, targets
 
-
-class FitBase(torch.nn.Module):
-    def __init__(self, model, device):
-        super(FitBase, self).__init__()
-        self.model = model
-        self.device = device
+    target_yolo = match4yolo3(targets, anchors_obj=anchors_obj,num_anc=cfg.NUMS_ANC, num_class=cfg.NUM_CLASSES, device=device)
+    return images, target_yolo
 
 
 class LossHandler(FitBase):
@@ -36,50 +33,34 @@ class LossHandler(FitBase):
     前向和反向 loss过程函数
     '''
 
-    def __init__(self, model, device, anchors, losser, neg_iou_threshold):
+    def __init__(self, model, device, anc_obj, losser, cfg):
         super(LossHandler, self).__init__(model, device)
-        self.anchors = anchors
+        self.anc_obj = anc_obj
         self.losser = losser
-        self.neg_iou_threshold = neg_iou_threshold
+        self.cfg = cfg
 
     def forward(self, batch_data):
-        '''
-
-        :param batch_data: tuple(images,targets)
-            images:tensor(batch,c,h,w)
-            list( # batch个
-                target: dict{
-                        image_id: int,
-                        bboxs: np(num_anns, 4), ltrb ltrb ltrb ltrb
-                        labels: np(num_anns),
-                        keypoints: np(num_anns,10),
-                    }
-                )
-        :return:
-            loss_total: 这个用于优化
-            show_dict:  log_dict
-        '''
         # -----------------------输入模型前的数据处理 开始------------------------
-        images, targets = _preprocessing_data(batch_data, self.device)
-        # if CFG.IS_VISUAL:
-        #     flog.debug('查看模型输入和anc %s', )
-        #     for img_ts, target in zip(images, targets):
-        #         # 遍历降维
-        #         _t = torch.cat([target['boxes'], target['keypoints']], dim=1)
-        #         _t[:, ::2] = _t[:, ::2] * CFG.IMAGE_SIZE[0]
-        #         _t[:, 1::2] = _t[:, 1::2] * CFG.IMAGE_SIZE[1]
-        #         show_od_keypoints4ts(img_ts, _t[:, :4], _t[:, 4:14], target['labels'])
-        #
-        #         _t = self.anchors.view(-1, 4).clone()
-        #         _t[:, ::2] = _t[:, ::2] * CFG.IMAGE_SIZE[0]
-        #         _t[:, 1::2] = _t[:, 1::2] * CFG.IMAGE_SIZE[1]
-        #         show_od4ts(img_ts, xywh2ltrb(_t)[:999, :], torch.ones(200))
-
+        # targets torch.Size([5, 10647, 26])
+        images, targets = _preprocessing_data(batch_data, self.device,
+                                              self.anc_obj, self.cfg)
         # -----------------------输入模型前的数据处理 完成------------------------
-        '''
-        模型输出 torch.Size([5, 10647, 25]) 4+1+20
-        '''
+        # 模型输出 torch.Size([5, 10647, 25])
         out = self.model(images)
+
+        '''-----------------------------寻找正例匹配-----------------------'''
+        # ------------修复每批的 type_index 使批的GT id都不一样------------------
+        batch = len(targets)
+        batch_len = targets.shape[1]
+        # 使用 300 作偏移  一张图不会超过 300 个GT
+        batch_offset = 300 * np.array([range(batch)], dtype=np.float32)
+        # 单体复制 构造同维  5 -> 00..11..22.. -> batch,10647
+        batch_offset_index = batch_offset.repeat(batch_len).reshape(batch, batch_len, 1)
+        mask_match = targets[:, :, -1:] > 0
+        targets[:, :, -1:][mask_match] = targets[:, :, -1:][mask_match] + batch_offset_index[mask_match]
+
+        # 计算IOU
+
         p_bboxs_xywh = out[:, :, :4]  # torch.Size([5, 10647, 4])
         # sigmoid = torch.sigmoid(out[:, :, 4:])
         # p_conf = sigmoid[:, :, 0]
@@ -89,9 +70,9 @@ class LossHandler(FitBase):
 
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
         num_batch = images.shape[0]
-        num_ancs = self.anchors.shape[0]
+        num_ancs = self.anc_obj.ancs.shape[0]
 
-        mg_bboxs_ltrb = torch.Tensor(*p_bboxs_xywh.shape).to(images)  # torch.Size([batch, 16800, 4])
+        mg_bboxs_ltrb = torch.Tensor(*p_bboxs_xywh.shape).to(images)
         mg_labels = torch.Tensor(num_batch, num_ancs, device=images.device).type(torch.int64)  # 计算损失只会存在一维 无论多少类 标签只有一类
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
         for index in range(num_batch):
@@ -103,7 +84,7 @@ class LossHandler(FitBase):
             label_neg_mask: 反例的  布尔 torch.Size([16800]) 一维
             anc_bbox_ind : 正例对应的 g_bbox 的index  torch.Size([16800]) 一维
             '''
-            label_neg_mask, anc_bbox_ind = pos_match(self.anchors, g_bboxs, self.neg_iou_threshold)
+            label_neg_mask, anc_bbox_ind = pos_match(self.anc_obj, g_bboxs, self.neg_iou_threshold)
 
             # new_anchors = anchors.clone().detach() # 深复制
             # 将bbox取出替换anc对应位置 ,根据 bboxs 索引list 将bboxs取出与anc 形成维度对齐 便于后面与anc修复算最终偏差 ->[anc个,4]

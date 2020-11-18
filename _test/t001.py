@@ -36,36 +36,14 @@ if __name__ == '__main__':
     '''
     usage: t001.py [-h] [--name NAME] -f FAMILY t4 integers [integers ...]
     '''
-    # box = '11.01,11.02,11.03,11.05'
-    # split = box.split(',')
-    # # print(map(int, split))
-    # print(list(map(int, map(float, split))))
-    print(glob.glob('*.py'))
-    # parser = argparse.ArgumentParser(description='命令行中传入一个数字')
-    # parser.add_argument('t4', type=str, help='传入数字')  # 必须填
-    # parser.add_argument('integers', type=str, nargs='+', help='传入数字')  # 至少传一个
-    # parser.add_argument('--name', type=str, help='传入姓名', )  # --表示可选参数, required必填
-    # parser.add_argument('-f', '--family', default='张三的家', type=str, help='传入姓名', required=True)  # --表示可选参数
-    # args = parser.parse_args()
-    # print(args)
-    # print(args.integers)
-    # print(args.name)
-    # print(args.family)
-    # r = range(3, 6)
-    # for i in r:
-    #     print(i)
-    # print(sys.float_info.min)
+    a = torch.arange(0, 4).reshape(2, 2)
+    b = torch.arange(0, 6).reshape(3, 2)
 
-    print(random.randint(1,3))
-    # a = np.arange(1, 5).reshape(2, 2)
-    # print(a)
-    # print(np.repeat(a, 2))
-    # print(np.repeat(a, 2, axis=0))
-    # print(np.repeat(a, 2, axis=1))  # 看着个体
-    # print(np.concatenate([a, a], axis=0))  # 看着整体扩展,默认为 axis=0
-    # print(np.concatenate([a, a], axis=1))  # 看着整体
-    # b = torch.tensor(a)
-    # print(b.repeat(1, 2))  # 看着整体扩展
-    # print(torch.cat([b, b], dim=0))  # 与上面等价,看着整体扩展 默认为 dim=0
-    # print(torch.cat([b, b], dim=1))  # 与上面等价,看着整体扩展
-    # print(torch.cat([b[:, :1].repeat(1, 2), b[:, 1:2].repeat(1, 3)], dim=1))  # 交替扩展
+    # 2,1,2 *** 3,2 -> 2,3,2  交叉运算
+    none_b = a[:, None, :] - b
+
+    print(none_b)
+    torch_pow = torch.pow(none_b, 2)
+    print(torch.sum(torch_pow, dim=-1))
+
+    print(none_b.shape)

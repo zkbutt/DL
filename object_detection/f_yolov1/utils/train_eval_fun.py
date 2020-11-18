@@ -3,8 +3,7 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms, boxes2yolo, \
-    fix_bbox4yolo1
+from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints, nms, batched_nms, boxes2yolo
 from f_tools.pic.f_show import show_bbox_keypoints4ts, show_bbox4ts, show_anc4ts
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
 
@@ -248,7 +247,7 @@ def predicting4many(self, images):
     p_scores = torch.nn.functional.softmax(p_conf, dim=-1)
     p_scores = p_scores[:, :, 1]
     # ---修复----variances = (0.1, 0.2)
-    p_boxes = fix_bbox(self.anchors, p_loc)
+    p_boxes = fix_bbox(self.anc_obj, p_loc)
     xywh2ltrb(p_boxes, safe=False)
     # (batch个) -> (batch,1) -> (batch, xx) 从1开始有利于批量nms
     idxs = torch.arange(1, p_boxes.shape[0] + 1, device=self.device)

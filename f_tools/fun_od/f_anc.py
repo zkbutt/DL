@@ -506,11 +506,12 @@ class AnchorsFound(object):
 
 
 class Anchors():
-    def __init__(self, image_size, anchors_size, feature_size_steps, anchors_clip=False):
+    def __init__(self, image_size, anchors_size, feature_size_steps, anchors_clip=False,
+                 is_xymid=True, is_real_size=False):
         '''
-        没有长宽比就是个正方形
+        没有长宽比就是个正方形 用于已知图片
         :param image_size:  原图预处理后尺寸 w,h
-        :param anchors_size:每一个特图对应的每一种特图的尺寸
+        :param anchors_size:每一个特图对应的预测的尺寸, 训练集归一化聚9类 * 统一的输入尺寸而得
              ANCHORS_SIZE = [
                 [[116, 90], [156, 198], [373, 326]],  # 小特图大目标 13x13
                 [[30, 61], [62, 45], [59, 119]], # 26, 26
@@ -521,6 +522,8 @@ class Anchors():
         '''
         self.anchors_clip = anchors_clip  # 是否剔除超边界---超参
         self.anchors_size = anchors_size
+        self.is_real_size = is_real_size  # 以 anchors_size 的真实尺寸输出 非归一化
+        self.is_xymid = is_xymid  # 是否将anc中心点移到格子中间
         # 特征层对应的步距   [8, 16, 32] 原图size/特图size = images/feature_maps = steps
         self.feature_size_steps = feature_size_steps  # 这个定义特图下采样比例
 
@@ -539,29 +542,111 @@ class Anchors():
             这里是 x,y,w,h 调整系数
         '''
         anchors = []
-        # 为每一个特图 生成
+        # 遍历每一个特图
         for i, feature_size in enumerate(self.feature_sizes):
             # 取出 每一个特图对应的 Anchors 的尺寸组 [[116, 90], [156, 198], [373, 326]]
             ancs_szie = self.anchors_size[i]
             # 每个网格点2个先验框，都是正方形
             from itertools import product as product
-            # 取每一个特图的w,h   ,进行笛卡尔积循环 相当于行列坐标
+            # 取每一个特图的w,h   ,进行笛卡尔积循环 相当于行列坐标   外遍历x  遍历y  anc向下铺?
             for xw, yh in product(range(feature_size[0]), range(feature_size[1])):
-                for anc_size in ancs_szie:
+                for anc_size in ancs_szie:  # 遍历三个尺寸
                     scale_x = anc_size[0] / self.image_size[0]  # anc -> 特图的映射
                     scale_y = anc_size[1] / self.image_size[1]
                     # self.steps = [8, 16, 32]
                     # 加0.5是将中间点从左上角调整到格子的中间
-                    dense_cx = [x * self.feature_size_steps[i] / self.image_size[0] for x in [xw + 0.5]]
-                    dense_cy = [y * self.feature_size_steps[i] / self.image_size[1] for y in [yh + 0.5]]
+                    if self.is_xymid:
+                        dense_cx = [x * self.feature_size_steps[i] / self.image_size[0] for x in [xw + 0.5]]
+                        dense_cy = [y * self.feature_size_steps[i] / self.image_size[1] for y in [yh + 0.5]]
+                    else:
+                        dense_cx = [x * self.feature_size_steps[i] / self.image_size[0] for x in [xw]]
+                        dense_cy = [y * self.feature_size_steps[i] / self.image_size[1] for y in [yh]]
                     for cy, cx in product(dense_cy, dense_cx):
                         anchors += [cx, cy, scale_x, scale_y]  # x,y,w,h 特图的每一个点对应原图的比例
-            # 最终形成的 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数
-            # 需乘个size才能得到具体的框
+            # 最终形成的 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 归一化调整系数 需乘个size才能得到具体的框
+            # 形成的顺序是 每一个特图->每个格子(竖向填充)->每一个尺寸
 
         output = torch.Tensor(anchors).view(-1, 4)
         if self.anchors_clip:
             output.clamp_(max=1, min=0)  # 去除超边际的
+        if self.is_real_size:
+            output = output * torch.tensor(self.image_size)[None].repeat(1, 2)
+        return output  # torch.Size([10647, 4])
+
+
+class FAnchors:
+    def __init__(self, img_in_size, anc_scale, feature_size_steps, anchors_clip=True,
+                 is_xymid=False, is_real_size=False, device=None):
+        '''
+        用于动态anc
+        :param img_in_size: 
+        :param anc_scale: 
+            ANCHORS_SIZE = [
+                [[0.13, 0.10666667], [0.06, 0.15733333], [0.036, 0.06006006], ],
+                [[0.196, 0.51466667], [0.29, 0.28], [0.12, 0.28], ],
+                [[0.81786211, 0.872], [0.374, 0.72266667], [0.612, 0.452], ],
+            ]
+        :param feature_size_steps: 
+        :param anchors_clip: 
+        :param is_xymid: 
+        :param is_real_size: 
+        '''
+        self.anchors_clip = anchors_clip  # 是否剔除超边界---超参
+        self.ancs_scale = anc_scale
+        self.is_real_size = is_real_size  # 以 anchors_size 的真实尺寸输出 非归一化
+        self.is_xymid = is_xymid  # 是否将anc中心点移到格子中间
+        # 特征层对应的步距   [8, 16, 32] 原图size/特图size = images/feature_maps = steps
+        self.feature_size_steps = feature_size_steps  # 这个定义特图下采样比例
+
+        self.img_in_size = img_in_size
+        # 根据预处理后的尺寸及步距 计算每一个特图的尺寸
+        from math import ceil
+        # 根据预处理图片及下采倍数，计算特图尺寸 <class 'list'>: [[52, 52], [26, 26], [13, 13]] (w,h)
+        self.feature_sizes = [[ceil(self.img_in_size[0] / step), ceil(self.img_in_size[1] / step)]
+                              for step in self.feature_size_steps]
+        self.device = device
+        self.ancs = self.cre_anchors()
+
+    def cre_anchors(self):
+        '''
+        形成的顺序是 每一个特图->每个格子(行优先) 建议从小到大 需与模型匹配 ->每一个尺寸
+        :return:
+            返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框
+            这里是 x,y,w,h 调整系数
+        '''
+        anchors = []
+        # 遍历每一个特图
+        for i, feature_size in enumerate(self.feature_sizes):
+            # 取出 每一个特图对应的 Anchors 的尺寸组 [[116, 90], [156, 198], [373, 326]]
+            feature_ancs_scale = self.ancs_scale[i]
+            # 每个网格点2个先验框，都是正方形
+            from itertools import product as product
+            # 取每一个特图的w,h   ,进行笛卡尔积循环 相当于行列坐标   外遍历x  遍历y  anc向下铺?
+            for dim0, dim1 in product(range(feature_size[1]), range(feature_size[0])):
+                # 这里的 row 对y,col对x
+                for anc_scale in feature_ancs_scale:  # 遍历三个尺寸
+                    scale_x = anc_scale[0]
+                    scale_y = anc_scale[1]
+                    # self.steps = [8, 16, 32]
+                    # 加0.5是将中间点从左上角调整到格子的中间
+                    if self.is_xymid:
+                        px = [x * self.feature_size_steps[i] / self.img_in_size[0] for x in [dim1 + 0.5]]
+                        py = [y * self.feature_size_steps[i] / self.img_in_size[1] for y in [dim0 + 0.5]]
+                    else:
+                        px = [x * self.feature_size_steps[i] / self.img_in_size[0] for x in [dim1]]
+                        py = [y * self.feature_size_steps[i] / self.img_in_size[1] for y in [dim0]]
+                    for cy, cx in product(py, px):
+                        anchors += [cx, cy, scale_x, scale_y]  # x,y,w,h 特图的每一个点对应原图的比例
+            # 最终形成的 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 归一化调整系数 需乘个size才能得到具体的框
+            # 形成的顺序是 每一个特图->每个格子(竖向填充) 建议从小到大 需与模型匹配 ->每一个尺寸
+
+        output = torch.Tensor(anchors).view(-1, 4)
+        if self.anchors_clip:  # 对于xywh 来说这个参数 是没有用的
+            output.clamp_(max=1, min=0)  # 去除超边际的
+        if self.is_real_size:
+            output = output * torch.tensor(self.img_in_size)[None].repeat(1, 2)
+        if self.device is not None:
+            output = output.to(self.device)
         return output  # torch.Size([10647, 4])
 
 
@@ -697,19 +782,28 @@ if __name__ == '__main__':
     # __t_anc4found()
     size = [416, 416]
     anchors_size = [
-        [[116, 90], [156, 198], [373, 326]],  # 小特图大目标 13x13
-        [[30, 61], [62, 45], [59, 119]],  # 26, 26
         [[10, 13], [16, 30], [33, 23]],  # 大特图小目标 52, 52
+        [[30, 61], [62, 45], [59, 119]],  # 26, 26
+        [[116, 90], [156, 198], [373, 326]],  # 小特图大目标 13x13
     ]
     feature_map_steps = [8, 16, 32]
-    anchors = Anchors(size, anchors_size, feature_map_steps).get_anchors()  # torch.Size([16800, 4])
+    # anchors = Anchors(size, anchors_size, feature_map_steps,
+    #                   is_xymid=False, is_real_size=True, anchors_clip=False).get_anchors()  # torch.Size([10647, 4]
+
+    anc_scale = [
+        [[0.13, 0.10666667], [0.06, 0.15733333], [0.036, 0.06006006], ],
+        [[0.196, 0.51466667], [0.29, 0.28], [0.12, 0.28], ],
+        [[0.81786211, 0.872], [0.374, 0.72266667], [0.612, 0.452], ],
+    ]
+    anchors = FAnchors(size, anc_scale, feature_map_steps,
+                       anchors_clip=True, is_xymid=False, is_real_size=True).cre_anchors()  # torch.Size([10647, 4])
     index_start = 0
-    len = 6
+    len = 30
     anchors = anchors[index_start:index_start + len]  # 这里选出 anchors
     # --------------anchors 转换画图--------------
     __anchors = anchors.clone()
-    __anchors[:, [0, 2]] = __anchors[:, [0, 2]] * size[0]
-    __anchors[:, [1, 3]] = __anchors[:, [1, 3]] * size[1]
+    # __anchors[:, [0, 2]] = __anchors[:, [0, 2]] * size[0]
+    # __anchors[:, [1, 3]] = __anchors[:, [1, 3]] * size[1]
     # xywh --> ltwh 为了plt.Rectangle
     __anchors[:, :2] = __anchors[:, :2] - __anchors[:, 2:] / 2.
     import matplotlib.pyplot as plt

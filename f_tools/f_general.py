@@ -94,7 +94,6 @@ def mkdir(path):
         if e.errno != errno.EEXIST:
             raise
 
-
 '''------------初始化对象------------'''
 
 if __name__ == "__main__":

@@ -69,9 +69,7 @@ def init_model(cfg):
     model = Output4Return(model, return_layers)
     dims_out = [256, 512, 1024]
 
-    nums_anc = [3, 3, 3]
-    num_classes = 20
-    model = YoloV3SPP(model, nums_anc, num_classes, dims_out, is_spp=True)
+    model = YoloV3SPP(model, cfg.NUMS_ANC, cfg.NUM_CLASSES, dims_out, is_spp=True)
 
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'darknet53'
     # ------------------------自定义backbone完成-------------------------------
@@ -158,7 +156,7 @@ def data_loader(cfg, device):
     return loader_train, loader_val
 
 
-def train_eval(cfg, start_epoch, model, anchors, losser, optimizer, lr_scheduler=None,
+def train_eval(cfg, start_epoch, model, anc_obj, losser, optimizer, lr_scheduler=None,
                loader_train=None, loader_val=None, device=torch.device('cpu'), ):
     # 返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数l
     # 特图的步距
@@ -168,7 +166,7 @@ def train_eval(cfg, start_epoch, model, anchors, losser, optimizer, lr_scheduler
     for epoch in range(start_epoch, cfg.END_EPOCH):
 
         if cfg.IS_TRAIN:
-            process = LossHandler(model, device, anchors, losser, cfg.NEG_IOU_THRESHOLD)
+            process = LossHandler(model, device, anc_obj, losser, cfg)
 
             flog.info('训练开始 %s', epoch + 1)
             loss = f_train_one_epoch(data_loader=loader_train, loss_process=process, optimizer=optimizer,
@@ -193,7 +191,7 @@ def train_eval(cfg, start_epoch, model, anchors, losser, optimizer, lr_scheduler
         '''------------------模型验证---------------------'''
         if cfg.IS_EVAL:
             flog.info('验证开始 %s', epoch + 1)
-            predict_handler = PredictHandler(model, device, anchors,
+            predict_handler = PredictHandler(model, device, anc_obj,
                                              threshold_conf=0.5, threshold_nms=0.3)
             res_eval = []
             f_evaluate(

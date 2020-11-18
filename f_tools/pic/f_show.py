@@ -278,3 +278,27 @@ def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, 
             draw.text((left + margin, text_bottom - text_height - margin),
                       show_text, fill=color, font=font)
     img_pil_copy.show()
+
+
+def f_show_iou(box1, box2):
+    '''
+    归一化的 BBOX
+    :param box1:
+    :param box2:
+    :return:
+    '''
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    plt.ylim(0, 1)
+    plt.xlim(0, 1)
+    ax.invert_yaxis()  # y轴反向 否则是反的
+    # plt.scatter(ww.reshape(-1), hh.reshape(-1))
+    for b in box1:
+        plt.text(b[0], b[1], 'GT', color='r')
+        _rect = plt.Rectangle((b[0], b[1]), b[2], b[3], color='r', fill=False)
+        ax.add_patch(_rect)
+    for i, b in enumerate(box2):
+        plt.text(b[0], b[1], 'P%s' % i, color=STANDARD_COLORS[i])
+        _rect = plt.Rectangle((b[0], b[1]), b[2], b[3], color=STANDARD_COLORS[i], fill=False)
+        ax.add_patch(_rect)
+    plt.show()
