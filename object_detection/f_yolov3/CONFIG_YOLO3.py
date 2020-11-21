@@ -19,7 +19,7 @@ class CFG:
     IS_VISUAL_PRETREATMENT = False  # 图片预处理
 
     '''EVAL---MAP运算'''
-    IS_EVAL = True  # 判断个文件夹 防误操作
+    IS_EVAL = False  # 判断个文件夹 防误操作
     IS_RUN_ONE = True
     # PATH_DT_ROOT = r'M:\AI\datas\widerface\val' # 不能在CPU上弄
     PATH_DT_ROOT = '/home/win10_sys/AI/datas/widerface/val'
@@ -66,5 +66,6 @@ class CFG:
 if __name__ == '__main__':
     import numpy as np
 
-    array = np.array(CFG.ANCHORS_SIZE)
+    array = np.array(CFG.ANC_SCALE)
+    print(array*416)
 

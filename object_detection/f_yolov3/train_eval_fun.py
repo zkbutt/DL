@@ -8,7 +8,6 @@ from f_tools.fun_od.f_boxes import pos_match, xywh2ltrb, fix_bbox, fix_keypoints
     match4yolo3
 from f_tools.pic.f_show import show_anc4ts
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
-import numpy as np
 
 
 def _preprocessing_data(batch_data, device, anchors_obj, cfg):
@@ -24,8 +23,11 @@ def _preprocessing_data(batch_data, device, anchors_obj, cfg):
     images, targets = batch_data
     images = images.to(device)
 
-    target_yolo = match4yolo3(targets, anchors_obj=anchors_obj,num_anc=cfg.NUMS_ANC, num_class=cfg.NUM_CLASSES, device=device)
-    return images, target_yolo
+    targets_yolo = match4yolo3(targets, anchors_obj=anchors_obj,
+                              nums_anc=cfg.NUMS_ANC,
+                              num_class=cfg.NUM_CLASSES,
+                              device=device)
+    return images, targets_yolo
 
 
 class LossHandler(FitBase):
@@ -42,69 +44,19 @@ class LossHandler(FitBase):
     def forward(self, batch_data):
         # -----------------------输入模型前的数据处理 开始------------------------
         # targets torch.Size([5, 10647, 26])
-        images, targets = _preprocessing_data(batch_data, self.device,
+        images, targets_yolo = _preprocessing_data(batch_data, self.device,
                                               self.anc_obj, self.cfg)
         # -----------------------输入模型前的数据处理 完成------------------------
         # 模型输出 torch.Size([5, 10647, 25])
         out = self.model(images)
 
-        '''-----------------------------寻找正例匹配-----------------------'''
-        # ------------修复每批的 type_index 使批的GT id都不一样------------------
-        batch = len(targets)
-        batch_len = targets.shape[1]
-        # 使用 300 作偏移  一张图不会超过 300 个GT
-        batch_offset = 300 * np.array([range(batch)], dtype=np.float32)
-        # 单体复制 构造同维  5 -> 00..11..22.. -> batch,10647
-        batch_offset_index = batch_offset.repeat(batch_len).reshape(batch, batch_len, 1)
-        mask_match = targets[:, :, -1:] > 0
-        targets[:, :, -1:][mask_match] = targets[:, :, -1:][mask_match] + batch_offset_index[mask_match]
-
-        # 计算IOU
-
-        p_bboxs_xywh = out[:, :, :4]  # torch.Size([5, 10647, 4])
-        # sigmoid = torch.sigmoid(out[:, :, 4:])
-        # p_conf = sigmoid[:, :, 0]
-        # p_cls = sigmoid[:, :, 1:]
-        p_conf = out[:, :, 5]  # torch.Size([5, 10647]) 预测的iou值
-        p_cls = out[:, :, 5:]  # torch.Size([5, 10647, 20])
-
         '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
-        num_batch = images.shape[0]
-        num_ancs = self.anc_obj.ancs.shape[0]
 
-        mg_bboxs_ltrb = torch.Tensor(*p_bboxs_xywh.shape).to(images)
-        mg_labels = torch.Tensor(num_batch, num_ancs, device=images.device).type(torch.int64)  # 计算损失只会存在一维 无论多少类 标签只有一类
-        '''---------------------与输出进行维度匹配及类别匹配-------------------------'''
-        for index in range(num_batch):
-            g_bboxs = targets[index]['boxes']  # torch.Size([batch, 4])
-            g_labels = targets[index]['labels']  # torch.Size([batch])
-
-            '''
-            将g_bboxs 进行重构至与 anc的结果一致,并在 g_labels 根据IOU超参,上进行正反例标注
-            label_neg_mask: 反例的  布尔 torch.Size([16800]) 一维
-            anc_bbox_ind : 正例对应的 g_bbox 的index  torch.Size([16800]) 一维
-            '''
-            label_neg_mask, anc_bbox_ind = pos_match(self.anc_obj, g_bboxs, self.neg_iou_threshold)
-
-            # new_anchors = anchors.clone().detach() # 深复制
-            # 将bbox取出替换anc对应位置 ,根据 bboxs 索引list 将bboxs取出与anc 形成维度对齐 便于后面与anc修复算最终偏差 ->[anc个,4]
-            # 只计算正样本的定位损失,将正例对应到bbox标签 用于后续计算anc与bbox的差距
-            match_bboxs = g_bboxs[anc_bbox_ind]
-
-            # 构建正反例label 使原有label保持不变
-            # labels = torch.zeros(num_ancs, dtype=torch.int64)  # 标签默认为同维 类别0为负样本
-            # 正例保持原样 反例置0
-            match_labels = g_labels[anc_bbox_ind]
-            # match_labels[label_neg_mask] = torch.tensor(0).to(labels)
-            match_labels[label_neg_mask] = 0
-            mg_labels[index] = match_labels
-
-            mg_bboxs_ltrb[index] = match_bboxs  # torch.Size([5, 10647])
-        '''---------------------与输出进行维度匹配及类别匹配  完成-------------------------'''
+        '''---------------------与输出进行维度匹配及类别匹配  完成--------------------'''
 
         # ---------------损失计算 ----------------------
         # log_dict用于显示
-        loss_total, log_dict = self.losser(p_bboxs_xywh, mg_bboxs_ltrb, p_cls, mg_labels, imgs_ts=images)
+        loss_total, log_dict = self.losser(out,targets_yolo)
 
         # -----------------构建展示字典及返回值------------------------
         # 多GPU时结果处理 reduce_dict 方法

@@ -38,12 +38,5 @@ if __name__ == '__main__':
     '''
     a = torch.arange(0, 4).reshape(2, 2)
     b = torch.arange(0, 6).reshape(3, 2)
-
-    # 2,1,2 *** 3,2 -> 2,3,2  交叉运算
-    none_b = a[:, None, :] - b
-
-    print(none_b)
-    torch_pow = torch.pow(none_b, 2)
-    print(torch.sum(torch_pow, dim=-1))
-
-    print(none_b.shape)
+    a = [0, 1, 2, 3, 4, 5, 5, 6, 7, 8, 9]
+    a = np.array(a)

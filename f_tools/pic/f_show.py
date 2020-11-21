@@ -289,9 +289,11 @@ def f_show_iou(box1, box2):
     '''
     fig = plt.figure()
     ax = fig.add_subplot(111)
+    # plt.ylim(-0.5, 1.5)
     plt.ylim(0, 1)
     plt.xlim(0, 1)
     ax.invert_yaxis()  # y轴反向 否则是反的
+    plt.grid(linestyle='-.')
     # plt.scatter(ww.reshape(-1), hh.reshape(-1))
     for b in box1:
         plt.text(b[0], b[1], 'GT', color='r')
@@ -302,3 +304,10 @@ def f_show_iou(box1, box2):
         _rect = plt.Rectangle((b[0], b[1]), b[2], b[3], color=STANDARD_COLORS[i], fill=False)
         ax.add_patch(_rect)
     plt.show()
+
+
+if __name__ == '__main__':
+    # PIL
+    image = None
+    draw = ImageDraw.Draw(image)
+    draw.text(text_origin, str(label, 'UTF-8'), fill=(0, 0, 0), font=font)

@@ -7,7 +7,7 @@ from torch import optim
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
-from f_tools.fits.f_lossfun import LossYOLO
+from f_tools.fits.f_lossfun import LossYOLOv3
 from f_tools.fits.f_lr_fun import f_lr_cos
 from f_tools.fun_od.f_anc import FAnchors
 from object_detection.f_yolov3.process_fun import init_model, data_loader, train_eval
@@ -71,8 +71,7 @@ if __name__ == '__main__':
 
     anc_obj = FAnchors(CFG.IMAGE_SIZE, CFG.ANC_SCALE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP, device=device)
     # anchors = anchors.to(device)
-    # losser = LossYOLO(anchors, CFG.LOSS_WEIGHT, CFG.NEGATIVE_RATIO, cfg=CFG)
-    losser = LossYOLO()
+    losser = LossYOLOv3(CFG.NUM_CLASSES,anc_obj.ancs)
 
     '''对模型进行冻结定义, 取出需要优化的的参数'''
     # if epoch < 5:

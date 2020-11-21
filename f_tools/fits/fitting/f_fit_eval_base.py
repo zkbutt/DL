@@ -60,6 +60,7 @@ def f_train_one_base(data_loader, loss_process, optimizer, epoch, end_epoch,
     header = 'Epoch: [{}/{}]'.format(epoch + 1, end_epoch)
 
     # ---半精度训练1---
+    # enable_amp = True if "cuda" in device.type else False
     scaler = GradScaler(enabled=True)
     for i, batch_data in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         if is_mixture_fix:

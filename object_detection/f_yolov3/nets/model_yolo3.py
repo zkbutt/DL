@@ -131,7 +131,8 @@ class YoloV3SPP(nn.Module):
 
         # 自定义数据重装函数 torch.Size([1, 10647, 25])
         outs = self.data_packaging([out1, out2, out3], self.nums_anc)
-        outs = self.sigmoid_out(outs)  # 支持多标签
+        outs[:, :, :2] = self.sigmoid_out(outs[:, :, :2])  # xy归一
+        outs[:, :, 4:] = self.sigmoid_out(outs[:, :, 4:])  # 支持多标签
         '''为每一个特图预测三个尺寸的框,拉平堆叠'''
         return outs
 

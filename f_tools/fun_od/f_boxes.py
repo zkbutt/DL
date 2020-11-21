@@ -359,7 +359,7 @@ def pos_match(ancs, bboxs, criteria):
     return label_neg_mask, anc_bbox_ind
 
 
-def pos_match4yolo(ancs, bboxs, criteria):
+def _ff_pos_match4yolo(ancs, bboxs, criteria):
     '''
     3个anc 一个GT
     :param ancs:  ltrb
@@ -459,71 +459,92 @@ def xy2offxy(p1, p2):
     return offset_xy_wh, colrow_index
 
 
-def match4yolo3(targets, anchors_obj, num_anc=(3, 3, 3), num_class=20, device=None):
+def match4yolo3(targets, anchors_obj, nums_anc=(3, 3, 3), num_class=20, device=None):
     '''
 
     :param targets:
     :param anchors_obj:
-    :param num_anc: 只支持每层相同的anc数
+    :param nums_anc: 只支持每层相同的anc数
     :param num_class:
     :param device:
     :return:
     '''
     batch = len(targets)
     # 层索引
-    num_ceng = np.array(anchors_obj.feature_sizes).prod(axis=1)
+    feature_sizes = np.array(anchors_obj.feature_sizes)
+    num_ceng = feature_sizes.prod(axis=1)
 
     # 匹配完成的数据
-    _num_total = sum(num_ceng * num_anc)
+    _num_total = sum(num_ceng * nums_anc)  # 10647
     _dim = 4 + 1 + num_class
-    target_yolo = torch.empty(batch, _num_total, _dim).to(device)
+    targets_yolo = torch.zeros(batch, _num_total, _dim).to(device)
 
     # 分批处理
     for i in range(batch):
         target = targets[i]
         # 只能一个个的处理
-        boxes = target['boxes'].to(device)
+        boxes = target['boxes'].to(device)  # ltrb
         labels = target['labels'].to(device)
         boxes_xywh = ltrb2xywh(boxes)
 
-        _n = np.array(num_anc).sum()  # anc总和数
-        # 每个bbox重复9次
-        p1 = boxes_xywh.repeat_interleave(_n, dim=0)  # 单体复制 3,4 -> 6,4
+        num_anc = np.array(nums_anc).sum()  # anc总和数
+        # 优先每个bbox重复9次
+        p1 = boxes_xywh.repeat_interleave(num_anc, dim=0)  # 单体复制 3,4 -> 6,4
         # 每套尺寸有三个anc 整体复制3,2 ->6,2
-        _n = boxes_xywh.shape[0] * num_anc[0]  # 只支持每层相同的anc数
-        p2 = torch.tensor(np.array(anchors_obj.feature_sizes), dtype=torch.float32).repeat(_n, 1)  # 整体复制
-        # colrow_index 每一个bbox 对应的的3种尺寸的3个anc 共9个 的wh 和索引
-        # tensor([[33, 25], 大特图 有可能有多个批
-        #         [16, 12], 中特图
-        #         [ 8,  6], 小特图
-        #         [33, 25],
-        #         [16, 12],
-        #         [ 8,  6],
-        #         [33, 25],
-        #         [16, 12],
-        #         [ 8,  6]], dtype=torch.int16)
+        _n = boxes_xywh.shape[0] * nums_anc[0]  # 只支持每层相同的anc数
+        # 每一个bbox对应的9个anc
+        # p2 = torch.tensor(feature_sizes, dtype=torch.float32).repeat(_n, 1)  # 整体复制
+        _feature_sizes = torch.tensor(feature_sizes, dtype=torch.float32)
+        # 单复制-整体复制 只支持每层相同的anc数
+        p2 = _feature_sizes.repeat_interleave(nums_anc[0], dim=0).repeat(boxes_xywh.shape[0], 1)
         offxy_xy, colrow_index = xy2offxy(p1[:, :2], p2)  # 用于最终结果
 
         # 使用网络求出anc的中心点
         _ancs_xy = colrow_index / p2
-        _ancs_wh = torch.tensor(anchors_obj.ancs_scale).reshape(-1, 2).repeat(boxes_xywh.shape[0], 1)  # 拉平后整体复制
+        _ancs_scale = torch.tensor(anchors_obj.ancs_scale)
+        # 大特图对应小目标
+        _ancs_wh = _ancs_scale.reshape(-1, 2).repeat(boxes_xywh.shape[0], 1)  # 拉平后整体复制
         ancs_xywh = torch.cat([_ancs_xy, _ancs_wh], dim=1)
 
-        f_show_iou(ltrb2ltwh(boxes), xywh2ltwh(ancs_xywh))
+        # f_show_iou(ltrb2ltwh(boxes), xywh2ltwh(ancs_xywh))
 
         ids = torch.tensor([i for i in range(boxes.shape[0])])  # 9个anc 0,1,2 只支持每层相同的anc数
-        _boxes_offset = boxes + ids[:, None]
-        ids_offset = ids.repeat_interleave(sum(num_anc))  # 1,2,3 -> 000 111 222
+        _boxes_offset = boxes + ids[:, None]  # boxes加上偏移
+        ids_offset = ids.repeat_interleave(num_anc)  # 1,2,3 -> 000000000 111111111 222222222
         # p1 = xywh2ltrb(p1)  # 匹配的bbox
         p2 = xywh2ltrb(ancs_xywh)
 
-        iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None])
-        iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_giou=True)
-        iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_diou=True)
+        # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None])
+        # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_giou=True)
+        # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_diou=True)
         iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_ciou=True)
-        d = 1
+        # 每一个GT的匹配降序再索引恢复(表示匹配的0~8索引)  15 % anc数9 难 后面的铁定是没有用的
+        iou_sort = torch.argsort(-iou, dim=1) % 9
+        # 获取anc 匹配的最好的特图层索引
+        match_anc_index = torch.true_divide(iou_sort[:, 0], len(nums_anc)).type(torch.int16)  # 只支持每层相同的anc数
+        # 获取
 
-    return target
+        for j in range(iou_sort.shape[0]):  # gt个数
+            _match_anc_index = match_anc_index[j]  # 匹配特图的索引
+            # 只支持每层相同的anc数 和正方形
+            offset_ceng = 0
+            if _match_anc_index > 0:
+                offset_ceng = num_ceng[:_match_anc_index].sum()
+            for k in range(num_anc):  # 若同一格子有9个大小相同的对象则无法匹配
+                k_ = iou_sort[j][k]
+                # 第j个 一定在 j*9 开始的 后面9个之中
+                _row_index = colrow_index[j * num_anc + k_, 1]  # 行
+                _col_index = colrow_index[j * num_anc + k_, 0]  # 列
+                offset_colrow = _row_index * feature_sizes[_match_anc_index][0] + _col_index
+                match_index = (offset_ceng + offset_colrow) * nums_anc[0]  # 只支持每层相同的anc数
+                if targets_yolo[i, match_index + k_, 4] == 0:  # 同一特图一个网格只有一个目标
+                    targets_yolo[i, match_index + k_, 4] = 1
+                    targets_yolo[i, match_index + k_, 0:2] = offxy_xy[j * num_anc + k_]
+                    targets_yolo[i, match_index + k_, 2:4] = boxes_xywh[j, 2:4]
+                    targets_yolo[i, match_index + k_, labels[j] + 5 - 1] = 1  # 独热
+                    break
+                # 取第二大的IOU的与之匹配
+    return targets_yolo
 
 
 if __name__ == '__main__':
