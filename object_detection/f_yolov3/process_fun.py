@@ -5,11 +5,11 @@ from f_pytorch.backbone_t.f_models.darknet import Darknet
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import VOCDataSet
 from f_tools.datas.data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
-    Normalization4TS, Resize
+    Normalization4TS, Resize, ResizeKeep
 from f_tools.f_torch_tools import save_weight
 
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate, f_train_one_epoch2
 from f_tools.fun_od.f_boxes import nms
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 from object_detection.f_yolov3.nets.model_yolo3 import YoloV3SPP
@@ -17,8 +17,8 @@ from object_detection.f_yolov3.train_eval_fun import LossHandler
 
 DATA_TRANSFORM = {
     "train": Compose([
-        # ResizeKeep(CFG.IMAGE_SIZE),
-        Resize(CFG.IMAGE_SIZE),
+        ResizeKeep(CFG.IMAGE_SIZE),
+        # Resize(CFG.IMAGE_SIZE),
         # SSDCroppingPIL(),
         ColorJitter(),
         ToTensor(),
@@ -26,8 +26,8 @@ DATA_TRANSFORM = {
         Normalization4TS(),
     ], CFG),
     "val": Compose([
-        # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
-        Resize(CFG.IMAGE_SIZE),
+        ResizeKeep(CFG.IMAGE_SIZE),  # (h,w)
+        # Resize(CFG.IMAGE_SIZE),
         ToTensor(),
         Normalization4TS(),
     ], CFG)
@@ -114,8 +114,8 @@ def _collate_fn(batch_datas):
     return images, targets
 
 
-def data_loader(cfg, device):
-    loader_train, loader_val = None, None
+def data_loader(cfg, is_mgpu=False):
+    loader_train, loader_val, train_sampler = None, None, None
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
     if cfg.IS_TRAIN:
         dataset_train = VOCDataSet(
@@ -125,16 +125,35 @@ def data_loader(cfg, device):
             bbox2one=False,
             isdebug=cfg.DEBUG
         )
+        if is_mgpu:
+            # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
+            train_sampler = torch.utils.data.distributed.DistributedSampler(dataset_train,
+                                                                            shuffle=True,
+                                                                            seed=20201114,
+                                                                            )
+            # 按定义为每一个 BATCH_SIZE 生成一批的索引
+            train_batch_sampler = torch.utils.data.BatchSampler(train_sampler, cfg.BATCH_SIZE, drop_last=True)
 
-        loader_train = torch.utils.data.DataLoader(
-            dataset_train,
-            batch_size=cfg.BATCH_SIZE,
-            num_workers=cfg.DATA_NUM_WORKERS,
-            shuffle=True,
-            pin_memory=True,  # 不使用虚拟内存 GPU要报错
-            # drop_last=True,  # 除于batch_size余下的数据
-            collate_fn=_collate_fn,
-        )
+            loader_train = torch.utils.data.DataLoader(
+                dataset_train,
+                # batch_size=cfg.BATCH_SIZE,
+                batch_sampler=train_batch_sampler,  # 按样本定义加载
+                num_workers=cfg.DATA_NUM_WORKERS,
+                # shuffle=True,
+                pin_memory=True,  # 不使用虚拟内存 GPU要报错
+                # drop_last=True,  # 除于batch_size余下的数据
+                collate_fn=_collate_fn,
+            )
+        else:
+            loader_train = torch.utils.data.DataLoader(
+                dataset_train,
+                batch_size=cfg.BATCH_SIZE,
+                num_workers=cfg.DATA_NUM_WORKERS,
+                shuffle=True,
+                pin_memory=True,  # 不使用虚拟内存 GPU要报错
+                # drop_last=True,  # 除于batch_size余下的数据
+                collate_fn=_collate_fn,
+            )
 
     # loader_train = Data_Prefetcher(loader_train)
     if cfg.IS_EVAL:
@@ -153,13 +172,13 @@ def data_loader(cfg, device):
         pass
 
     # iter(data_loader).__next__()
-    return loader_train, loader_val
+    return loader_train, loader_val, train_sampler
 
 
 def train_eval(cfg, start_epoch, model, anc_obj, losser, optimizer, lr_scheduler=None,
-               loader_train=None, loader_val=None, device=torch.device('cpu'), ):
-    # 返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框 这里是 x,y,w,h 调整系数l
-    # 特图的步距
+               loader_train=None, loader_val=None, device=torch.device('cpu'),
+               train_sampler=None,
+               ):
     train_loss = []
     learning_rate = []
 
@@ -169,24 +188,16 @@ def train_eval(cfg, start_epoch, model, anc_obj, losser, optimizer, lr_scheduler
             process = LossHandler(model, device, anc_obj, losser, cfg)
 
             flog.info('训练开始 %s', epoch + 1)
-            loss = f_train_one_epoch(data_loader=loader_train, loss_process=process, optimizer=optimizer,
-                                     epoch=epoch, end_epoch=cfg.END_EPOCH, print_freq=cfg.PRINT_FREQ,
-                                     ret_train_loss=train_loss, ret_train_lr=learning_rate,
-                                     is_mixture_fix=cfg.IS_MIXTURE_FIX,
-                                     )
+            loss = f_train_one_epoch2(model=model,
+                                      data_loader=loader_train, loss_process=process, optimizer=optimizer,
+                                      epoch=epoch, cfg=cfg,
+                                      lr_scheduler=None,
+                                      ret_train_loss=train_loss, ret_train_lr=learning_rate,
+                                      train_sampler=train_sampler,
+                                      )
 
             if lr_scheduler is not None:
                 lr_scheduler.step()  # 更新学习
-
-            # 每个epoch保存
-            save_weight(
-                path_save=cfg.PATH_SAVE_WEIGHT,
-                model=model,
-                name=cfg.SAVE_FILE_NAME,
-                loss=loss,
-                optimizer=optimizer,
-                lr_scheduler=lr_scheduler,
-                epoch=epoch)
 
         '''------------------模型验证---------------------'''
         if cfg.IS_EVAL:

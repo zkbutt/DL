@@ -84,6 +84,7 @@ class VOCDataSet(Dataset):
                 box是 ltrb 是否归一化根据参数
         '''
         # ----------解析xml-----------
+        # path_xml = self.xml_list[idx + 307 * 16]
         path_xml = self.xml_list[idx]
         doc = self.parse_xml(path_xml)  # 解析xml
         path_img = os.path.join(os.path.join(self.path_data_root, 'JPEGImages'), doc['annotation']['filename'])

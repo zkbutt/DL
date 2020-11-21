@@ -15,7 +15,7 @@ from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 
 '''
 多尺度训练 multi-scale
-
+ 0:15:02
 
 '''
 
@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
     anc_obj = FAnchors(CFG.IMAGE_SIZE, CFG.ANC_SCALE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP, device=device)
     # anchors = anchors.to(device)
-    losser = LossYOLOv3(CFG.NUM_CLASSES,anc_obj.ancs)
+    losser = LossYOLOv3(CFG.NUM_CLASSES, anc_obj.ancs)
 
     '''对模型进行冻结定义, 取出需要优化的的参数'''
     # if epoch < 5:
@@ -93,11 +93,12 @@ if __name__ == '__main__':
     lr_scheduler = f_lr_cos(optimizer, start_epoch, CFG.END_EPOCH, lrf_scale=0.01)
 
     # '''---------------数据加载及处理--------------'''
-    loader_train, loader_val = data_loader(CFG, device)
+    loader_train, loader_val, _ = data_loader(CFG, is_mgpu=False)
 
     flog.debug('---训练开始---epoch %s', start_epoch + 1)
     # 有些参数可通过模型来携带  model.nc = nc
-    train_eval(CFG, start_epoch, model, anc_obj, losser, optimizer, lr_scheduler,
+    train_eval(cfg=CFG, start_epoch=start_epoch, model=model, anc_obj=anc_obj,
+               losser=losser, optimizer=optimizer, lr_scheduler=lr_scheduler,
                loader_train=loader_train, loader_val=loader_val, device=device,
                )
 

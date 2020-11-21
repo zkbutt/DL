@@ -15,9 +15,9 @@ from object_detection.f_yolov1.utils.process_fun import init_model, train_eval, 
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py
 --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/f_yolov1/train_yolo1_DDP.py
 必须每一个设备的权重是一样的
-开启SYSNC_BN B4 F1 P50 time: 0.7237
-关闭SYSNC_BN B4 F2 P50 time: 0.4948 用时15:42
-关闭SYSNC_BN B5 F2 P50 time: 0.4677 用时13:22  爆内存
+开启 SYSNC_BN B4 F1 P50 time: 0.7237
+关闭 SYSNC_BN B4 F2 P50 time: 0.4948 用时15:42
+关闭 SYSNC_BN B5 F2 P50 time: 0.4677 用时13:22  爆内存
 
 '''
 

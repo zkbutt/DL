@@ -1,4 +1,6 @@
+import argparse
 import math
+import os
 import sys
 import time
 import datetime
@@ -29,10 +31,32 @@ def calc_average_loss(value, log_dict):
         value /= num_gpu
         value = value.detach().item()
         _t = log_dict['loss_total']
-        log_dict['loss_total'] = value
+        log_dict['loss_total'] = value # 变成平均值
         log_dict['loss_g'] = _t
         return value
 
+def mgpu_init():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--local_rank', default=0, type=int, help='node rank for distributed training')
+    args = parser.parse_args()
+
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        args.rank = int(os.environ["RANK"])  # 多机时：当前是第几的个机器  单机时：第几个进程
+        args.world_size = int(os.environ['WORLD_SIZE'])  # 多机时：当前是有几台机器 单机时：总GPU个数
+        args.gpu = int(os.environ['LOCAL_RANK'])  # 多机时：当前GPU序号
+    else:
+        raise Exception('环境变量有问题 %s' % os.environ)
+
+    torch.cuda.set_device(args.local_rank)
+
+    device = torch.device("cuda", args.local_rank)  # 获取显示device
+    torch.distributed.init_process_group(backend="nccl",
+                                         init_method="env://",
+                                         world_size=args.world_size,
+                                         rank=args.rank
+                                         )
+    torch.distributed.barrier()  # 等待所有GPU初始化 初始化完成 629M
+    return args,device
 
 def f_train_one_base(data_loader, loss_process, optimizer, epoch, end_epoch,
                      print_freq=60, lr_scheduler=None,
@@ -141,11 +165,25 @@ def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
     return ret
 
 
-def f_train_one_epoch2(model, loss, data_loader, loss_process, optimizer, epoch, cfg,
+def f_train_one_epoch2(model, data_loader, loss_process, optimizer, epoch, cfg,
                        lr_scheduler=None,
                        ret_train_loss=None, ret_train_lr=None,
                        train_sampler=None,
                        ):
+    '''
+    自动识别多GPU处理
+    :param model:
+    :param data_loader:
+    :param loss_process:
+    :param optimizer:
+    :param epoch:
+    :param cfg:
+    :param lr_scheduler:
+    :param ret_train_loss:
+    :param ret_train_lr:
+    :param train_sampler: 多GPU必传
+    :return:
+    '''
     end_epoch = cfg.END_EPOCH
     print_freq = cfg.PRINT_FREQ
     is_mixture_fix = cfg.IS_MIXTURE_FIX

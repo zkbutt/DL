@@ -228,7 +228,7 @@ def train_eval(cfg, start_epoch, model, losser, optimizer, lr_scheduler=None,
 
             flog.info('训练开始 %s', epoch + 1)
             loss = f_train_one_epoch2(
-                model=model, loss=losser,
+                model=model,
                 data_loader=loader_train, loss_process=process, optimizer=optimizer,
                 epoch=epoch, cfg=cfg,
                 lr_scheduler=None,

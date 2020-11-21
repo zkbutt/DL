@@ -5,14 +5,14 @@ class CFG:
 
     IS_TRAIN = True
     IS_MIXTURE_FIX = True  # 是否采用混合训练
-    PATH_ROOT = 'M:/'
-    # PATH_ROOT = '/home/bak3t/bak299g/'  # 需要尾部加/
+    # PATH_ROOT = 'M:/'
+    PATH_ROOT = '/home/bak3t/bak299g/'  # 需要尾部加/
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
     BATCH_SIZE = 4  # batch过小需要设置连续前传
     FORWARD_COUNT = 2  # 连续前传次数
     PRINT_FREQ = 100  # 每50批打印一次
-    END_EPOCH = 4
+    END_EPOCH = 6
 
     '''EVAL---MAP运算'''
     IS_EVAL = False  # 判断个文件夹 防误操作

@@ -494,22 +494,22 @@ def match4yolo3(targets, anchors_obj, nums_anc=(3, 3, 3), num_class=20, device=N
         _n = boxes_xywh.shape[0] * nums_anc[0]  # 只支持每层相同的anc数
         # 每一个bbox对应的9个anc
         # p2 = torch.tensor(feature_sizes, dtype=torch.float32).repeat(_n, 1)  # 整体复制
-        _feature_sizes = torch.tensor(feature_sizes, dtype=torch.float32)
+        _feature_sizes = torch.tensor(feature_sizes, dtype=torch.float32).to(device)
         # 单复制-整体复制 只支持每层相同的anc数
         p2 = _feature_sizes.repeat_interleave(nums_anc[0], dim=0).repeat(boxes_xywh.shape[0], 1)
         offxy_xy, colrow_index = xy2offxy(p1[:, :2], p2)  # 用于最终结果
 
         # 使用网络求出anc的中心点
         _ancs_xy = colrow_index / p2
-        _ancs_scale = torch.tensor(anchors_obj.ancs_scale)
+        _ancs_scale = torch.tensor(anchors_obj.ancs_scale).to(device)
         # 大特图对应小目标
         _ancs_wh = _ancs_scale.reshape(-1, 2).repeat(boxes_xywh.shape[0], 1)  # 拉平后整体复制
         ancs_xywh = torch.cat([_ancs_xy, _ancs_wh], dim=1)
 
         # f_show_iou(ltrb2ltwh(boxes), xywh2ltwh(ancs_xywh))
 
-        ids = torch.tensor([i for i in range(boxes.shape[0])])  # 9个anc 0,1,2 只支持每层相同的anc数
-        _boxes_offset = boxes + ids[:, None]  # boxes加上偏移
+        ids = torch.tensor([i for i in range(boxes.shape[0])]).to(device)  # 9个anc 0,1,2 只支持每层相同的anc数
+        _boxes_offset = boxes + ids[:, None]  # boxes加上偏移 1,2,3
         ids_offset = ids.repeat_interleave(num_anc)  # 1,2,3 -> 000000000 111111111 222222222
         # p1 = xywh2ltrb(p1)  # 匹配的bbox
         p2 = xywh2ltrb(ancs_xywh)
@@ -521,29 +521,49 @@ def match4yolo3(targets, anchors_obj, nums_anc=(3, 3, 3), num_class=20, device=N
         # 每一个GT的匹配降序再索引恢复(表示匹配的0~8索引)  15 % anc数9 难 后面的铁定是没有用的
         iou_sort = torch.argsort(-iou, dim=1) % 9
         # 获取anc 匹配的最好的特图层索引
-        match_anc_index = torch.true_divide(iou_sort[:, 0], len(nums_anc)).type(torch.int16)  # 只支持每层相同的anc数
+
         # 获取
 
         for j in range(iou_sort.shape[0]):  # gt个数
-            _match_anc_index = match_anc_index[j]  # 匹配特图的索引
-            # 只支持每层相同的anc数 和正方形
-            offset_ceng = 0
-            if _match_anc_index > 0:
-                offset_ceng = num_ceng[:_match_anc_index].sum()
+
             for k in range(num_anc):  # 若同一格子有9个大小相同的对象则无法匹配
+                # 第k个 一定在 num_anc 之中
                 k_ = iou_sort[j][k]
-                # 第j个 一定在 j*9 开始的 后面9个之中
+                # 匹配特图的索引
+                match_anc_index = torch.true_divide(k_, len(nums_anc)).type(torch.int16)  # 只支持每层相同的anc数
+                # _match_anc_index = match_anc_index[j]  # 匹配特图的索引
+                # 只支持每层相同的anc数 和正方形
+                offset_ceng = 0
+                if match_anc_index > 0:
+                    offset_ceng = num_ceng[:match_anc_index].sum()
+                # 取出 anc 对应的列行索引
                 _row_index = colrow_index[j * num_anc + k_, 1]  # 行
                 _col_index = colrow_index[j * num_anc + k_, 0]  # 列
-                offset_colrow = _row_index * feature_sizes[_match_anc_index][0] + _col_index
+                offset_colrow = _row_index * feature_sizes[match_anc_index][0] + _col_index
                 match_index = (offset_ceng + offset_colrow) * nums_anc[0]  # 只支持每层相同的anc数
+                if match_index > _num_total:
+                    flog.error(
+                        '行列偏移索引:%s，最终索引:%s，anc索引:%s,最好的特图层索引:%s,'
+                        'colrow_index:%s,box:%s/%s,当前index%s' % (
+                            offset_colrow.item(),  # 210
+                            match_index.item(),  # 10770超了
+                            iou_sort[:, :9],  # [2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 1]
+                            match_anc_index,  # [2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 1]
+                            colrow_index,  #
+                            j, iou_sort.shape[0],
+                            colrow_index[j * num_anc + k_],
+                        ))
+
                 if targets_yolo[i, match_index + k_, 4] == 0:  # 同一特图一个网格只有一个目标
                     targets_yolo[i, match_index + k_, 4] = 1
                     targets_yolo[i, match_index + k_, 0:2] = offxy_xy[j * num_anc + k_]
                     targets_yolo[i, match_index + k_, 2:4] = boxes_xywh[j, 2:4]
                     targets_yolo[i, match_index + k_, labels[j] + 5 - 1] = 1  # 独热
                     break
-                # 取第二大的IOU的与之匹配
+                else:
+                    # 取第二大的IOU的与之匹配
+                    # flog.info('找到一个重复的')
+                    pass
     return targets_yolo
 
 
