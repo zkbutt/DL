@@ -1,12 +1,7 @@
-import os
 import numpy as np
-import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_pretreatment import Compose, Resize, RandomHorizontalFlip4PIL, ToTensor
-from f_tools.fun_od.f_anc import AnchorsFound
-from f_tools.fun_od.f_boxes import pos_match
-from object_detection.coco_t.coco_api import t_coco_pic
+from f_tools.pic.enhance.data_pretreatment import Compose, Resize, ToTensor
 from object_detection.coco_t.coco_dataset import CocoDataset
 
 if __name__ == '__main__':

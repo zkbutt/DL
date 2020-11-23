@@ -3,7 +3,7 @@ from torchvision import models
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet, VOCDataSet
-from f_tools.datas.data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
+from f_tools.pic.enhance.data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
     Normalization4TS, Resize
 
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr

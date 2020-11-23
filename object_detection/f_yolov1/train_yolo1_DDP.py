@@ -8,6 +8,7 @@ from torch import optim
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_lossfun import LossYOLOv1
+from f_tools.fits.fitting.f_fit_eval_base import mgpu_init
 from object_detection.f_yolov1.CONFIG_YOLO1 import CFG
 from object_detection.f_yolov1.utils.process_fun import init_model, train_eval, data_loader4mgpu
 
@@ -15,9 +16,8 @@ from object_detection.f_yolov1.utils.process_fun import init_model, train_eval, 
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py
 --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/f_yolov1/train_yolo1_DDP.py
 必须每一个设备的权重是一样的
-开启 SYSNC_BN B4 F1 P50 time: 0.7237
-关闭 SYSNC_BN B4 F2 P50 time: 0.4948 用时15:42
-关闭 SYSNC_BN B5 F2 P50 time: 0.4677 用时13:22  爆内存
+多GPU densenet121 B6 F2 P50 time: 0.4930  0:12:00 (0.5051 s / it) 7565MB
+
 
 '''
 
@@ -26,7 +26,7 @@ if __name__ == '__main__':
         raise EnvironmentError("未发现GPU")
 
     CFG.SAVE_FILE_NAME = os.path.basename(__file__)
-    CFG.DATA_NUM_WORKERS = 8
+    CFG.DATA_NUM_WORKERS = 6
     torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
     if CFG.DEBUG:
         raise Exception('调试模式无法使用')
@@ -42,15 +42,7 @@ if __name__ == '__main__':
     else:
         raise Exception('环境变量有问题 %s' % os.environ)
 
-    torch.cuda.set_device(args.local_rank)
-
-    device = torch.device("cuda", args.local_rank)  # 获取显示device
-    torch.distributed.init_process_group(backend="nccl",
-                                         init_method="env://",
-                                         world_size=args.world_size,
-                                         rank=args.rank
-                                         )
-    torch.distributed.barrier()  # 等待所有GPU初始化 初始化完成 629M
+    args, device = mgpu_init()
 
     if args.rank == 0:
         flog.info(args)
@@ -110,6 +102,6 @@ if __name__ == '__main__':
                train_sampler=train_sampler,
                )
 
-    torch.distributed.destroy_process_group()  # 释放进程
+    # torch.distributed.destroy_process_group()  # 释放进程
 
     flog.info('---%s--main执行完成--进程号：%s---- ' % (os.path.basename(__file__), torch.distributed.get_rank()))

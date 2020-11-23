@@ -47,7 +47,7 @@ def x_select_2():
     fen = torch.tensor([94, 55, 99])
     # print(iou)
     # 降维运算 2,3 -> 3    每个学生所得的最高分, 最高分的科目
-    s1, i1 = fen[None].max(dim=1) # 96   1
+    s1, i1 = fen[None].max(dim=1)  # 96   1
     fen[i1] = 999  # 每个科目最好的学生保留  让他的分超过阀值
     # 这f??
     # _ids = torch.arange(0, i2.shape[0], dtype=torch.int64)
@@ -55,7 +55,8 @@ def x_select_2():
     mask = fen > 75
     print(s[mask])  # 选出的人ID
 
-def batch_offset(boxes,idxs):
+
+def batch_offset(boxes, idxs):
     # 根据最大的一个值确定每一类的偏移
     max_coordinate = boxes.max()  # 选出每个框的 坐标最大的一个值
     # idxs 的设备和 boxes 一致 , 真实类别index * (1+最大值) 则确保同类框向 左右平移 实现隔离
@@ -63,6 +64,44 @@ def batch_offset(boxes,idxs):
     # boxes 加上对应层的偏移量后，保证不同类别之间boxes不会有重合的现象
     boxes_for_nms = boxes + offsets[:, None]
 
+
+def x_select_max_num(labels_neg):
+    _, labels_idx = labels_neg.sort(dim=1, descending=True)  # descending 倒序
+    # 得每一个图片batch个 最大值索引排序
+    _, labels_rank = labels_idx.sort(dim=1)  # 两次索引排序 用于取最大的n个布尔索引
+    # 计算每一层的反例数   [batch] -> [batch,1]  限制正样本3倍不能超过负样本的总个数  基本不可能超过总数
+    neg_num = torch.clamp(self.neg_ratio * pos_num, max=mask_pos.size(1)).unsqueeze(-1)
+    mask_neg = labels_rank < neg_num  # 选出最大的n个的mask  Tensor [batch, 8732]
+    # 正例索引 + 反例索引 得1 0 索引用于乘积筛选
+    mask_z = mask_pos.float() + mask_neg.float()
+    loss_labels = (loss_labels * (mask_z)).sum(dim=1)
+
+
+def mershgrid():
+    a = torch.arange(3)
+    b = torch.arange(4)
+    x, y = torch.meshgrid(a, b)  # row=3 col=5
+    '''
+    x ([[0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1],
+        [2, 2, 2, 2, 2]])
+    y ([[0, 1, 2, 3, 4],
+        [0, 1, 2, 3, 4],
+        [0, 1, 2, 3, 4]])
+    '''
+
+    for i in range(3):
+        for j in range(4):
+            print("(", x[i, j], ",", y[i, j], ")")
+
+    # print(torch.stack((x, y), 2))
+    print(torch.stack((x, y), dim=2))  # 升维
+
+
 if __name__ == '__main__':
     # x_select_1()
-    x_select_2()
+    # x_select_2()
+    # mershgrid()
+    a = torch.arange(5)
+    b = torch.arange(5, 10)
+    print(torch.stack([a, b], dim=1))  # 升级连接

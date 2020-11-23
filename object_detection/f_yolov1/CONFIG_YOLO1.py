@@ -9,10 +9,10 @@ class CFG:
     PATH_ROOT = '/home/bak3t/bak299g/'  # 需要尾部加/
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
-    BATCH_SIZE = 4  # batch过小需要设置连续前传
+    BATCH_SIZE = 6  # batch过小需要设置连续前传
     FORWARD_COUNT = 2  # 连续前传次数
     PRINT_FREQ = 100  # 每50批打印一次
-    END_EPOCH = 6
+    END_EPOCH = 10
 
     '''EVAL---MAP运算'''
     IS_EVAL = False  # 判断个文件夹 防误操作
@@ -33,7 +33,7 @@ class CFG:
     '''模型权重'''
     PATH_SAVE_WEIGHT = PATH_ROOT + 'AI/weights/feadre'
     SAVE_FILE_NAME = 'def'  # 预置一个 实际无用 根据文件名确定
-    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_yolo1_DDP.pydensenet121-4_3.0535318851470947.pth'
+    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_yolo1_DDP.pydensenet121-8_34.00654220581055.pth'
     # FILE_FIT_WEIGHT = None
 
     '''Loss参数'''

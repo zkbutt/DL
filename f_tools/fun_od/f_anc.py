@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from f_tools.fun_od.f_boxes import ltrb2xywh, ltrb2ltwh, fix_bbox
+from f_tools.fun_od.f_boxes import ltrb2xywh, ltrb2ltwh, fix_bbox, xywh2ltrb
 
 cor_names = {
     'aliceblue': '#F0F8FF',
@@ -642,7 +642,9 @@ class FAnchors:
 
         output = torch.Tensor(anchors).view(-1, 4)
         if self.anchors_clip:  # 对于xywh 来说这个参数 是没有用的
+            xywh2ltrb(output, safe=False)
             output.clamp_(max=1, min=0)  # 去除超边际的
+            ltrb2xywh(output, safe=False)
         if self.is_real_size:
             output = output * torch.tensor(self.img_in_size)[None].repeat(1, 2)
         if self.device is not None:
@@ -781,11 +783,11 @@ if __name__ == '__main__':
     # __t001()
     # __t_anc4found()
     size = [416, 416]
-    anchors_size = [
-        [[10, 13], [16, 30], [33, 23]],  # 大特图小目标 52, 52
-        [[30, 61], [62, 45], [59, 119]],  # 26, 26
-        [[116, 90], [156, 198], [373, 326]],  # 小特图大目标 13x13
-    ]
+    # anchors_size = [
+    #     [[10, 13], [16, 30], [33, 23]],  # 大特图小目标 52, 52
+    #     [[30, 61], [62, 45], [59, 119]],  # 26, 26
+    #     [[116, 90], [156, 198], [373, 326]],  # 小特图大目标 13x13
+    # ]
     feature_map_steps = [8, 16, 32]
     # anchors = Anchors(size, anchors_size, feature_map_steps,
     #                   is_xymid=False, is_real_size=True, anchors_clip=False).get_anchors()  # torch.Size([10647, 4]
@@ -798,7 +800,7 @@ if __name__ == '__main__':
     anchors = FAnchors(size, anc_scale, feature_map_steps,
                        anchors_clip=True, is_xymid=False, is_real_size=True).cre_anchors()  # torch.Size([10647, 4])
     index_start = 0
-    len = 30
+    len = 9
     anchors = anchors[index_start:index_start + len]  # 这里选出 anchors
     # --------------anchors 转换画图--------------
     __anchors = anchors.clone()

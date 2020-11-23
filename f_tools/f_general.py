@@ -5,11 +5,11 @@ import sys
 import time
 
 import numpy as np
+import torch
 
 
 def rand(a=0., b=1.):
     return np.random.rand() * (b - a) + a
-
 
 def get_path_root():
     debug_vars = dict((a, b) for a, b in os.environ.items() if a.find('IPYTHONENABLE') >= 0)
@@ -94,7 +94,20 @@ def mkdir(path):
         if e.errno != errno.EEXIST:
             raise
 
-'''------------初始化对象------------'''
+
+def labels2onehot4ts(labels, num_class):
+    '''
+
+    :param labels: 类别 index
+    :param num_class:
+    :return:
+    '''
+    batch = labels.shape[0]
+    labels.resize_(batch, 1)  # labels[:,None]
+    zeros = torch.zeros(batch, num_class)
+    onehot = zeros.scatter_(1, labels, 1)  # dim,index,value
+    return onehot
+
 
 if __name__ == "__main__":
     pass

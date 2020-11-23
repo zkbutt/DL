@@ -1,10 +1,10 @@
 class CFG:
-    DEBUG = False
+    DEBUG = True
 
     IS_TRAIN = True
     IS_MIXTURE_FIX = False
-    # PATH_ROOT = 'M:/'
-    PATH_ROOT = '/home/bak3t/bak299g/'  # 需要尾部加/
+    PATH_ROOT = 'M:/'
+    # PATH_ROOT = '/home/bak3t/bak299g/'  # 需要尾部加/
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
     BATCH_SIZE = 15  # batch过小需要设置连续前传
@@ -38,13 +38,14 @@ class CFG:
     '''模型权重'''
     PATH_SAVE_WEIGHT = PATH_ROOT + 'AI/weights/feadre'
     SAVE_FILE_NAME = 'def'  # 预置一个 实际无用 根据文件名确定
-    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_yolo3_DDP.pydarknet53-2_0.24243876338005066.pth'
+    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_yolo3_DDP.pydarknet53-7_20.129762649536133.pth'
     # FILE_FIT_WEIGHT = None
 
     '''Loss参数'''
     PREDICT_IOU_THRESHOLD = 0.3  # 用于预测的阀值
     NEGATIVE_RATIO = 3  # 负样本倍数
-    NEG_IOU_THRESHOLD = 0.35  # 小于时作用负例,用于 MultiBoxLoss
+    NEG_IOU_THRESHOLD = .5  # 小于时作用负例,用于 MultiBoxLoss
+    IGNORE_THRESH = 0.225
 
     '''ANCHORS相关'''
     # 每层anc数需统一，各层数据才能进行融合处理

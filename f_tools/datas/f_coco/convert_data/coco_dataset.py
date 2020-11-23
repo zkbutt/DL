@@ -209,7 +209,7 @@ if __name__ == '__main__':
     data_type = 'train2017'
     mode = 'keypoints'
 
-    from f_tools.datas.data_pretreatment import Compose, RandomHorizontalFlip4PIL, ToTensor
+    from f_tools.pic.enhance.data_pretreatment import Compose, RandomHorizontalFlip4PIL, ToTensor
 
     data_transform = {
         "train": Compose([RandomHorizontalFlip4PIL(1)]),

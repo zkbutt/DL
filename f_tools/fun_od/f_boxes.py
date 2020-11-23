@@ -4,7 +4,7 @@ import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import VOCDataSet
-from f_tools.pic.f_show import f_show_iou
+from f_tools.pic.f_show import f_show_iou4plt, show_anc4pil, f_show_iou4pil
 
 
 def ltrb2xywh(bboxs, safe=True):
@@ -225,6 +225,59 @@ def bbox_iou4np(bbox_a, bbox_b):
     return area_i / _area_all  # (2002,2)
 
 
+def bbox_iou4one(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
+    '''
+    返回一个数
+    :param bbox_a: 多个预测框 (n,4)
+    :param bbox_b: 多个标定框 (n,4)
+    :return: n
+    '''
+    max_lt = torch.max(box1[:, :2], box2[:, :2])  # left-top [N,M,2] 多维组合用法
+    min_rb = torch.min(box1[:, 2:], box2[:, 2:])  # right-bottom [N,M,2]
+    inter_wh = (min_rb - max_lt).clamp(min=0)  # [N,M,2]
+    inter_area = inter_wh[:, 0] * inter_wh[:, 1]  # [N,M] 降维
+
+    # 并的面积
+    area1 = box_area(box1)  # 降维 n
+    area2 = box_area(box2)  # 降维 m
+    union_area = area1 + area2 - inter_area + torch.finfo(torch.float32).eps  # 升维n m
+
+    iou = inter_area / union_area
+
+    if not (is_giou or is_diou or is_ciou):
+        return iou
+    else:
+        # 最大矩形面积
+        min_lt = torch.min(box1[:, :2], box2[:, :2])
+        max_rb = torch.max(box1[:, 2:], box2[:, 2:])
+        max_wh = max_rb - min_lt
+        if is_giou:
+            max_area = max_wh[:, 0] * max_wh[:, 1] + torch.finfo(torch.float32).eps  # 降维运算
+            giou = iou - (max_area - union_area) / max_area
+            return giou
+
+        c2 = max_wh[:, 0] ** 2 + max_wh[:, 1] ** 2 + torch.finfo(torch.float32).eps  # 最大矩形的矩离的平方
+        box1_xywh = ltrb2xywh(box1)
+        box2_xywh = ltrb2xywh(box2)
+        xw2_xh2 = torch.pow(box1_xywh[:, :2] - box2_xywh[:, :2], 2)  # 中心点距离的平方
+        d2 = xw2_xh2[:, 0] + xw2_xh2[:, 1]
+        dxy = d2 / c2  # 中心比例距离
+        if is_diou:
+            diou = iou - dxy
+            return diou
+
+        if is_ciou:
+            box1_atan_wh = torch.atan(box1_xywh[:, 2:3] / box1_xywh[:, 3:])
+            box2_atan_wh = torch.atan(box2_xywh[:, 2:3] / box2_xywh[:, 3:])
+            # torch.squeeze(ts)
+            v = torch.pow(box1_atan_wh[:, :] - box2_atan_wh, 2) * (4 / math.pi ** 2)
+            v = torch.squeeze(v, -1)  # m,n,1 -> m,n 去掉最后一维
+            v.squeeze_(-1)  # m,n,1 -> m,n 去掉最后一维
+            alpha = v / (1 - iou + v)
+            ciou = iou - (dxy + v * alpha)
+            return ciou
+
+
 def box_area(boxes):
     return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
@@ -248,7 +301,7 @@ def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
     # 并的面积
     area1 = box_area(box1)  # 降维 n
     area2 = box_area(box2)  # 降维 m
-    union_area = area1[:, None] + area2 - inter_area  # 升维n m
+    union_area = area1[:, None] + area2 - inter_area + torch.finfo(torch.float32).eps  # 升维n m
 
     iou = inter_area / union_area
 
@@ -284,6 +337,15 @@ def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
             alpha = v / (1 - iou + v)
             ciou = iou - (dxy + v * alpha)
             return ciou
+
+
+def calc_iou_wh4ts(wh1, wh2):
+    wh2 = wh2.t()
+    w1, h1 = wh1[0], wh1[1]
+    w2, h2 = wh2[0], wh2[1]
+    inter_area = torch.min(w1, w2) * torch.min(h1, h2)
+    union_area = (w1 * h1 + 1e-16) + w2 * h2 - inter_area
+    return inter_area / union_area
 
 
 def nms(boxes, scores, iou_threshold):
@@ -359,6 +421,43 @@ def pos_match(ancs, bboxs, criteria):
     return label_neg_mask, anc_bbox_ind
 
 
+@torch.no_grad()
+def pos_match4yolo(ancs, bboxs, criteria):
+    '''
+    正例与GT最大的 负例<0.5 >0.5忽略
+    :param ancs: xywh
+    :param bboxs: ltrb
+    :param criteria: 0.5
+    :return:
+
+    '''
+    threshold = 99
+    # (bboxs个,anc个)
+    gn = bboxs.shape[0]
+    num_anc = ancs.shape[0]
+    iou = calc_iou4ts(bboxs, xywh2ltrb(ancs), is_ciou=True)
+
+    maxs_iou_index = torch.argsort(-iou, dim=1)
+    anc_bbox_ind = torch.argsort(-iou, dim=0)
+    pos_ancs_index = []  # [n]
+    pos_bboxs_index = []  # [n]
+    for i in range(gn):
+        for j in range(num_anc):
+            # 已匹配好anc选第二大的
+            if maxs_iou_index[i][j] not in pos_ancs_index:
+                iou[i, j] = threshold  # 强制最大 大于阀值即可
+                pos_ancs_index.append(maxs_iou_index[i][j])
+                pos_bboxs_index.append(anc_bbox_ind[i][j])
+                break
+
+    # 反倒 torch.Size([1, 10647])
+    mask_neg = iou <= criteria  # anc 的正例index
+    # torch.Size([1, 10647])
+    mask_ignore = (iou >= criteria) == (iou < threshold)
+
+    return pos_ancs_index, pos_bboxs_index, mask_neg, mask_ignore
+
+
 def _ff_pos_match4yolo(ancs, bboxs, criteria):
     '''
     3个anc 一个GT
@@ -403,8 +502,22 @@ def resize_boxes4np(boxes, original_size, new_size):
     return boxes
 
 
-def boxes2yolo(boxes, labels, num_anc=1, num_bbox=2, num_class=20, grid=7,
-               device=None):
+def xy2offxy(p1, p2):
+    '''
+
+    :param p1:[n,2]
+    :param p2: [m,2]  [[52, 52], [26, 26], [13, 13]]
+    :return:
+        返回offset_xy_wh
+        返回 colrow
+    '''
+    colrow_index = (p1 * p2).type(torch.int16)  # 向下取整
+    offset_xy = colrow_index / p2  # 格子偏移对特图的
+    offset_xy_wh = (p1 - offset_xy) * p2  # 特图坐标 - 格子偏移 * 对应格子数
+    return offset_xy_wh, colrow_index
+
+
+def match4yolo1(boxes, labels, num_anc=1, num_bbox=2, num_class=20, grid=7, device=None):
     '''
     将ltrb 转换为 7*7*(2*(4+1)+20) = grid*grid*(num_bbox(4+1)+num_class)
     这个必须和anc的顺序一致
@@ -421,8 +534,9 @@ def boxes2yolo(boxes, labels, num_anc=1, num_bbox=2, num_class=20, grid=7,
     if device is not None:
         target = target.to(device)
     # ltrb -> xywh
-    wh = boxes[:, 2:] - boxes[:, :2]
-    cxcy = (boxes[:, 2:] + boxes[:, :2]) / 2  # bbox的中心点坐标
+    boxes_xywh = ltrb2xywh(boxes)
+    wh = boxes_xywh[:, 2:]
+    cxcy = boxes_xywh[:, :2]
 
     for i in range(cxcy.size()[0]):  # 遍历每一个框 cxcy.size()[0]  与shape等价
         '''计算GT落在7x7哪个网格中 同时ij也表示网格的左上角的坐标'''
@@ -444,127 +558,99 @@ def boxes2yolo(boxes, labels, num_anc=1, num_bbox=2, num_class=20, grid=7,
     return target
 
 
-def xy2offxy(p1, p2):
-    '''
+def build_targets(model, targets):
+    # targets = [image, class, x, y, w, h]
+    # 这里的image是一个数字，代表是当前batch的第几个图片
+    # x,y,w,h都进行了归一化，除以了宽或者高
 
-    :param p1:[n,2]
-    :param p2: [m,2]  [[52, 52], [26, 26], [13, 13]]
-    :return:
-        返回offset_xy_wh
-        返回 colrow
-    '''
-    colrow_index = (p1 * p2).type(torch.int16)  # 向下取整
-    offset_xy = colrow_index / p2  # 格式偏移
-    offset_xy_wh = (p1 - offset_xy) / p2  # 实偏 - 格式偏移 / 对应格子数
-    return offset_xy_wh, colrow_index
+    nt = len(targets)
 
+    tcls, tbox, indices, av = [], [], [], []
 
-def match4yolo3(targets, anchors_obj, nums_anc=(3, 3, 3), num_class=20, device=None):
-    '''
+    multi_gpu = type(model) in (nn.parallel.DataParallel,
+                                nn.parallel.DistributedDataParallel)
 
-    :param targets:
-    :param anchors_obj:
-    :param nums_anc: 只支持每层相同的anc数
-    :param num_class:
-    :param device:
-    :return:
-    '''
-    batch = len(targets)
-    # 层索引
-    feature_sizes = np.array(anchors_obj.feature_sizes)
-    num_ceng = feature_sizes.prod(axis=1)
+    reject, use_all_anchors = True, True
+    for i in model.yolo_layers:
+        # yolov3.cfg中有三个yolo层，这部分用于获取对应yolo层的grid尺寸和anchor大小
+        # ng 代表num of grid (13,13) anchor_vec [[x,y],[x,y]]
+        # 注意这里的anchor_vec: 假如现在是yolo第一个层(downsample rate=32)
+        # 这一层对应anchor为：[116, 90], [156, 198], [373, 326]
+        # anchor_vec实际值为以上除以32的结果：[3.6,2.8],[4.875,6.18],[11.6,10.1]
+        # 原图 416x416 对应的anchor为 [116, 90]
+        # 下采样32倍后 13x13 对应的anchor为 [3.6,2.8]
+        if multi_gpu:
+            ng = model.module.module_list[i].ng
+            anchor_vec = model.module.module_list[i].anchor_vec
+        else:
+            ng = model.module_list[i].ng,
+            anchor_vec = model.module_list[i].anchor_vec
 
-    # 匹配完成的数据
-    _num_total = sum(num_ceng * nums_anc)  # 10647
-    _dim = 4 + 1 + num_class
-    targets_yolo = torch.zeros(batch, _num_total, _dim).to(device)
+        # iou of targets-anchors
+        # targets中保存的是ground truth
+        t, a = targets, []
 
-    # 分批处理
-    for i in range(batch):
-        target = targets[i]
-        # 只能一个个的处理
-        boxes = target['boxes'].to(device)  # ltrb
-        labels = target['labels'].to(device)
-        boxes_xywh = ltrb2xywh(boxes)
+        gwh = t[:, 4:6] * ng[0]
 
-        num_anc = np.array(nums_anc).sum()  # anc总和数
-        # 优先每个bbox重复9次
-        p1 = boxes_xywh.repeat_interleave(num_anc, dim=0)  # 单体复制 3,4 -> 6,4
-        # 每套尺寸有三个anc 整体复制3,2 ->6,2
-        _n = boxes_xywh.shape[0] * nums_anc[0]  # 只支持每层相同的anc数
-        # 每一个bbox对应的9个anc
-        # p2 = torch.tensor(feature_sizes, dtype=torch.float32).repeat(_n, 1)  # 整体复制
-        _feature_sizes = torch.tensor(feature_sizes, dtype=torch.float32).to(device)
-        # 单复制-整体复制 只支持每层相同的anc数
-        p2 = _feature_sizes.repeat_interleave(nums_anc[0], dim=0).repeat(boxes_xywh.shape[0], 1)
-        offxy_xy, colrow_index = xy2offxy(p1[:, :2], p2)  # 用于最终结果
+        if nt:  # 如果存在目标
+            # anchor_vec: shape = [3, 2] 代表3个anchor
+            # gwh: shape = [2, 2] 代表 2个ground truth
+            # iou: shape = [3, 2] 代表 3个anchor与对应的两个ground truth的iou
+            iou = wh_iou(anchor_vec, gwh)  # 计算先验框和GT的iou
 
-        # 使用网络求出anc的中心点
-        _ancs_xy = colrow_index / p2
-        _ancs_scale = torch.tensor(anchors_obj.ancs_scale).to(device)
-        # 大特图对应小目标
-        _ancs_wh = _ancs_scale.reshape(-1, 2).repeat(boxes_xywh.shape[0], 1)  # 拉平后整体复制
-        ancs_xywh = torch.cat([_ancs_xy, _ancs_wh], dim=1)
+            if use_all_anchors:
+                na = len(anchor_vec)  # number of anchors
+                a = torch.arange(na).view(
+                    (-1, 1)).repeat([1, nt]).view(-1)  # 构造 3x2 -> view到6
+                # a = [0,0,1,1,2,2]
+                t = targets.repeat([na, 1])
+                # targets: [image, cls, x, y, w, h]
+                # 复制3个: shape[2,6] to shape[6,6]
+                gwh = gwh.repeat([na, 1])
+                # gwh shape:[6,2]
+            else:  # use best anchor only
+                iou, a = iou.max(0)  # best iou and anchor
+                # 取iou最大值是darknet的默认做法，返回的a是下角标
 
-        # f_show_iou(ltrb2ltwh(boxes), xywh2ltwh(ancs_xywh))
+            # reject anchors below iou_thres (OPTIONAL, increases P, lowers R)
+            if reject:
+                # 在这里将所有阈值小于ignore thresh的去掉
+                j = iou.view(-1) > model.hyp['iou_t']
+                # iou threshold hyperparameter
+                t, a, gwh = t[j], a[j], gwh[j]
 
-        ids = torch.tensor([i for i in range(boxes.shape[0])]).to(device)  # 9个anc 0,1,2 只支持每层相同的anc数
-        _boxes_offset = boxes + ids[:, None]  # boxes加上偏移 1,2,3
-        ids_offset = ids.repeat_interleave(num_anc)  # 1,2,3 -> 000000000 111111111 222222222
-        # p1 = xywh2ltrb(p1)  # 匹配的bbox
-        p2 = xywh2ltrb(ancs_xywh)
+        # Indices
+        b, c = t[:, :2].long().t()  # target image, class
+        # 取的是targets[image, class, x,y,w,h]中 [image, class]
 
-        # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None])
-        # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_giou=True)
-        # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_diou=True)
-        iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_ciou=True)
-        # 每一个GT的匹配降序再索引恢复(表示匹配的0~8索引)  15 % anc数9 难 后面的铁定是没有用的
-        iou_sort = torch.argsort(-iou, dim=1) % 9
-        # 获取anc 匹配的最好的特图层索引
+        gxy = t[:, 2:4] * ng[0]  # grid x, y
 
-        # 获取
+        gi, gj = gxy.long().t()  # grid x, y indices
+        # 注意这里通过long将其转化为整形，代表格子的左上角
 
-        for j in range(iou_sort.shape[0]):  # gt个数
+        indices.append((b, a, gj, gi))
+        # indice结构体保存内容为：
+        '''
+        b: 一个batch中的角标
+        a: 代表所选中的正样本的anchor的下角标
+        gj, gi: 代表所选中的grid的左上角坐标
+        '''
+        # Box
+        gxy -= gxy.floor()  # xy
+        # 现在gxy保存的是偏移量，是需要YOLO进行拟合的对象
+        tbox.append(torch.cat((gxy, gwh), 1))  # xywh (grids)
+        # 保存对应偏移量和宽高（对应13x13大小的）
+        av.append(anchor_vec[a])  # anchor vec
+        # av 是anchor vec的缩写，保存的是匹配上的anchor的列表
 
-            for k in range(num_anc):  # 若同一格子有9个大小相同的对象则无法匹配
-                # 第k个 一定在 num_anc 之中
-                k_ = iou_sort[j][k]
-                # 匹配特图的索引
-                match_anc_index = torch.true_divide(k_, len(nums_anc)).type(torch.int16)  # 只支持每层相同的anc数
-                # _match_anc_index = match_anc_index[j]  # 匹配特图的索引
-                # 只支持每层相同的anc数 和正方形
-                offset_ceng = 0
-                if match_anc_index > 0:
-                    offset_ceng = num_ceng[:match_anc_index].sum()
-                # 取出 anc 对应的列行索引
-                _row_index = colrow_index[j * num_anc + k_, 1]  # 行
-                _col_index = colrow_index[j * num_anc + k_, 0]  # 列
-                offset_colrow = _row_index * feature_sizes[match_anc_index][0] + _col_index
-                match_index = (offset_ceng + offset_colrow) * nums_anc[0]  # 只支持每层相同的anc数
-                if match_index > _num_total:
-                    flog.error(
-                        '行列偏移索引:%s，最终索引:%s，anc索引:%s,最好的特图层索引:%s,'
-                        'colrow_index:%s,box:%s/%s,当前index%s' % (
-                            offset_colrow.item(),  # 210
-                            match_index.item(),  # 10770超了
-                            iou_sort[:, :9],  # [2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 1]
-                            match_anc_index,  # [2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 1]
-                            colrow_index,  #
-                            j, iou_sort.shape[0],
-                            colrow_index[j * num_anc + k_],
-                        ))
-
-                if targets_yolo[i, match_index + k_, 4] == 0:  # 同一特图一个网格只有一个目标
-                    targets_yolo[i, match_index + k_, 4] = 1
-                    targets_yolo[i, match_index + k_, 0:2] = offxy_xy[j * num_anc + k_]
-                    targets_yolo[i, match_index + k_, 2:4] = boxes_xywh[j, 2:4]
-                    targets_yolo[i, match_index + k_, labels[j] + 5 - 1] = 1  # 独热
-                    break
-                else:
-                    # 取第二大的IOU的与之匹配
-                    # flog.info('找到一个重复的')
-                    pass
-    return targets_yolo
+        # Class
+        tcls.append(c)
+        # tcls用于保存匹配上的类别列表
+        if c.shape[0]:  # if any targets
+            assert c.max() < model.nc, 'Model accepts %g classes labeled from 0-%g, however you labelled a class %g. ' \
+                                       'See https://github.com/ultralytics/yolov3/wiki/Train-Custom-Data' % (
+                                           model.nc, model.nc - 1, c.max())
+    return tcls, tbox, indices, av
 
 
 if __name__ == '__main__':

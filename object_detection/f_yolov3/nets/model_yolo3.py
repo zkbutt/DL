@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from collections import OrderedDict
 
+from f_pytorch.backbone_t.f_model_api import SPP
 from f_pytorch.backbone_t.f_models.darknet import Darknet
 from f_pytorch.backbone_t.model_look import f_look, f_look2
 from object_detection.yolo3.nets.darknet import darknet53
@@ -34,27 +35,6 @@ def make_last_layers(filters_list, in_filters, out_filter):
         nn.Conv2d(filters_list[1], out_filter, kernel_size=1, stride=1, padding=0, bias=True)
     ])
     return m
-
-
-class SPP(nn.Module):
-    '''
-    长宽不变, 深度是原来的4倍 calc_oshape_pytorch
-    '''
-
-    def __init__(self, in_channel):
-        super(SPP, self).__init__()
-        self.maxpool5X5 = nn.MaxPool2d(kernel_size=5, stride=1, padding=2)
-        self.maxpool9X9 = nn.MaxPool2d(kernel_size=9, stride=1, padding=4)
-        self.maxpool13X13 = nn.MaxPool2d(kernel_size=13, stride=1, padding=6)
-        self.spp_out = conv2d(in_channel * 4, in_channel, 1)
-
-    def forward(self, inputs):
-        maxpool5X5 = self.maxpool5X5(inputs)  # torch.Size([1, 512, 13, 13])
-        maxpool9X9 = self.maxpool9X9(inputs)
-        maxpool13X13 = self.maxpool13X13(inputs)
-        out = torch.cat([inputs, maxpool5X5, maxpool9X9, maxpool13X13], dim=1)
-        out = self.spp_out(out)
-        return out
 
 
 class YoloV3SPP(nn.Module):
@@ -131,6 +111,7 @@ class YoloV3SPP(nn.Module):
 
         # 自定义数据重装函数 torch.Size([1, 10647, 25])
         outs = self.data_packaging([out1, out2, out3], self.nums_anc)
+        '''这里输出每层每格的对应三个anc'''
         outs[:, :, :2] = self.sigmoid_out(outs[:, :, :2])  # xy归一
         outs[:, :, 4:] = self.sigmoid_out(outs[:, :, 4:])  # 支持多标签
         '''为每一个特图预测三个尺寸的框,拉平堆叠'''
@@ -139,7 +120,7 @@ class YoloV3SPP(nn.Module):
     def data_packaging(self, outs, nums_anc):
         '''
         3个输入 合成一个输出 与anc进行拉伸
-        :param outs: [out1, out2, out3]
+        :param outs: [out1, out2, out3] b,c,h,w
         :param nums_anc: ans数组
         :return: torch.Size([1, 10647, 25])
         '''
@@ -154,8 +135,6 @@ class YoloV3SPP(nn.Module):
 
 
 if __name__ == '__main__':
-    from f_pytorch.backbone_t.f_model_api import Output4Return
-
     # model = models.densenet121(pretrained=True)
     # dim_layer1_out = model.features.transition2.conv.in_channels  # 512
     # dim_layer2_out = model.features.transition3.conv.in_channels  # 1024

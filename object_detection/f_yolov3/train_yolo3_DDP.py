@@ -1,14 +1,7 @@
-import argparse
 import os
 import torch
-from torch import optim
 from f_tools.GLOBAL_LOG import flog
-from f_tools.f_torch_tools import load_weight
-from f_tools.fits.f_lossfun import LossYOLOv3
-from f_tools.fits.f_lr_fun import f_lr_cos
 from f_tools.fits.fitting.f_fit_eval_base import mgpu_init
-from f_tools.fun_od.f_anc import FAnchors
-from object_detection.f_yolov1.utils.process_fun import data_loader4mgpu
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 from object_detection.f_yolov3.process_fun import init_model, data_loader, train_eval
 
@@ -17,7 +10,11 @@ from object_detection.f_yolov3.process_fun import init_model, data_loader, train
 --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/f_yolov3/train_yolo3_DDP.py
 
 单GPU B16 F2 P50 time: 0.8156  0:15:02 (0.8430 s / it)
+单GPU B15 F2 P50 time: 0.8396  0:16:18 (0.8573 s / it) mem: 6583
 双GPU B15 F2 P50 time: 0.8950  0:15:49 (0.8869 s / it)
+双GPU B15 F2 P50 time: 0.9017   mem: 6824
+
+
 '''
 
 if __name__ == '__main__':
@@ -25,7 +22,7 @@ if __name__ == '__main__':
         raise EnvironmentError("未发现GPU")
 
     CFG.SAVE_FILE_NAME = os.path.basename(__file__)
-    CFG.DATA_NUM_WORKERS = 8
+    CFG.DATA_NUM_WORKERS = 6
     torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
     if CFG.DEBUG:
         raise Exception('调试模式无法使用')
@@ -33,48 +30,16 @@ if __name__ == '__main__':
     args, device = mgpu_init()
 
     if args.rank == 0:
+        # 主进程任务
         flog.info(args)
-
-        '''tensorboard'''
-        # from torch.utils.tensorboard import SummaryWriter
-        # tb_writer = SummaryWriter()
-        # if os.path.exists("./log") is False:
-        #     os.makedirs("./log")
-        # if os.path.exists("./log/weights") is False:
-        #     os.makedirs("./log/weights")
-        # 在每一批训练完成时在主进程rank=0中记录
-        # tb_writer.add_scalar(tags[0], mean_loss, epoch)
-        # tb_writer.add_scalar(tags[1], acc, epoch)
-        # tb_writer.add_scalar(tags[2], optimizer.param_groups[0]["lr"], epoch)
+        if not os.path.exists(CFG.PATH_SAVE_WEIGHT):
+            try:
+                os.makedirs(CFG.PATH_SAVE_WEIGHT)
+            except Exception as e:
+                flog.error(' %s %s', CFG.PATH_SAVE_WEIGHT, e)
 
     '''------------------模型定义---------------------'''
-    model = init_model(CFG)  # 初始化完成
-    if CFG.SYSNC_BN:
-        # 不冻结权重的情况下可, 使用SyncBatchNorm后训练会更耗时
-        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
-    else:
-        model.to(device)  # 这个不需要加等号
-    # 转为DDP模型
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
-    model.train()
-
-    anc_obj = FAnchors(CFG.IMAGE_SIZE, CFG.ANC_SCALE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP, device=device)
-    # anchors = anchors.to(devi
-    losser = LossYOLOv3(CFG.NUM_CLASSES, anc_obj.ancs)
-
-    pg = model.parameters()
-    lr0 = 1e-3
-    lrf = lr0 / 100
-    optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
-    # ---------------!!! 必须每一个设备的权重是一样的 !!!-------------------
-    start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model,
-                              optimizer=optimizer,
-                              lr_scheduler=None,
-                              device=device,
-                              is_mgpu=True)
-    lr_scheduler = f_lr_cos(optimizer, start_epoch, CFG.END_EPOCH, lrf_scale=0.01)
-
-    # start_epoch = 0
+    model, losser, optimizer, lr_scheduler, start_epoch, anc_obj = init_model(CFG, device, id_gpu=args.gpu)  # 初始化完成
 
     '''---------------数据加载及处理--------------'''
     loader_train, loader_val, train_sampler = data_loader(CFG, is_mgpu=True)
@@ -87,6 +52,6 @@ if __name__ == '__main__':
                train_sampler=train_sampler
                )
 
-    torch.distributed.destroy_process_group()  # 释放进程
+    # torch.distributed.destroy_process_group()  # 释放进程
 
     flog.info('---%s--main执行完成--进程号：%s---- ' % (os.path.basename(__file__), torch.distributed.get_rank()))

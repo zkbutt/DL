@@ -73,28 +73,67 @@ def resize_img_tensor(image, new_size):
     return image.squeeze(0), old_size
 
 
+def letterbox(img_np, new_shape=(416, 416), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True):
+    # Resize image to a 32-pixel-multiple rectangle https://github.com/ultralytics/yolov3/issues/232
+    shape = img_np.shape[:2]  # current shape [height, width]
+    if isinstance(new_shape, int):
+        new_shape = (new_shape, new_shape)
+
+    # Scale ratio (new / old)
+    r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+    if not scaleup:  # only scale down, do not scale up (for better test mAP)
+        r = min(r, 1.0)
+
+    # Compute padding
+    ratio = r, r  # width, height ratios
+    new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
+    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
+    if auto:  # minimum rectangle
+        dw, dh = np.mod(dw, 32), np.mod(dh, 32)  # wh padding
+    elif scaleFill:  # stretch
+        dw, dh = 0.0, 0.0
+        new_unpad = new_shape
+        ratio = new_shape[0] / shape[1], new_shape[1] / shape[0]  # width, height ratios
+
+    dw /= 2  # divide padding into 2 sides
+    dh /= 2
+
+    if shape[::-1] != new_unpad:  # resize
+        img_np = cv2.resize(img_np, new_unpad, interpolation=cv2.INTER_LINEAR)
+    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+    img_np = cv2.copyMakeBorder(img_np, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+    return img_np, ratio, (dw, dh)
+
+
 if __name__ == '__main__':
     file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_006046.jpg'
+    file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_000121.jpg'
 
     # img = cv2.imread(file_img)
     from PIL import Image
     from torchvision.transforms import functional as F
 
-    # 直接拉伸
+    # 直接拉伸 pil打开为RGB
     img_pil = Image.open(file_pic).convert('RGB')
     # interpolation = cv2.INTER_LINEAR if ratio > 1.0 else cv2.INTER_AREA
     # img_pil = img_pil.resize((300, 600), Image.ANTIALIAS)
     # img_pil.show()
 
     ''' h,w,c(brg) '''
+    # img_np = img_np[:, :, ::-1].transpose(2, 0, 1) #  BGR to RGB
     img_np = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-    img_np, ratio, old_size, (left, top, right, bottom) = resize_img_keep_np(img_np, (600, 400), mode='center')
-    print(ratio, old_size, (left, top, right, bottom))
+    # img_np, ratio, old_size, (left, top, right, bottom) = resize_img_keep_np(img_np, (600, 400), mode='center')
+    # print(ratio, old_size, (left, top, right, bottom))
     # img_np = cv2.imread(file_pic)  # 读取原始图像
-    cv2.imshow("img", img_np)  # 显示只支持BGR
-    cv2.waitKey(0)
+    img_np, ratio, (dw, dh) = letterbox(img_np)
+    # cv2.imshow("img", img_np)  # 显示只支持BGR
+    # cv2.waitKey(0)
 
-    img_tensor = F.to_tensor(img_pil)  # Image w,h -> c,h,w +归一化
-    img_tensor, old_size = resize_img_tensor(img_tensor, (600, 200))
-    img_pil = F.to_pil_image(img_tensor).convert('RGB')  # 这个会还原
+    img_pil = Image.fromarray(img_np, mode="RGB")
     img_pil.show()
+
+    # img_tensor = F.to_tensor(img_pil)  # Image w,h -> c,h,w +归一化
+    # img_tensor, old_size = resize_img_tensor(img_tensor, (600, 200))
+    # img_pil = F.to_pil_image(img_tensor).convert('RGB')  # 这个会还原
+    # img_pil.show()

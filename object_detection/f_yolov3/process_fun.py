@@ -1,15 +1,19 @@
 import torch
+from torch import optim
 
 from f_pytorch.backbone_t.f_model_api import Output4Return
 from f_pytorch.backbone_t.f_models.darknet import Darknet
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import VOCDataSet
-from f_tools.datas.data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
-    Normalization4TS, Resize, ResizeKeep
-from f_tools.f_torch_tools import save_weight
+from f_tools.f_torch_tools import load_weight
+from f_tools.fits.f_fun_lr import f_lr_cos
+from f_tools.fits.f_lossfun import LossYOLOv3
+from f_tools.fun_od.f_anc import FAnchors
+from f_tools.pic.enhance.data_pretreatment import Compose, ToTensor, Normalization4TS, ResizeKeep, \
+    RandomHorizontalFlip4TS, ColorJitter
 
 from f_tools.fits.f_show_fit_res import plot_loss_and_lr
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch, f_evaluate, f_train_one_epoch2
+from f_tools.fits.fitting.f_fit_eval_base import f_evaluate, f_train_one_epoch2
 from f_tools.fun_od.f_boxes import nms
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 from object_detection.f_yolov3.nets.model_yolo3 import YoloV3SPP
@@ -20,10 +24,10 @@ DATA_TRANSFORM = {
         ResizeKeep(CFG.IMAGE_SIZE),
         # Resize(CFG.IMAGE_SIZE),
         # SSDCroppingPIL(),
-        ColorJitter(),
+        # ColorJitter(),
         ToTensor(),
-        RandomHorizontalFlip4TS(1),
-        Normalization4TS(),
+        # RandomHorizontalFlip4TS(1),
+        # Normalization4TS(),
     ], CFG),
     "val": Compose([
         ResizeKeep(CFG.IMAGE_SIZE),  # (h,w)
@@ -63,19 +67,43 @@ def output_res(p_boxes, p_keypoints, p_scores, threshold_conf=0.5, threshold_nms
     return p_boxes, p_keypoints, p_scores
 
 
-def init_model(cfg):
+def init_model(cfg, device, id_gpu=None):
     model = Darknet(nums_layer=(1, 2, 8, 8, 4))
     return_layers = {'block3': 1, 'block4': 2, 'block5': 3}
     model = Output4Return(model, return_layers)
     dims_out = [256, 512, 1024]
 
     model = YoloV3SPP(model, cfg.NUMS_ANC, cfg.NUM_CLASSES, dims_out, is_spp=True)
+    if id_gpu is not None:
+        is_mgpu = True
+        if CFG.SYSNC_BN:
+            # 不冻结权重的情况下可, 使用SyncBatchNorm后训练会更耗时
+            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
+        else:
+            model.to(device)  # 这个不需要加等号
+        # 转为DDP模型
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[id_gpu])
+    else:
+        model.to(device)  # 这个不需要加等号
+        is_mgpu = False
+    model.train()
 
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'darknet53'
     # ------------------------自定义backbone完成-------------------------------
     # f_look(model)
 
-    return model
+    anc_obj = FAnchors(CFG.IMAGE_SIZE, CFG.ANC_SCALE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP, device=device)
+    losser = LossYOLOv3(anc_obj, CFG)
+
+    pg = model.parameters()
+    # 最初学习率
+    lr0 = 1e-3
+    lrf = lr0 / 100
+    optimizer = optim.SGD(pg, lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
+    start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, optimizer, None, device, is_mgpu=is_mgpu)
+    lr_scheduler = f_lr_cos(optimizer, start_epoch, CFG.END_EPOCH, lrf_scale=0.01)
+
+    return model, losser, optimizer, lr_scheduler, start_epoch, anc_obj
 
 
 def _collate_fn(batch_datas):

@@ -320,7 +320,7 @@ class Enhance4np:
         return im
 
 
-def c_hsv_n(img_np, h_gain=0.5, s_gain=0.5, v_gain=0.5):
+def c_hsv_np(img_np, h_gain=0.5, s_gain=0.5, v_gain=0.5):
     '''
     随机色域 is_safe
     :param img_np:
@@ -341,6 +341,63 @@ def c_hsv_n(img_np, h_gain=0.5, s_gain=0.5, v_gain=0.5):
     img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
     cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img_np)  # no return needed
 
+def random_horizontal_flip_np(img_np, bboxes):
+    # 水平
+    if random.random() < 0.5:
+        _, w, _ = img_np.shape
+        # [::-1] 顺序相反操作
+        # a = [1, 2, 3, 4, 5]
+        # a[::-1]
+        # Out[3]: [5, 4, 3, 2, 1]
+        img_np = img_np[:, ::-1, :]
+        bboxes[:, [0,2]] = w - bboxes[:, [2,0]]
+
+    return img_np, bboxes
+
+def random_crop_np(img_np, bboxes):
+    # 随机剪裁
+    if random.random() < 0.5:
+        h, w, _ = img_np.shape
+        max_bbox = np.concatenate([np.min(bboxes[:, 0:2], axis=0), np.max(bboxes[:, 2:4], axis=0)], axis=-1)
+
+        max_l_trans = max_bbox[0]
+        max_u_trans = max_bbox[1]
+        max_r_trans = w - max_bbox[2]
+        max_d_trans = h - max_bbox[3]
+
+        crop_xmin = max(0, int(max_bbox[0] - random.uniform(0, max_l_trans)))
+        crop_ymin = max(0, int(max_bbox[1] - random.uniform(0, max_u_trans)))
+        crop_xmax = max(w, int(max_bbox[2] + random.uniform(0, max_r_trans)))
+        crop_ymax = max(h, int(max_bbox[3] + random.uniform(0, max_d_trans)))
+
+        img_np = img_np[crop_ymin: crop_ymax, crop_xmin: crop_xmax]
+
+        bboxes[:, [0, 2]] = bboxes[:, [0, 2]] - crop_xmin
+        bboxes[:, [1, 3]] = bboxes[:, [1, 3]] - crop_ymin
+
+    return img_np, bboxes
+
+def random_translate_np(img_np, bboxes):
+    #旋转
+    if random.random() < 0.5:
+        h, w, _ = img_np.shape
+        max_bbox = np.concatenate([np.min(bboxes[:, 0:2], axis=0), np.max(bboxes[:, 2:4], axis=0)], axis=-1)
+
+        max_l_trans = max_bbox[0]
+        max_u_trans = max_bbox[1]
+        max_r_trans = w - max_bbox[2]
+        max_d_trans = h - max_bbox[3]
+
+        tx = random.uniform(-(max_l_trans - 1), (max_r_trans - 1))
+        ty = random.uniform(-(max_u_trans - 1), (max_d_trans - 1))
+
+        M = np.array([[1, 0, tx], [0, 1, ty]])
+        img_np = cv2.warpAffine(img_np, M, (w, h))
+
+        bboxes[:, [0, 2]] = bboxes[:, [0, 2]] + tx
+        bboxes[:, [1, 3]] = bboxes[:, [1, 3]] + ty
+
+    return img_np, bboxes
 
 if __name__ == '__main__':
     file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_006046.jpg'
@@ -350,7 +407,7 @@ if __name__ == '__main__':
     # img_np 测试
     img_np = cv2.imread(file_pic)  # 读取原始图像
 
-    # c_hsv_n(img_np)
+    c_hsv_np(img_np)
     img_pil = Image.fromarray(img_np, mode="RGB")
     img_pil.show()
     # cv2.imshow("img", img_np)

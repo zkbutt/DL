@@ -54,6 +54,11 @@ def t_交叉运算():
     print(none_b)
     print(none_b.shape)
 
+def x_高级(labels):
+    random_ = torch.LongTensor(5).random_() % 4
+    zeros = torch.zeros(5, 20)
+    onehot = zeros.scatter_(1, labels, 1) # dim,index,value
+    return onehot
 
 if __name__ == '__main__':
     # t1 = torch.arange(8)

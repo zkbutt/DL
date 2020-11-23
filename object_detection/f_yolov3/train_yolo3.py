@@ -1,15 +1,8 @@
 import math
-
 import os
-
 import torch
-from torch import optim
-
 from f_tools.GLOBAL_LOG import flog
-from f_tools.f_torch_tools import load_weight
-from f_tools.fits.f_lossfun import LossYOLOv3
-from f_tools.fits.f_lr_fun import f_lr_cos
-from f_tools.fun_od.f_anc import FAnchors
+from f_tools.fits.f_fit_fun import init_od
 from object_detection.f_yolov3.process_fun import init_model, data_loader, train_eval
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 
@@ -21,12 +14,17 @@ from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
+    # -----------通用系统配置----------------
+    init_od()
+    CFG.DATA_NUM_WORKERS = min([os.cpu_count(), CFG.DATA_NUM_WORKERS])
+
     # 检查保存权重文件夹是否存在，不存在则创建
     if not os.path.exists(CFG.PATH_SAVE_WEIGHT):
         try:
             os.makedirs(CFG.PATH_SAVE_WEIGHT)
         except Exception as e:
             flog.error(' %s %s', CFG.PATH_SAVE_WEIGHT, e)
+
     CFG.SAVE_FILE_NAME = os.path.basename(__file__)
 
     device = torch.device('cuda:%s' % 0 if torch.cuda.is_available() else "cpu")
@@ -46,9 +44,10 @@ if __name__ == '__main__':
 
     # 预设尺寸必须是下采样倍数的整数倍 输入一般是正方形
     down_sample = CFG.FEATURE_MAP_STEPS[-1]  # 模型下采样倍数
-    assert math.fmod(CFG.IMAGE_SIZE[0], down_sample) == 0, "尺寸 %s must be a %s 的倍数" % (CFG.IMAGE_SIZE, small_conf)
+    assert math.fmod(CFG.IMAGE_SIZE[0], down_sample) == 0, "尺寸 %s must be a %s 的倍数" % (CFG.IMAGE_SIZE, down_sample)
     # assert math.fmod(CFG.IMAGE_SIZE[1], down_sample) == 0, "尺寸 %s must be a %s 的倍数" % (CFG.IMAGE_SIZE, small_conf)
 
+    '''-----多尺度训练-----'''
     if CFG.IS_MULTI_SCALE:
         # 动态输入尺寸选定 根据预设尺寸  0.667~1.5 之间 满足32的倍数
         imgsz_min = CFG.IMAGE_SIZE[0] // CFG.MULTI_SCALE_VAL[1]
@@ -64,14 +63,7 @@ if __name__ == '__main__':
         flog.info("输入画像的尺寸范围为[{}, {}] 可选尺寸为{}".format(imgsz_min, imgsz_max, sizes_in))
 
     '''------------------模型定义---------------------'''
-    model = init_model(CFG)
-
-    model.to(device)  # 这个不需要加等号
-    model.train()
-
-    anc_obj = FAnchors(CFG.IMAGE_SIZE, CFG.ANC_SCALE, CFG.FEATURE_MAP_STEPS, CFG.ANCHORS_CLIP, device=device)
-    # anchors = anchors.to(device)
-    losser = LossYOLOv3(CFG.NUM_CLASSES, anc_obj.ancs)
+    model, losser, optimizer, lr_scheduler, start_epoch, anc_obj = init_model(CFG, device, id_gpu=None)
 
     '''对模型进行冻结定义, 取出需要优化的的参数'''
     # if epoch < 5:
@@ -82,15 +74,8 @@ if __name__ == '__main__':
     #     # 解冻后训练
     #     for param in model.body.parameters():
     #         param.requires_grad = True
-    pg = model.parameters()
+    # pg = model.parameters()
     # pg = [p for p in model.parameters() if p.requires_grad]
-
-    # 最初学习率
-    lr0 = 1e-3
-    lrf = lr0 / 100
-    optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
-    start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, optimizer, None, device)
-    lr_scheduler = f_lr_cos(optimizer, start_epoch, CFG.END_EPOCH, lrf_scale=0.01)
 
     # '''---------------数据加载及处理--------------'''
     loader_train, loader_val, _ = data_loader(CFG, is_mgpu=False)

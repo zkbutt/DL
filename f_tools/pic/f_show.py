@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from f_tools.GLOBAL_LOG import flog
 
 # 126种颜色
+
 STANDARD_COLORS = [
     'AliceBlue', 'Chartreuse', 'Aqua', 'Aquamarine', 'Azure', 'Beige', 'Bisque',
     'BlanchedAlmond', 'BlueViolet', 'BurlyWood', 'CadetBlue', 'AntiqueWhite',
@@ -280,17 +281,17 @@ def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, 
     img_pil_copy.show()
 
 
-def f_show_iou(box1, box2):
+def f_show_iou4plt(box1, box2):
     '''
-    归一化的 BBOX
-    :param box1:
-    :param box2:
+    归一化的 BBOX plt画图 归一画图
+    :param box1: ltwh
+    :param box2: ltwh
     :return:
     '''
     fig = plt.figure()
     ax = fig.add_subplot(111)
     # plt.ylim(-0.5, 1.5)
-    plt.ylim(0, 1)
+    plt.ylim(0, 1)  # 量程
     plt.xlim(0, 1)
     ax.invert_yaxis()  # y轴反向 否则是反的
     plt.grid(linestyle='-.')
@@ -306,8 +307,94 @@ def f_show_iou(box1, box2):
     plt.show()
 
 
+def _draw_box4pil(draw, boxes, color=None, width=4):
+    from f_tools.fun_od.f_boxes import ltrb2xywh
+    boxes_ltrb = ltrb2xywh(boxes)
+    if color is not None:
+        for c in boxes_ltrb:
+            # draw.point(c[:2].numpy().tolist(), fill = color)
+            x, y = c[:2]
+            r = 4
+            # 空心
+            # draw.arc((x - r, y - r, x + r, y + r), 0, 360, fill=color)
+            # 实心
+            draw.chord((x - r, y - r, x + r, y + r), 0, 360, fill=color)
+
+    for c in boxes:
+        if isinstance(c, np.ndarray):
+            l, t, r, b = c.astype(np.int)
+        elif isinstance(c, torch.Tensor):
+            l, t, r, b = c.type(torch.int)
+        else:
+            raise Exception('类型错误', type(c))
+        if color is None:
+            _color = STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)]
+        else:
+            _color = color
+        draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=width, fill=_color)
+    return draw
+
+
+def f_show_iou4pil(img_pil, g_boxes=None, boxes2=None, grids=None,is_safe=True):
+    '''
+
+    :param img_pil:
+    :param g_boxes: ltrb 归一化尺寸
+    :param boxes2:归一化尺寸
+    :return:
+    '''
+    if is_safe:
+        pil_copy = img_pil.copy()
+    else:
+        pil_copy=img_pil
+    draw = ImageDraw.Draw(pil_copy)
+    whwh = np.array(img_pil.size).repeat(2, axis=0)  # 单体复制
+
+    if g_boxes is not None:
+        _box1 = g_boxes.clone()
+        _box1 = _box1 * whwh
+        _draw_box4pil(draw, _box1, color='Yellow')
+    if boxes2 is not None:
+        _box2 = boxes2.clone()
+        _box2 = _box2 * whwh
+        _draw_box4pil(draw, _box2, width=2)
+    if grids is not None:
+        _draw_grid4pil(draw, img_pil.size, grids)
+    pil_copy.show()
+
+
+def _draw_grid4pil(draw, size, grids=(7, 7)):
+    colors_ = STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)]
+    w, h = size
+    xys = np.array([w, h]) / grids
+    off_x = np.arange(1, grids[0])
+    off_y = np.arange(1, grids[1])
+    xx = off_x * xys[0]
+    yy = off_y * xys[1]
+    for x_ in xx:
+        # 画列
+        draw.line([x_, 0, x_, h], width=2, fill=colors_)
+    for y_ in yy:
+        # 画列
+        draw.line([0, y_, w, y_], width=2, fill=colors_)
+
+
+def f_show_grid4pil(img_pil, grids=(7, 7)):
+    pil_copy = img_pil.copy()
+    draw = ImageDraw.Draw(img_pil)
+    _draw_grid4pil(draw, img_pil.size, grids)
+    pil_copy.show()
+
+
 if __name__ == '__main__':
-    # PIL
-    image = None
-    draw = ImageDraw.Draw(image)
-    draw.text(text_origin, str(label, 'UTF-8'), fill=(0, 0, 0), font=font)
+    file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_006046.jpg'
+    file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_000121.jpg'
+
+    # img = cv2.imread(file_img)
+    from PIL import Image
+    from torchvision.transforms import functional as F
+
+    # 直接拉伸 pil打开为RGB
+    img_pil = Image.open(file_pic).convert('RGB')
+
+    f_show_grid4pil(img_pil, (20, 5))

@@ -3,7 +3,6 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_pretreatment import Resize, ResizeKeep
 from f_tools.f_general import get_path_root
 from object_detection.f_fit_tools import load_weight
 from object_detection.ssd import p_transform4ssd
