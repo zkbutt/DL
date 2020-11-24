@@ -11,6 +11,7 @@ import torch
 def rand(a=0., b=1.):
     return np.random.rand() * (b - a) + a
 
+
 def get_path_root():
     debug_vars = dict((a, b) for a, b in os.environ.items() if a.find('IPYTHONENABLE') >= 0)
     # 根据不同场景获取根目录
@@ -98,13 +99,13 @@ def mkdir(path):
 def labels2onehot4ts(labels, num_class):
     '''
 
-    :param labels: 类别 index
+    :param labels: 类别 index [,2,1,1,3,5]
     :param num_class:
-    :return:
+    :return: torch.Size([1, 20])
     '''
     batch = labels.shape[0]
     labels.resize_(batch, 1)  # labels[:,None]
-    zeros = torch.zeros(batch, num_class)
+    zeros = torch.zeros(batch, num_class, device=labels.device)
     onehot = zeros.scatter_(1, labels, 1)  # dim,index,value
     return onehot
 

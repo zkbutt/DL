@@ -203,15 +203,16 @@ def f_train_one_epoch2(model, data_loader, loss_process, optimizer, epoch, cfg,
         return ret
 
     # 每个epoch保存
-    flog.info('训练完成正在保存模型...')
-    save_weight(
-        path_save=cfg.PATH_SAVE_WEIGHT,
-        model=model,
-        name=cfg.SAVE_FILE_NAME,
-        loss=ret,
-        optimizer=optimizer,
-        lr_scheduler=lr_scheduler,
-        epoch=epoch)
+    if not cfg.DEBUG:
+        flog.info('训练完成正在保存模型...')
+        save_weight(
+            path_save=cfg.PATH_SAVE_WEIGHT,
+            model=model,
+            name=cfg.SAVE_FILE_NAME,
+            loss=ret,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            epoch=epoch)
 
     return ret
 

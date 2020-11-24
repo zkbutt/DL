@@ -1,10 +1,10 @@
 class CFG:
-    DEBUG = True
+    DEBUG = False
 
     IS_TRAIN = True
     IS_MIXTURE_FIX = False
-    PATH_ROOT = 'M:/'
-    # PATH_ROOT = '/home/bak3t/bak299g/'  # 需要尾部加/
+    # PATH_ROOT = 'M:/'
+    PATH_ROOT = '/home/bak3t/bak299g/'  # 需要尾部加/
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
     BATCH_SIZE = 15  # batch过小需要设置连续前传
@@ -42,10 +42,10 @@ class CFG:
     # FILE_FIT_WEIGHT = None
 
     '''Loss参数'''
-    PREDICT_IOU_THRESHOLD = 0.3  # 用于预测的阀值
-    NEGATIVE_RATIO = 3  # 负样本倍数
-    NEG_IOU_THRESHOLD = .5  # 小于时作用负例,用于 MultiBoxLoss
-    IGNORE_THRESH = 0.225
+    # PREDICT_IOU_THRESHOLD = 0.3  # 用于预测的阀值
+    NUM_NEG = 2000  # 负样本最大数量
+    NEG_IOU_THRESHOLD = .0  # 小于时作用负例
+    # IGNORE_THRESH = 0.225
 
     '''ANCHORS相关'''
     # 每层anc数需统一，各层数据才能进行融合处理

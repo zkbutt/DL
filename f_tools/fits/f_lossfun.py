@@ -189,6 +189,7 @@ class LossYOLOv3(nn.Module):
         loss_cls_pos = 0
         loss_box_pos = 0  # 只计算匹配的
         loss_conf_pos = 0  # 正反例， 正例*100 取难例
+        loss_conf_neg = 0
 
         '''-----------------匹配----------------------'''
         # torch.Size([5, 10647, 25])
@@ -245,8 +246,30 @@ class LossYOLOv3(nn.Module):
             # 每一个GT的匹配降序再索引恢复(表示匹配的0~8索引)  15 % anc数9 难 后面的铁定是没有用的
             iou_sort = torch.argsort(-iou, dim=1) % num_anc  # 9个
 
-            for j in range(iou_sort.shape[0]):  # gt个数
-                for k in range(num_anc):  # 若同一格子有9个大小相同的对象则无法匹配
+            # 负例难例挖掘
+            p_xy = p_yolo_ts[i, :, :2]
+            p_wh = p_yolo_ts[i, :, 2:4]
+            _findex = np.arange(len(num_ceng)).repeat(num_ceng * 3)
+            fsizes = np.array(self.anc_obj.feature_sizes)[_findex, 0]
+            p_box_xy = p_xy / torch.tensor(fsizes, device=device)[:, None] + self.anc_obj.ancs[:, :2]
+            p_box_wh = p_wh.exp() * self.anc_obj.ancs[:, 2:]
+            p_box_xywh = torch.cat([p_box_xy, p_box_wh], dim=-1)
+            p_box_ltrb = xywh2ltrb(p_box_xywh)
+
+            # 负例conf
+            ious = calc_iou4ts(boxes, p_box_ltrb, is_ciou=True)
+            _max_ious, _ = ious.max(dim=0)
+            _max_ious = _max_ious[_max_ious < self.cfg.NEG_IOU_THRESHOLD]  # iou超参
+            _max_index = _max_ious.argsort()
+            _p_conf_neg = p_yolo_ts[i, _max_index[:self.cfg.NUM_NEG], 4]  # 反例个数超参
+            _l_conf_neg = F.binary_cross_entropy(_p_conf_neg, torch.zeros_like(_p_conf_neg), reduction='sum')
+
+            # boxes.shape[0]
+            _l_cls_pos = torch.zeros(1, device=device)
+            _l_conf_pos = torch.zeros(1, device=device)
+            _l_iou_pos = torch.zeros(1, device=device)
+            for j in range(iou_sort.shape[0]):  # gt个数 GT索引
+                for k in range(num_anc):  # 若同一格子有9个大小相同的对象则无法匹配 最多匹配9个
                     # 第k个 一定在 num_anc 之中
                     k_ = iou_sort[j][k]
                     # 匹配特图的索引
@@ -278,111 +301,40 @@ class LossYOLOv3(nn.Module):
                     #         ))
 
                     if targets_yolo[i, match_index_s + match_anc_index, 4] == 0:  # 同一特图一个网格只有一个目标
-                        '''--------找到匹配的 计算正例损失-----------'''
+                        '''--------找到匹配的 计算正例损失  进来的是一个-----------'''
                         pcls = p_yolo_ts[i, match_index_s + match_anc_index, 5:]
                         _t = labels2onehot4ts(torch.tensor([labels[j] - 1], device=device), self.cfg.NUM_CLASSES)
-                        l_cls_pos = F.binary_cross_entropy(pcls, _t, reduction='sum')
+                        _l_cls_pos += F.binary_cross_entropy(pcls[None], _t, reduction='sum')
 
                         pconf = p_yolo_ts[i, match_index_s + match_anc_index, 4]
-                        l_cls_conf = F.binary_cross_entropy(pconf, torch.tensor(1, dtype=torch.float, device=device))
+                        _l_conf_pos += F.binary_cross_entropy(pconf, torch.tensor(1, dtype=torch.float, device=device))
 
-                        p_xy = p_yolo_ts[i, match_index_s + match_anc_index, :2]
-                        p_wh = p_yolo_ts[i, match_index_s + match_anc_index, 2:4]
-                        fsize = self.anc_obj.feature_sizes[match_anc_index][0]
-                        p_box_xy = p_xy / fsize + self.anc_obj.ancs[match_index_s + match_anc_index, :2]  # xy
-                        p_box_wh = p_wh.exp() * self.anc_obj.ancs[match_index_s + match_anc_index, 2:]  # wh
-                        p_box_xywh = torch.cat([p_box_xy, p_box_wh], dim=-1)
-                        p_box_ltrb = xywh2ltrb(p_box_xywh[None])
-                        ious = bbox_iou4one(boxes[j][None], p_box_ltrb)
-                        w = 2 - boxes_xywh[i, 2] * boxes_xywh[i, 3]  # 增加小目标的损失
-                        l_iou = w * (1 - ious)
-                        print(123)
+                        # 正例IOU损失
+                        ious = bbox_iou4one(boxes[j][None], p_box_ltrb[match_index_s + match_anc_index, :][None])
+                        w = 2 - boxes_xywh[j, 2] * boxes_xywh[j, 3]  # 增加小目标的损失
+                        _l_iou_pos += w * (1 - ious)
+
                         break
                     else:
                         # 取第二大的IOU的与之匹配
                         # flog.info('找到一个重复的')
                         pass
+            loss_cls_pos = loss_cls_pos + _l_cls_pos / boxes.shape[0]
+            loss_box_pos = loss_box_pos + _l_iou_pos / boxes.shape[0]
+            loss_conf_pos = loss_conf_pos + _l_conf_pos / boxes.shape[0]
+            loss_conf_neg = loss_conf_neg + _l_conf_neg
 
-        pconf = p_yolo_ts[:, :, 4]
-        gconf = targets_yolo[:, :, 4]
-        '''生成float mask'''
-        # 获取有GT的框的布尔索引集,conf为索引 4 =1
-        mask_pos = targets_yolo[:, :, 4] > 0  # [5, 10647, 25])
-        num_pos = mask_pos.sum(dim=1)
-        # 没有GT的索引 mask ==0  coo_mask==False
-        mask_neg = targets_yolo[:, :, 4] == 0  # torch.Size([5, 10647, 25])->torch.Size([5, 10647])
-
-        # ([5, 10647]) -> ([5, 10647,25]) unsqueeze(-1) 扩展最后一维  coo_mask 大部分为0 noo_mask  大部分为1
-        mask_pos = mask_pos.unsqueeze(-1).expand_as(targets_yolo)
-        mask_pos_f = mask_pos.float()
-        mask_neg_f = mask_neg.unsqueeze(-1).expand_as(targets_yolo).float()
-
-        '''正例框 giou损失'''
-        # 已修复预测框
-        # p_box_xy = p_yolo_ts[:, :, :2] + self.anc[:, :, :2]  # xy
-        # p_box_wh = p_yolo_ts[:, :, 2:4].exp() * self.anc[:, :, 2:]  # wh
-        # p_box_xywh = torch.cat([p_box_xy, p_box_wh], dim=-1)
-        # p_box_ltrb = xywh2ltrb(p_box_xywh)
-        # 计算每一批的IOU损失
-
-        loss_iou = 0
-        for i in range(batch):
-            # 计算正例匹配的iou
-            _t = targets_yolo[:, :, :4][i]
-            gbox = _t[mask_pos[i, :, :4]].reshape(-1, 4)
-            _t = p_yolo_ts[:, :, :4][i]
-            _pbox = _t[mask_pos[i, :, :4]].reshape(-1, 4)
-
-            p_box_xy = _pbox[:, :2] / + self.anc[:, :2]  # xy
-            p_box_wh = _pbox[:, 2:4].exp() * self.anc[:, 2:]  # wh
-            p_box_xywh = torch.cat([p_box_xy, p_box_wh], dim=-1)
-            p_box_ltrb = xywh2ltrb(p_box_xywh)
-            ious = bbox_iou4one(gbox, p_box_ltrb)
-
-            gbox_xywh = ltrb2xywh(gbox)
-            w = 2 - gbox_xywh[:, 2] * gbox_xywh[:, 3]
-            loss_iou += ((w[:, None] * (1 - ious)) / num_pos[i]).sum()
-        loss_iou = loss_iou / batch
-
-        '''置信度损失---正反例'''
-        # 这个负例过多使 conf 赵近于0
-        # _num_anc = p_yolo_ts.shape[1]
-        _loss = F.binary_cross_entropy(pconf, gconf, reduction='none')
-        loss_conf_pos = (_loss * mask_pos_f[:, :, 4]).sum(dim=-1)
-        loss_conf_pos = loss_conf_pos.mean()
-
-        loss_conf_neg = (_loss * mask_neg_f[:, :, 4]).sum(dim=-1)
-        loss_conf_neg = loss_conf_neg.mean()
-
-        loss_conf = loss_conf_pos + self.l_noobj * loss_conf_neg
-
-        '''cls损失---只正例'''
-        _loss = F.binary_cross_entropy(p_yolo_ts[:, :, 5:], targets_yolo[:, :, 5:5 + self.num_classes],
-                                       reduction='none')
-        loss_class_coo = (_loss * mask_pos_f[:, :, 5:5 + self.num_classes]).sum(dim=-1).sum(dim=-1)
-        loss_class_coo = (loss_class_coo / num_pos).mean(dim=0)  # 一维5个值
-
-        # '''正例框损失---anc正例处理 前面已经计算好了偏移'''
-        # _loss = F.binary_cross_entropy(p_yolo_ts[:, :, :2], targets_yolo[:, :, -2:], reduction='none')
-        # loss_xy = (_loss * mask_pos_f[:, :, -2:]).sum(dim=-1).sum(dim=-1)
-        # loss_xy = (loss_xy / num_pos).mean(dim=0)
-
-        # anc_match = self.anc.repeat(batch, 1, 1)
-        # anc_wh_pos = anc_match[:, :, 2:]
-        # _diff = (targets_yolo[:, :, 2:4] / anc_wh_pos + torch.finfo(torch.float).eps).log()
-        # _loss = F.mse_loss(p_yolo_ts[:, :, 2:4], _diff, reduction='none')
-        # loss_wh = (_loss * mask_pos_f[:, :, 2:4]).sum(dim=-1).sum(dim=-1)
-        # loss_wh = (loss_wh / num_pos).mean(dim=0)
-
-        # loss_total = loss_conf + loss_class_coo + loss_xy + loss_wh
-        loss_total = loss_conf + loss_class_coo + loss_iou
+        l_conf_p = loss_conf_pos / batch
+        l_conf_n = loss_conf_neg / batch
+        l_box_p = loss_box_pos / batch
+        l_cls_p = loss_cls_pos / batch
+        loss_total = l_conf_p + l_conf_n + l_box_p + l_cls_p
 
         log_dict = {}
-        log_dict['loss_conf'] = loss_conf_pos.item()
-        log_dict['loss_cls'] = loss_class_coo.item()
-        log_dict['loss_box'] = loss_iou.item()
-        # log_dict['loss_xy'] = loss_xy.item()
-        # log_dict['loss_wh'] = loss_wh.item()
+        log_dict['l_conf_p'] = l_conf_p.item()
+        log_dict['l_conf_n'] = l_conf_n.item()
+        log_dict['l_box_p'] = l_box_p.item()
+        log_dict['l_cls_p'] = l_cls_p.item()
 
         return loss_total, log_dict
 
