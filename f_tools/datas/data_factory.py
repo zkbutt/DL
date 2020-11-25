@@ -1,7 +1,4 @@
-import _thread
 import json
-import time
-from concurrent.futures.thread import ThreadPoolExecutor
 from operator import itemgetter
 
 import cv2
@@ -11,12 +8,10 @@ import torch
 import xmltodict
 import numpy as np
 
-# from f_tools.pic.f_show import show_od4boxs
-# from object_detection.faster_rcnn.draw_box_utils import draw_box
-# import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.pic.enhance.f_mosaic import mosaic_pics
 
 
 def _rand(a=0., b=1.):
@@ -27,7 +22,7 @@ class VOCDataSet(Dataset):
     """读取解析PASCAL VOC2012数据集"""
 
     def __init__(self, path_data_root, path_file_txt, transforms=None,
-                 bbox2one=False, isdebug=False):
+                 bbox2one=False, isdebug=False, is_mosaic=False, cfg=None):
         '''
 
         :param path_data_root: voc数据集的根目录
@@ -39,6 +34,8 @@ class VOCDataSet(Dataset):
         self.transforms = transforms
         self.bbox2one = bbox2one
         self.isdebug = isdebug
+        self.is_mosaic = is_mosaic
+        self.cfg = cfg
 
         path_txt = os.path.join(path_data_root, path_file_txt)
         _path_xml = os.path.join(path_data_root, 'Annotations')
@@ -70,7 +67,24 @@ class VOCDataSet(Dataset):
     def __len__(self):
         if self.isdebug:
             return 15
+        if self.is_mosaic:
+            return len(self.xml_list) // 4
         return len(self.xml_list)
+
+    def do_mosaic(self, idx):
+        imgs = []
+        boxs = []
+        labels = []
+        for i in range(idx, idx + 4):
+            img_pil, target = self.open_img_tar(i)
+            imgs.append(img_pil)  # list(img_pil)
+            boxs.append(target["boxes"])
+            labels.append(target["labels"])
+        img_pil_mosaic, boxes_mosaic, labels = mosaic_pics(imgs, boxs, labels, self.cfg.IMAGE_SIZE, is_visual=False)
+        target = {}
+        target["boxes"] = boxes_mosaic  # 输出左上右下
+        target["labels"] = labels
+        return img_pil_mosaic, target
 
     def __getitem__(self, idx):
         '''
@@ -83,17 +97,29 @@ class VOCDataSet(Dataset):
             target对象 全tensor值 bndbox name difficult 输出左上右下
                 box是 ltrb 是否归一化根据参数
         '''
-        # ----------解析xml-----------
-        # path_xml = self.xml_list[idx + 307 * 16]
+
+        if self.is_mosaic is True:
+            img_ts, target_ts = self.do_mosaic(idx)
+        else:
+            # ----------解析xml-----------
+            # path_xml = self.xml_list[idx + 307 * 16]
+            img_ts, target_ts = self.open_img_tar(idx)
+
+        '''这里输出 img_pil'''
+        if self.transforms is not None:  # 这里是预处理
+            img_ts, target_ts = self.transforms(img_ts, target_ts)  # 这里返回的是匹配后的bbox
+
+        # show_od4boxs(image, target['boxes'], is_tensor=True)  # 预处理图片测试
+        return img_ts, target_ts
+
+    def open_img_tar(self, idx):
         path_xml = self.xml_list[idx]
         doc = self.parse_xml(path_xml)  # 解析xml
         path_img = os.path.join(os.path.join(self.path_data_root, 'JPEGImages'), doc['annotation']['filename'])
-
         # image = Image.open(path_img).convert('RGB')  # 这个打开的wh
         image = Image.open(path_img)  # 这个打开的wh
         if image.format != "JPEG":  # 类型校验 这里打开的是原图
             raise ValueError("Image format not JPEG")
-
         '''-----------组装 target 结构不一样,且有可能有多个------------'''
         boxes = np.empty(shape=(0, 4), dtype=np.float)
         labels = []
@@ -117,9 +143,7 @@ class VOCDataSet(Dataset):
                 boxes = np.concatenate((boxes, np.array([xmin, ymin, xmax, ymax])[None]), axis=0)
                 labels.append(self.class_to_ids[obj['name']])
                 iscrowd.append(int(obj['difficult']))
-
         # show_od4boxs(image,boxes) # 原图测试
-
         # list(np数组)   转换   为tensor
         boxes = torch.as_tensor(boxes, dtype=torch.float32)
         if self.bbox2one:  # 归一化
@@ -127,11 +151,9 @@ class VOCDataSet(Dataset):
         labels = torch.as_tensor(labels, dtype=torch.int64)
         iscrowd = torch.as_tensor(iscrowd, dtype=torch.int64)
         image_id = torch.tensor([idx])  # 这是第几张图的target
-
         _h = boxes[:, 3] - boxes[:, 1]  # ltrb -> ltwh
         _w = boxes[:, 2] - boxes[:, 0]
         area = (_h) * (_w)  # 面积也是归一化的
-
         target = {}
         target["boxes"] = boxes  # 输出左上右下
         target["labels"] = labels
@@ -139,12 +161,6 @@ class VOCDataSet(Dataset):
         target["height_width"] = torch.tensor([image.size[1], image.size[0]])
         target["area"] = area
         target["iscrowd"] = iscrowd
-
-        '''这里输出 img_pil'''
-        if self.transforms is not None:  # 这里是预处理
-            image, target = self.transforms(image, target)  # 这里返回的是匹配后的bbox
-
-        # show_od4boxs(image, target['boxes'], is_tensor=True)  # 预处理图片测试
         return image, target
 
     def get_height_and_width(self, idx):

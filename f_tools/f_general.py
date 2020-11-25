@@ -110,5 +110,6 @@ def labels2onehot4ts(labels, num_class):
     return onehot
 
 
+
 if __name__ == "__main__":
     pass

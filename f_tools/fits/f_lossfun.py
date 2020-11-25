@@ -7,7 +7,7 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints, ltrb2xywh, calc_iou4ts, \
     bbox_iou4one, xy2offxy
-from f_tools.pic.f_show import show_bbox4ts, f_show_iou4pil
+from f_tools.pic.f_show import show_bbox4ts, f_show_iou4pil, show_anc4pil
 
 
 class FocalLoss(nn.Module):
@@ -201,13 +201,17 @@ class LossYOLOv3(nn.Module):
             # 只能一个个的处理
             boxes = target['boxes'].to(device)  # ltrb
             labels = target['labels'].to(device)
+            if boxes.shape[0] == 0:
+                # 这里要可视化
+                flog.error('boxes==0 %s', boxes.shape)
+                continue
 
             # 可视化1
             img_ts = imgs_ts[i]
             from torchvision.transforms import functional as transformsF
             img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
-            # show_anc4pil(img_pil,boxes,size=img_pil.size)
-            # img_pil.show()
+            # show_anc4pil(img_pil, boxes, size=img_pil.size)
+            img_pil.save('./1.jpg')
 
             boxes_xywh = ltrb2xywh(boxes)
             num_anc = np.array(self.cfg.NUMS_ANC).sum()  # anc总和数[3,3,3
@@ -234,7 +238,12 @@ class LossYOLOv3(nn.Module):
             # f_show_iou4pil(img_pil, boxes, xywh2ltrb(ancs_xywh), grids=self.anc_obj.feature_sizes[-1])
 
             ids = torch.arange(boxes.shape[0]).to(device)  # 9个anc 0,1,2 只支持每层相同的anc数
+            # print(boxes.shape)
             _boxes_offset = boxes + ids[:, None]  # boxes加上偏移 1,2,3
+            # print(boxes.shape)
+            # if boxes.shape == 0:
+            #     flog.warning('有一张没有boxes %s', boxes, labels)
+            #     continue
             ids_offset = ids.repeat_interleave(num_anc)  # 1,2,3 -> 000000000 111111111 222222222
             # p1 = xywh2ltrb(p1)  # 匹配的bbox
             p2 = xywh2ltrb(ancs_xywh)
@@ -242,7 +251,7 @@ class LossYOLOv3(nn.Module):
             # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None])
             # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_giou=True)
             # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_diou=True)
-            iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_ciou=True)
+            iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_ciou=True)  # 这里都等于0
             # 每一个GT的匹配降序再索引恢复(表示匹配的0~8索引)  15 % anc数9 难 后面的铁定是没有用的
             iou_sort = torch.argsort(-iou, dim=1) % num_anc  # 9个
 
@@ -255,10 +264,15 @@ class LossYOLOv3(nn.Module):
             p_box_wh = p_wh.exp() * self.anc_obj.ancs[:, 2:]
             p_box_xywh = torch.cat([p_box_xy, p_box_wh], dim=-1)
             p_box_ltrb = xywh2ltrb(p_box_xywh)
-
-            # 负例conf
+            # print(len(boxes),len(p_box_ltrb))
+            # print(boxes.shape,p_box_ltrb.shape)
             ious = calc_iou4ts(boxes, p_box_ltrb, is_ciou=True)
-            _max_ious, _ = ious.max(dim=0)
+            # print(ious.shape)
+            try:
+                _max_ious, _ = ious.max(dim=0)
+            except Exception as e:
+                flog.error('%s %s', e, ious.shape)
+                continue
             _max_ious = _max_ious[_max_ious < self.cfg.NEG_IOU_THRESHOLD]  # iou超参
             _max_index = _max_ious.argsort()
             _p_conf_neg = p_yolo_ts[i, _max_index[:self.cfg.NUM_NEG], 4]  # 反例个数超参

@@ -1,18 +1,31 @@
+'''解决linux导入出错'''
 import os
+import sys
+
+curPath = os.path.abspath(os.path.dirname(__file__))
+rootPath = os.path.split(curPath)[0]
+sys.path.append(os.path.split(rootPath)[0])
+'''解决linux导入出错 完成'''
 import torch
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.fitting.f_fit_eval_base import mgpu_init
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 from object_detection.f_yolov3.process_fun import init_model, data_loader, train_eval
+import numpy as np
 
 '''
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py
 --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/f_yolov3/train_yolo3_DDP.py
+python -m torch.distributed.launch --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/f_yolov3/train_yolo3_DDP.py
 
-单GPU B16 F2 P50 time: 0.8156  0:15:02 (0.8430 s / it)
-单GPU B15 F2 P50 time: 0.8396  0:16:18 (0.8573 s / it) mem: 6583
-双GPU B15 F2 P50 time: 0.8950  0:15:49 (0.8869 s / it)
-双GPU B15 F2 P50 time: 0.9017   mem: 6824
+
+单GPU B16 416 F2 P50 time: 0.8156  0:15:02 (0.8430 s / it)
+单GPU B8 416 F2 P50 time: 0.7084  0:12:47 (0.7175 s / it)
+
+单GPU B15 416 F2 P50 time: 0.8396  0:16:18 (0.8573 s / it) mem: 6583
+双GPU B15 416 F2 P50 time: 0.8950  0:15:49 (0.8869 s / it)
+双GPU B15 416 F2 P50 time: 0.9017   mem: 6824
+双GPU B8 MOSAIC 512 F2 P50 time: 1.1774  data: 0.0001  0:05:08 (1.1557 s / it) mem: 6212 
 
 
 '''
@@ -20,6 +33,10 @@ from object_detection.f_yolov3.process_fun import init_model, data_loader, train
 if __name__ == '__main__':
     if torch.cuda.is_available() is False:
         raise EnvironmentError("未发现GPU")
+
+    if CFG.IS_MOSAIC:
+        CFG.IMAGE_SIZE = [512, 512]
+    CFG.ANC_SCALE = list(np.array(CFG.ANC_SCALE, dtype=np.float32) / 4)
 
     CFG.SAVE_FILE_NAME = os.path.basename(__file__)
     CFG.DATA_NUM_WORKERS = 6

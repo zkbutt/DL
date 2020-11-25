@@ -3,7 +3,7 @@ import torch
 import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_factory import VOCDataSet
+
 from f_tools.pic.f_show import f_show_iou4plt, show_anc4pil, f_show_iou4pil
 
 
@@ -328,13 +328,14 @@ def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
             return diou
 
         if is_ciou:
-            box1_atan_wh = torch.atan(box1_xywh[:, 2:3] / box1_xywh[:, 3:])
+            box1_atan_wh = torch.atan(box1_xywh[:, 2:3] / box1_xywh[:, 3:]) # w/h
             box2_atan_wh = torch.atan(box2_xywh[:, 2:3] / box2_xywh[:, 3:])
             # torch.squeeze(ts)
             v = torch.pow(box1_atan_wh[:, None, :] - box2_atan_wh, 2) * (4 / math.pi ** 2)
-            v = torch.squeeze(v, -1)  # m,n,1 -> m,n 去掉最后一维
+            # v = torch.squeeze(v, -1)  # m,n,1 -> m,n 去掉最后一维
             v.squeeze_(-1)  # m,n,1 -> m,n 去掉最后一维
-            alpha = v / (1 - iou + v)
+            with torch.no_grad():
+                alpha = v / (1 - iou + v)
             ciou = iou - (dxy + v * alpha)
             return ciou
 
@@ -490,7 +491,7 @@ def _ff_pos_match4yolo(ancs, bboxs, criteria):
 
 def resize_boxes4np(boxes, original_size, new_size):
     '''
-    用于预处理 和 最后的测试(预测还原)
+    用于预处理 和 最后的测试(预测还原) 直接拉伸调整
     :param boxes: 输入多个 np shape(n,4)
     :param original_size: np (w,h)
     :param new_size: np (w,h)
@@ -498,7 +499,7 @@ def resize_boxes4np(boxes, original_size, new_size):
     '''
     # 输出数组   新尺寸 /旧尺寸 = 对应 h w 的缩放因子
     ratios = new_size / original_size
-    boxes = boxes * np.concatenate([ratios, ratios])
+    boxes = boxes * np.concatenate([ratios, ratios]).astype(np.float32)
     return boxes
 
 
@@ -654,6 +655,7 @@ def build_targets(model, targets):
 
 
 if __name__ == '__main__':
+    from f_tools.datas.data_factory import VOCDataSet
     path = r'M:\AI\datas\VOC2012\trainval'
 
     dataset_train = VOCDataSet(

@@ -6,6 +6,7 @@ import torchvision.transforms
 from torchvision.transforms import functional as F, transforms
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.data_factory import VOCDataSet
 from f_tools.fun_od.f_boxes import calc_iou4ts
 from f_tools.pic.f_show import show_bbox_keypoints4pil, show_bbox4pil
 from f_tools.pic.f_size_handler import resize_img_keep_np
@@ -384,3 +385,17 @@ class ColorJitter(object):
         #     flog.debug('ColorJitter 后%s', img_pil.size)
         #     img_pil.show()
         return img_pil, target
+
+
+if __name__ == '__main__':
+    path = r'M:\AI\datas\VOC2012\trainval'
+
+    dataset_train = VOCDataSet(
+        path,
+        'train.txt',  # 正式训练要改这里
+        transforms=None,
+        bbox2one=False,
+        isdebug=True
+    )
+    img_pil, target_tensor = dataset_train[0]
+

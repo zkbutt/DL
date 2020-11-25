@@ -19,23 +19,39 @@ from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
 from object_detection.f_yolov3.nets.model_yolo3 import YoloV3SPP
 from object_detection.f_yolov3.train_eval_fun import LossHandler
 
-DATA_TRANSFORM = {
-    "train": Compose([
-        ResizeKeep(CFG.IMAGE_SIZE),
-        # Resize(CFG.IMAGE_SIZE),
-        # SSDCroppingPIL(),
-        # ColorJitter(),
-        ToTensor(),
-        # RandomHorizontalFlip4TS(1),
-        # Normalization4TS(),
-    ], CFG),
-    "val": Compose([
-        ResizeKeep(CFG.IMAGE_SIZE),  # (h,w)
-        # Resize(CFG.IMAGE_SIZE),
-        ToTensor(),
-        Normalization4TS(),
-    ], CFG)
-}
+if CFG.IS_MOSAIC:
+    DATA_TRANSFORM = {
+        "train": Compose([
+            ColorJitter(),
+            ToTensor(),
+            RandomHorizontalFlip4TS(1),
+            Normalization4TS(),
+        ], CFG),
+        "val": Compose([
+            ResizeKeep(CFG.IMAGE_SIZE),  # (h,w)
+            # Resize(CFG.IMAGE_SIZE),
+            ToTensor(),
+            Normalization4TS(),
+        ], CFG)
+    }
+else:
+    DATA_TRANSFORM = {
+        "train": Compose([
+            ResizeKeep(CFG.IMAGE_SIZE),
+            # Resize(CFG.IMAGE_SIZE),
+            # SSDCroppingPIL(),
+            ColorJitter(),
+            ToTensor(),
+            RandomHorizontalFlip4TS(1),
+            Normalization4TS(),
+        ], CFG),
+        "val": Compose([
+            ResizeKeep(CFG.IMAGE_SIZE),  # (h,w)
+            # Resize(CFG.IMAGE_SIZE),
+            ToTensor(),
+            Normalization4TS(),
+        ], CFG)
+    }
 
 
 def output_res(p_boxes, p_keypoints, p_scores, threshold_conf=0.5, threshold_nms=0.3):
@@ -99,8 +115,9 @@ def init_model(cfg, device, id_gpu=None):
     # 最初学习率
     lr0 = 1e-3
     lrf = lr0 / 100
-    optimizer = optim.SGD(pg, lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
-    start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, optimizer, None, device, is_mgpu=is_mgpu)
+    # optimizer = optim.SGD(pg, lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
+    optimizer = optim.Adam(model.parameters(), lr=lr0, weight_decay=5e-4)
+    start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, None, None, device, is_mgpu=is_mgpu)
     lr_scheduler = f_lr_cos(optimizer, start_epoch, CFG.END_EPOCH, lrf_scale=0.01)
 
     return model, losser, optimizer, lr_scheduler, start_epoch, anc_obj
@@ -151,7 +168,9 @@ def data_loader(cfg, is_mgpu=False):
             'train.txt',  # 正式训练要改这里
             DATA_TRANSFORM["train"],
             bbox2one=False,
-            isdebug=cfg.DEBUG
+            isdebug=cfg.DEBUG,
+            is_mosaic=cfg.IS_MOSAIC,
+            cfg=cfg,
         )
         if is_mgpu:
             # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
@@ -177,7 +196,7 @@ def data_loader(cfg, is_mgpu=False):
                 dataset_train,
                 batch_size=cfg.BATCH_SIZE,
                 num_workers=cfg.DATA_NUM_WORKERS,
-                shuffle=True,
+                # shuffle=True,
                 pin_memory=True,  # 不使用虚拟内存 GPU要报错
                 # drop_last=True,  # 除于batch_size余下的数据
                 collate_fn=_collate_fn,

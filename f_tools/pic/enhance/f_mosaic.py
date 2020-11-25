@@ -1,10 +1,11 @@
+import torch
 from PIL import Image, ImageDraw
 import numpy as np
 
-from f_tools.datas.data_factory import VOCDataSet
 from f_tools.f_general import rand
 from f_tools.fun_od.f_boxes import resize_boxes4np
 from f_tools.pic.f_show import f_show_od4pil
+from f_tools.pic.f_size_handler import resize_img_pil_keep
 
 '''
 1、增加数据的多样性
@@ -13,11 +14,11 @@ from f_tools.pic.f_show import f_show_od4pil
 '''
 
 
-def mosaic_pic(imgs, boxs, out_size, is_visual=False, range=(0.4, 0.6)):
+def mosaic_pics(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 0.6)):
     '''
 
     :param imgs: list(4张图片) list(img_pil)
-    :param boxs: list(np) (n,4) 真实的左上右下值
+    :param boxs: list(np) (n,4) 真实的左上右下值 ltrb
     :param out_size: w,h
     :return:
        img_pil_mosaic_one:已归一化的图片
@@ -35,10 +36,12 @@ def mosaic_pic(imgs, boxs, out_size, is_visual=False, range=(0.4, 0.6)):
     place_x = [0, 0, offset_x, offset_x]  # <class 'list'>: [0, 0, 166, 166]
     place_y = [0, offset_y, offset_y, 0]  # <class 'list'>: [0, 166, 166, 0]
     img_pil_mosaic = Image.new('RGB', (ow, oh), (128, 128, 128))
-    boxes_np = np.zeros((0, 4))
+    boxes_ts = torch.zeros((0, 4))
+    labels_ts = torch.zeros(0,dtype=torch.int64)
+
     index = 0
 
-    for img_pil, box in zip(imgs, boxs):
+    for img_pil, box, label in zip(imgs, boxs, labels):
         # 图片的大小
         iw, ih = img_pil.size
 
@@ -58,7 +61,8 @@ def mosaic_pic(imgs, boxs, out_size, is_visual=False, range=(0.4, 0.6)):
             nw, nh = ow - offset_x, oh - offset_y
         else:  # index == 3:
             nw, nh = ow - offset_x, offset_y
-        img_pil = img_pil.resize((nw, nh), Image.BICUBIC)
+        # img_pil = img_pil.resize((nw, nh), Image.BICUBIC)
+        img_pil, _, nsize = resize_img_pil_keep(img_pil, (nw, nh), is_fill=True)
 
         # 将图片进行放置，分别对应四张分割图片的位置 图片左上点位置
         dx = place_x[index]
@@ -68,11 +72,28 @@ def mosaic_pic(imgs, boxs, out_size, is_visual=False, range=(0.4, 0.6)):
         # image_data = np.array(img_pil_mosaic_one) / 255
         # Image.fromarray((image_data*255).astype(np.uint8)).save(str(index)+"distort.jpg")
         if len(box) > 0:
-            box = resize_boxes4np(box, np.array([iw, ih]), np.array([nw, nh]))
-            _dxdy = np.concatenate([np.array(dx).reshape(1, -1), np.array(dy).reshape(1, -1)], axis=1)
-            dxdydxdy = np.concatenate([_dxdy, _dxdy], axis=1)
+            # 这里可以改进 有些框会变得很小
+            # box = resize_boxes4np(box, np.array([iw, ih]), np.array([nw, nh]))
+            box = resize_boxes4np(box, np.array([iw, ih]), np.array(nsize))
+            # torch.tensor(box)
+            # wh有一个为0的 过滤
+            # box[:, ::2] = box[:, ::2].clip(min=0, max=nw)
+            # box[:, 1::2] = box[:, 1::2].clip(min=0, max=nh)
+            box[:, ::2].clamp_(min=0, max=nw)
+            box[:, 1::2].clamp_(min=0, max=nh)
+            wh = box[:, 2:] - box[:, :2]
+            _mask = (wh == 0).any(axis=1)  # 降维 np.array([[0,0,0,0],[0,0,3,0],[0,0,0,0],])
+            box = box[torch.logical_not(_mask)]
+            label = label[torch.logical_not(_mask)]
+
+            # print(wh)
+            _dxdy = torch.cat([torch.tensor(dx).reshape(1, -1), torch.tensor(dy).reshape(1, -1)], dim=1)
+            # _dxdy = np.concatenate([np.array(dx).reshape(1, -1), np.array(dy).reshape(1, -1)], axis=1)
+            # dxdydxdy = np.concatenate([_dxdy, _dxdy], axis=1)
+            dxdydxdy = torch.cat([_dxdy, _dxdy], dim=1)
             box = box + dxdydxdy
-            boxes_np = np.append(boxes_np, box, axis=0)
+            boxes_ts = torch.cat([boxes_ts, box], dim=0)
+            labels_ts = torch.cat([labels_ts, label], dim=0)
         index = index + 1
 
         if is_visual:
@@ -84,10 +105,12 @@ def mosaic_pic(imgs, boxs, out_size, is_visual=False, range=(0.4, 0.6)):
                 draw.rectangle([left, top, right, bottom], outline=(255, 255, 255), width=2)
             img_pil_copy.show()
 
-    return img_pil_mosaic, boxes_np
+    return img_pil_mosaic, boxes_ts, labels_ts
 
 
 if __name__ == "__main__":
+    from f_tools.datas.data_factory import VOCDataSet
+
     '''
     1. 随机读取四张图片
     2. 分别对四张图片预处理
@@ -123,12 +146,13 @@ if __name__ == "__main__":
         '''
         # print(img_pil, target)
         imgs.append(img_pil)  # list(img_pil)
-        boxs.append(target["boxes"].numpy())
-        labels.extend(list(target["labels"].numpy()))
+        boxs.append(target["boxes"])
+        labels.append(target["labels"])
         if i % 4 == 0:
-            img_pil_mosaic, boxes_mosaic = mosaic_pic(imgs, boxs, [550, 550], is_visual=False)
+            img_pil_mosaic, boxes_mosaic, labels = mosaic_pics(imgs, boxs, labels, [550, 550], is_visual=False)
+            print(len(boxes_mosaic), len(boxes_mosaic) == len(labels))
             boxes_confs = np.concatenate([boxes_mosaic, np.ones((boxes_mosaic.shape[0], 1))], axis=1)
-            f_show_od4pil(img_pil_mosaic, boxes_confs, labels)
+            f_show_od4pil(img_pil_mosaic, boxes_confs, list(labels.type(torch.int16).numpy()))
             # f_show_od4pil(img_pil_mosaic, boxes_confs, labels, text_fill=False)
             # img_pil_mosaic.save("box_all.jpg")
             imgs.clear()

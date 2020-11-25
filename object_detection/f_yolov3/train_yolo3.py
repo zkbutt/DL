@@ -1,15 +1,21 @@
 import math
 import os
+import sys
+
+curPath = os.path.abspath(os.path.dirname(__file__))
+rootPath = os.path.split(curPath)[0]
+sys.path.append(os.path.split(rootPath)[0])
 import torch
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_fit_fun import init_od
 from object_detection.f_yolov3.process_fun import init_model, data_loader, train_eval
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
+import numpy as np
 
 '''
 多尺度训练 multi-scale
  0:15:02
-
+python /home/win10_sys/tmp/DL/object_detection/f_yolov3/train_yolo3.py
 '''
 
 if __name__ == '__main__':
@@ -39,6 +45,10 @@ if __name__ == '__main__':
         pass
     else:
         torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
+
+    if CFG.IS_MOSAIC:
+        CFG.IMAGE_SIZE = [512, 512]
+        CFG.ANC_SCALE = list(np.array(CFG.ANC_SCALE,dtype=np.float32) / 4)
 
     # CFG.FILE_FIT_WEIGHT = None
 

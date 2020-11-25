@@ -341,6 +341,7 @@ def c_hsv_np(img_np, h_gain=0.5, s_gain=0.5, v_gain=0.5):
     img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
     cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img_np)  # no return needed
 
+
 def random_horizontal_flip_np(img_np, bboxes):
     # 水平
     if random.random() < 0.5:
@@ -350,9 +351,10 @@ def random_horizontal_flip_np(img_np, bboxes):
         # a[::-1]
         # Out[3]: [5, 4, 3, 2, 1]
         img_np = img_np[:, ::-1, :]
-        bboxes[:, [0,2]] = w - bboxes[:, [2,0]]
+        bboxes[:, [0, 2]] = w - bboxes[:, [2, 0]]
 
     return img_np, bboxes
+
 
 def random_crop_np(img_np, bboxes):
     # 随机剪裁
@@ -377,8 +379,9 @@ def random_crop_np(img_np, bboxes):
 
     return img_np, bboxes
 
+
 def random_translate_np(img_np, bboxes):
-    #旋转
+    # 旋转
     if random.random() < 0.5:
         h, w, _ = img_np.shape
         max_bbox = np.concatenate([np.min(bboxes[:, 0:2], axis=0), np.max(bboxes[:, 2:4], axis=0)], axis=-1)
@@ -398,6 +401,7 @@ def random_translate_np(img_np, bboxes):
         bboxes[:, [1, 3]] = bboxes[:, [1, 3]] + ty
 
     return img_np, bboxes
+
 
 if __name__ == '__main__':
     file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_006046.jpg'

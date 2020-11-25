@@ -1,13 +1,13 @@
 class CFG:
     DEBUG = False
-
+    IS_MOSAIC = True
     IS_TRAIN = True
     IS_MIXTURE_FIX = False
     # PATH_ROOT = 'M:/'
     PATH_ROOT = '/home/bak3t/bak299g/'  # 需要尾部加/
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
-    BATCH_SIZE = 15  # batch过小需要设置连续前传
+    BATCH_SIZE = 8  # batch过小需要设置连续前传
     FORWARD_COUNT = 2  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
     PRINT_FREQ = 50  # 每50批打印一次
     END_EPOCH = 50
@@ -38,7 +38,7 @@ class CFG:
     '''模型权重'''
     PATH_SAVE_WEIGHT = PATH_ROOT + 'AI/weights/feadre'
     SAVE_FILE_NAME = 'def'  # 预置一个 实际无用 根据文件名确定
-    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_yolo3_DDP.pydarknet53-7_20.129762649536133.pth'
+    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_yolo3_DDP.pydarknet53-13_5.952162265777588.pth'
     # FILE_FIT_WEIGHT = None
 
     '''Loss参数'''
