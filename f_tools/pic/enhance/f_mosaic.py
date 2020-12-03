@@ -14,12 +14,16 @@ from f_tools.pic.f_size_handler import resize_img_pil_keep
 '''
 
 
-def mosaic_pics(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 0.6)):
+def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 0.6),
+                     is_keep_wh=True):
     '''
 
     :param imgs: list(4张图片) list(img_pil)
     :param boxs: list(np) (n,4) 真实的左上右下值 ltrb
     :param out_size: w,h
+    :param is_visual: debug
+    :param range: 中点随机范围
+    :param is_keep_wh: 是否保持wh
     :return:
        img_pil_mosaic_one:已归一化的图片
        boxes_mosaic :拼接缩小后的box
@@ -37,7 +41,7 @@ def mosaic_pics(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 0.6))
     place_y = [0, offset_y, offset_y, 0]  # <class 'list'>: [0, 166, 166, 0]
     img_pil_mosaic = Image.new('RGB', (ow, oh), (128, 128, 128))
     boxes_ts = torch.zeros((0, 4))
-    labels_ts = torch.zeros(0,dtype=torch.int64)
+    labels_ts = torch.zeros(0, dtype=torch.int64)
 
     index = 0
 
@@ -61,8 +65,11 @@ def mosaic_pics(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 0.6))
             nw, nh = ow - offset_x, oh - offset_y
         else:  # index == 3:
             nw, nh = ow - offset_x, offset_y
-        # img_pil = img_pil.resize((nw, nh), Image.BICUBIC)
-        img_pil, _, nsize = resize_img_pil_keep(img_pil, (nw, nh), is_fill=True)
+
+        if is_keep_wh:
+            img_pil, _, nsize = resize_img_pil_keep(img_pil, (nw, nh), is_fill=True)
+        else:
+            img_pil = img_pil.resize((nw, nh), Image.BICUBIC)
 
         # 将图片进行放置，分别对应四张分割图片的位置 图片左上点位置
         dx = place_x[index]
@@ -73,8 +80,11 @@ def mosaic_pics(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 0.6))
         # Image.fromarray((image_data*255).astype(np.uint8)).save(str(index)+"distort.jpg")
         if len(box) > 0:
             # 这里可以改进 有些框会变得很小
-            # box = resize_boxes4np(box, np.array([iw, ih]), np.array([nw, nh]))
-            box = resize_boxes4np(box, np.array([iw, ih]), np.array(nsize))
+            if is_keep_wh:
+                box = resize_boxes4np(box, np.array([iw, ih]), np.array(nsize))
+            else:
+                box = resize_boxes4np(box, np.array([iw, ih]), np.array([nw, nh]))
+
             # torch.tensor(box)
             # wh有一个为0的 过滤
             # box[:, ::2] = box[:, ::2].clip(min=0, max=nw)
@@ -133,7 +143,7 @@ if __name__ == "__main__":
 
     imgs = []
     boxs = []
-    labels = []
+    labels4 = []
     i = 1
     for img_pil, target in dataset_train:
         '''
@@ -147,9 +157,9 @@ if __name__ == "__main__":
         # print(img_pil, target)
         imgs.append(img_pil)  # list(img_pil)
         boxs.append(target["boxes"])
-        labels.append(target["labels"])
+        labels4.append(target["labels"])
         if i % 4 == 0:
-            img_pil_mosaic, boxes_mosaic, labels = mosaic_pics(imgs, boxs, labels, [550, 550], is_visual=False)
+            img_pil_mosaic, boxes_mosaic, labels = f_mosaic_pics_ts(imgs, boxs, labels4, [550, 550], is_visual=False)
             print(len(boxes_mosaic), len(boxes_mosaic) == len(labels))
             boxes_confs = np.concatenate([boxes_mosaic, np.ones((boxes_mosaic.shape[0], 1))], axis=1)
             f_show_od4pil(img_pil_mosaic, boxes_confs, list(labels.type(torch.int16).numpy()))

@@ -54,11 +54,24 @@ def t_交叉运算():
     print(none_b)
     print(none_b.shape)
 
-def x_高级(labels):
+
+def x_高级1(labels):
     random_ = torch.LongTensor(5).random_() % 4
     zeros = torch.zeros(5, 20)
-    onehot = zeros.scatter_(1, labels, 1) # dim,index,value
+    onehot = zeros.scatter_(1, labels, 1)  # dim,index,value
     return onehot
+
+
+def x_高级2(labels):
+    a = np.arange(8).reshape(2, 2, 2)
+    print('原数组：')
+    print(a)
+    print('--------------------')
+    print(np.swapaxes(a, 2, 0))  # 交换数组
+    print('--------------------')
+    print(np.rollaxis(a, 2))  # 向后滚动特定的轴到一个特定位置
+    return labels
+
 
 if __name__ == '__main__':
     # t1 = torch.arange(8)
@@ -71,6 +84,10 @@ if __name__ == '__main__':
     # t2[torch.where(t2 > 2)] = 888  # 布尔降维索引
 
     # f布尔同维1()
-    t_axis()
+    # 反序
+    arr = np.array([[1, 2, 3, 4, 5], [2, 3, 4, 5, 6]])
+    tensor = torch.tensor(arr)
+    print(tensor.numpy())
+    # x_高级2(1)
 
     # t_交叉运算()

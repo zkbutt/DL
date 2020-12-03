@@ -1,11 +1,9 @@
-from collections import OrderedDict
-
 import torch
 from torch import nn, optim
 from torch.cuda.amp import GradScaler, autocast
 from torchvision import models
 
-from f_pytorch.backbone_t.model_look import f_look, f_look2
+from f_pytorch.tools_model.model_look import f_look_model, f_look2
 
 
 class Yolo_v1(nn.Module):
@@ -127,7 +125,7 @@ if __name__ == '__main__':
     model = Yolo_v1(model, out_dim=out_dim, grid=7, num_classes=20)
     batch = 2
     input_shape = [batch, 3, 416, 416]
-    f_look(model, input_shape)
+    f_look_model(model, input_shape)
     f_look2(model, input_shape[-3:])
 
     # t_yolov1()

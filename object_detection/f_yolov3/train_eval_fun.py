@@ -5,9 +5,11 @@ import torch
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_fit_fun import FitBase
 from f_tools.fits.f_match import match4yolo3
-from f_tools.fun_od.f_boxes import xywh2ltrb, fix_bbox, nms, batched_nms
-from f_tools.pic.f_show import show_anc4ts
+from f_tools.fun_od.f_boxes import xywh2ltrb, fix_bbox, nms, batched_nms, fix_boxes4yolo3
+from f_tools.pic.enhance.data_pretreatment import f_recover_normalization4ts
+from f_tools.pic.f_show import show_anc4ts, f_show_od4pil, f_show_od4pil_yolo
 from object_detection.f_yolov3.CONFIG_YOLO3 import CFG
+import numpy as np
 
 
 def _preprocessing_data(batch_data, device, anchors_obj, cfg):
@@ -87,7 +89,7 @@ class LossHandler(FitBase):
 
         # ---------------损失计算 ----------------------
         # log_dict用于显示
-        loss_total, log_dict = self.losser(out, targets,images)
+        loss_total, log_dict = self.losser(out, targets, images)
 
         # -----------------构建展示字典及返回值------------------------
         # 多GPU时结果处理 reduce_dict 方法
@@ -98,57 +100,15 @@ class LossHandler(FitBase):
 
 
 class PredictHandler(FitBase):
-    def __init__(self, model, device,
-                 grid, num_bbox, num_cls,
-                 threshold_conf=0.5, threshold_nms=0.3):
+    def __init__(self, model, device, anc_obj,
+                 predict_conf_threshold, predict_nms_threshold):
         super(PredictHandler, self).__init__(model, device)
-        self.threshold_nms = threshold_nms
-        self.threshold_conf = threshold_conf
-        self.grid = grid
-        self.num_bbox = num_bbox
-        self.num_cls = num_cls
-
-    def output_res(self, p_boxes, p_keypoints, p_scores, img_ts4=None):
-        '''
-        已修复的框 点 和对应的分数
-            1. 经分数过滤
-            2. 经NMS 出最终结果
-        :param p_boxes:
-        :param p_keypoints:
-        :param p_scores:
-        :param img_ts4: 用于显示
-        :param idxs_img: 用于识别多个
-        :return:
-        '''
-        # (batch,xx) -> (batch.xx)
-        mask = p_scores >= self.threshold_conf
-        # (batch,xx,4) -> (3,4) 拉伸降维
-        p_boxes = p_boxes[mask]
-        p_scores = p_scores[mask]
-        p_keypoints = p_keypoints[mask]
-
-        if p_scores.shape[0] == 0:
-            flog.error('threshold_conf 过滤后 没有目标 %s', self.threshold_conf)
-            return None, None, None
-
-        if img_ts4 is not None:
-            if CFG.IS_VISUAL:
-                flog.debug('过滤后 threshold_conf %s', )
-                # h, w = img_ts4.shape[-2:]
-                show_anc4ts(img_ts4.squeeze(0), p_boxes, CFG.IMAGE_SIZE)
-
-        # flog.debug('threshold_conf 过滤后有 %s 个', p_scores.shape[0])
-        # 2 . 根据得分对框进行从大到小排序。
-        # keep = batched_nms(p_boxes, p_scores, idxs_img, self.threshold_nms)
-        keep = nms(p_boxes, p_scores, self.threshold_nms)
-        # flog.debug('threshold_nms 过滤后有 %s 个', len(keep))
-        p_boxes = p_boxes[keep]
-        p_scores = p_scores[keep]
-        p_keypoints = p_keypoints[keep]
-        return p_boxes, p_keypoints, p_scores
+        self.predict_conf_threshold = predict_conf_threshold
+        self.predict_nms_threshold = predict_nms_threshold
+        self.anc_obj = anc_obj
 
     @torch.no_grad()
-    def predicting4one(self, img_ts4, whwh):
+    def predicting4one(self, img_ts4, img_pil=None, idx_to_class=None):
         '''
         相比 forward 没有预处理
         :param img_ts4: torch.Size([batch, 3, 416, 416])
@@ -156,61 +116,37 @@ class PredictHandler(FitBase):
         :return:
             {0: [[81, 125, 277, 296, 14], [77, 43, 286, 250, 14]]}
         '''
-        num_dim = self.num_bbox * 5 + self.num_cls
         # ------模型输出处理-------
-        p_yolo = self.model(img_ts4)  # torch.isnan(p_yolo).any()
-        mask_coo = p_yolo[:, :, 4:5] > self.threshold_conf
-        axis0, axis1, axis2 = torch.where(mask_coo)  # 获取网络的坐标
-        print(axis0)
+        p_yolos = self.model(img_ts4)  # torch.isnan(p_yolo).any()
+        batch = p_yolos.shape[0]
 
-        res = {}
-        img_id = None
-        # 遍历每一个
-        for i, (img_index, dim1, dim2) in enumerate(zip(axis0, axis1, axis2)):
-            t = []
-            p_one = p_yolo[img_index, dim1]  # batch,7,7,25 7*7*25
-            p_one[:2] = (p_one[:2] + torch.tensor([l, r]) + 1) / self.grid
-            bboxs = p_one[:4] * whwh[img_index]
-            # xywh -> ltrb
-            bboxs[:2] -= bboxs[2:] / 2  # 中心到左上
-            bboxs[2:] += bboxs[:2]  # wh加左上
-            # t.extend(list(p_one[:4].type(torch.int64).numpy()))
-            t.extend(list(bboxs.type(torch.int64).numpy()))
-            _, max_index = torch.max(p_one[5:], dim=0)
-            t.append(max_index.item() + 1)
-            if img_id != img_index.item():
-                res[img_index.item()] = [t]
-                img_id = img_index
-            else:
-                res[img_index.item()].append(t)
+        feature_sizes = np.array(self.anc_obj.feature_sizes)
+        num_ceng = feature_sizes.prod(axis=1)
+        # 匹配完成的数据
+        _findex = np.arange(len(num_ceng)).repeat(num_ceng * 3)
+        fsizes = np.array(self.anc_obj.feature_sizes)[_findex, 0]
 
-        return res
+        for i in range(batch):
+            # img_ts = f_recover_normalization4ts(img_ts4[i])
+            p_yolo = p_yolos[i]  # batch,10647,25
+            p_box_xy = p_yolo[:, :2] / torch.tensor(fsizes)[:, None] + self.anc_obj.ancs[:, :2]
+            p_box_wh = p_yolo[:, 2:4].exp() * self.anc_obj.ancs[:, 2:]
+            p_box_xywh = torch.cat([p_box_xy, p_box_wh], dim=-1)
+            mask = p_yolo[:, 4] > self.predict_conf_threshold  # 一维索引
+            p_box_ltrb = xywh2ltrb(p_box_xywh[mask])
+            flog.debug('predict_conf_threshold过滤后 %s 个', p_box_ltrb.shape[0])
+            if p_box_ltrb.shape[0] == 0:
+                continue
+            # show_anc4ts(img_ts, p_box_ltrb, size)
+            _p_box_ltrb = p_box_ltrb * torch.tensor(img_pil.size).repeat(2)
+            p_yolo_ltrb = torch.cat([_p_box_ltrb, p_yolo[mask][:, 4:5], p_yolo[mask][:, 5:]], dim=-1)
+            # f_show_od4pil_yolo(img_pil, p_yolo_ltrb, id_to_class=idx_to_class)
 
-    # size_ = torch.cat([axis1[None], axis2[None]], dim=0).T  # 1,2  3,4 ---> [[1,2][3,4]] -> [[1,3][2,4]]
-    #
-    # batch = img_ts4.shape[0]
-    # for i in range(batch):
-    #     p_boxes_i = p_yolo[i][:, :, 4:5]
-    #
-    # p_res = p_yolo[mask_coo].view(-1, num_dim).contiguous()
-    # num_res = p_res.shape[0]
-    # flog.debug('conf过滤后 %s 个', num_res)
-    #
-    # if num_res > 0:
-    #     p_boxes_ = p_res[:, :4]
-    # p_boxes_ = p_boxes_[:, :2]
-    # _, max_index = torch.max(p_res[:, 5:], dim=1)
-    # p_cls = max_index[0] + 1
-    #
-    # # ---修复--并转换 xywh --> ltrb--variances = (0.1, 0.2)
-    # p_boxes = fix_bbox4yolo1(self.anchors, p_loc)
-    # xywh2ltrb(p_boxes, safe=False)
-    #
-    # p_boxes, p_keypoints, p_scores = self.output_res(p_boxes, p_keypoints, p_scores, img_ts4)
-    # '''
-    # xx是最终框 (xx,4)  (xx,10)  (xx)
-    # '''
-    # return p_boxes, p_keypoints, p_scores
+            p_scores = p_yolo[mask][:, 4]
+            keep = nms(p_box_ltrb, p_scores, self.predict_nms_threshold)
+            flog.debug('predict_nms_threshold 过滤后有 %s 个', len(keep))
+            p_yolo_ltrb = p_yolo_ltrb[keep]
+            f_show_od4pil_yolo(img_pil, p_yolo_ltrb, id_to_class=idx_to_class)
 
     def forward(self, batch_data):
         # ------数据处理-------

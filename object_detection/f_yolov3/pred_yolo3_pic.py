@@ -35,6 +35,8 @@ if __name__ == '__main__':
     device = torch.device('cpu')
     flog.info('模型当前设备 %s', device)
     file_class = 'M:\AI\datas\VOC2012/classes_ids_voc.json'
+    CFG.FILE_FIT_WEIGHT = 'M:\AI/weights/feadre/train_yolo3_DDP.pydensenet121-35_5.027892589569092.pth'
+
     idx_to_class = {}
     with open(file_class, 'r') as f:
         class_to_idx = json.load(f)  # 读进来是字符串
@@ -42,17 +44,15 @@ if __name__ == '__main__':
             idx_to_class[v] = k
 
     '''------------------模型定义---------------------'''
-    model = init_model(CFG)
+    model, losser, optimizer, lr_scheduler, start_epoch, anc_obj = init_model(CFG, device, id_gpu=None)
     model.eval()
-
-    start_epoch = load_weight(CFG.FILE_FIT_WEIGHT, model, device=device)
 
     path_img = r'D:\tb\tb\ai_code\DL\_test_pic'
     files = os.listdir(path_img)
     for file in files:
         '''---------------数据加载及处理--------------'''
         img_pil = Image.open(os.path.join(path_img, file)).convert('RGB')
-        w, h = img_pil.size #500,335
+        w, h = img_pil.size  # 500,335
         # 用于恢复bbox及ke
         # szie_scale4bbox = torch.Tensor([w, h] * 2)
         szie_scale4bbox = torch.Tensor([w, h] * 2)[None]
@@ -61,15 +61,16 @@ if __name__ == '__main__':
         img_ts = DATA_TRANSFORM['val'](img_pil)[0][None]
 
         '''---------------预测开始--------------'''
-        # (batch,++特图(w*h)*anc数,4) (batch,++特图(w*h)*anc数,2)  (batch,++特图(w*h)*anc数,10)
-        predict_handler = PredictHandler(model, device,
-                                         grid=CFG.GRID, num_bbox=CFG.NUM_BBOX, num_cls=CFG.NUM_CLASSES,
-                                         threshold_conf=0.5, threshold_nms=0.3)
-        res = predict_handler.predicting4one(img_ts, szie_scale4bbox)
-        for img_index, r in res.items():
-            # img_np = np.array(img_pil)
-            r_ = np.array(r)
-            lables = [idx_to_class[i] for i in r_[:,4]]
+        predict_handler = PredictHandler(model, device, anc_obj=anc_obj,
+                                         predict_conf_threshold=CFG.PREDICT_CONF_THRESHOLD,
+                                         predict_nms_threshold=CFG.PREDICT_NMS_THRESHOLD,
+                                         )
+        res = predict_handler.predicting4one(img_ts, img_pil, idx_to_class)
+        # for img_index, r in res.items():
+        #     # img_np = np.array(img_pil)
+        #     r_ = np.array(r)
+        #     lables = [idx_to_class[i] for i in r_[:, 4]]
+        #
+        #     show_bbox4pil(img_pil, r_[:, :4], lables)
 
-            show_bbox4pil(img_pil, r_[:, :4], lables)
-        flog.info('---%s--main执行完成------ ', os.path.basename(__file__))
+    flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

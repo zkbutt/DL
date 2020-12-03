@@ -88,7 +88,6 @@ class NpEncoder(json.JSONEncoder):
 
 
 def mkdir(path):
-    # 多GPU
     try:
         os.makedirs(path)
     except OSError as e:
@@ -98,17 +97,16 @@ def mkdir(path):
 
 def labels2onehot4ts(labels, num_class):
     '''
-
+    通常label从1开始   这里是从0开始
     :param labels: 类别 index [,2,1,1,3,5]
     :param num_class:
     :return: torch.Size([1, 20])
     '''
+    # labels = labels - 1
     batch = labels.shape[0]
     labels.resize_(batch, 1)  # labels[:,None]
-    zeros = torch.zeros(batch, num_class, device=labels.device)
-    onehot = zeros.scatter_(1, labels, 1)  # dim,index,value
-    return onehot
-
+    zeros = torch.zeros(batch, num_class, device=labels.device,dtype=torch.int64)
+    return zeros.scatter_(1, labels, 1)  # dim,index,value 数组索引
 
 
 if __name__ == "__main__":

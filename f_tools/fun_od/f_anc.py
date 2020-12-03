@@ -3,9 +3,11 @@ import itertools
 import math
 import numpy as np
 import torch
+from PIL import Image
 from torch import nn
 
 from f_tools.fun_od.f_boxes import ltrb2xywh, ltrb2ltwh, fix_bbox, xywh2ltrb
+from f_tools.pic.f_show import show_bbox4pil
 
 cor_names = {
     'aliceblue': '#F0F8FF',
@@ -652,137 +654,84 @@ class FAnchors:
         return output  # torch.Size([10647, 4])
 
 
-def __t_anc4found():
-    # size = [320, 320]
-    size = [416, 416]
-    anchors_size = [[16, 32], [64, 128], [256, 512]]
-    feature_map_steps = [8, 16, 32]
-    clip = False
-    anchors = AnchorsFound(size, anchors_size, feature_map_steps, clip).get_anchors()  # torch.Size([16800, 4])
-    index_start = int(anchors.shape[0] / 2)
-    # index_start = 0
-    anchors = anchors[index_start:index_start + 2]  # 这里选出 anchors
-    # --------------anchors 转换画图--------------
-    __anchors = anchors.clone()
-    __anchors[:, [0, 2]] = __anchors[:, [0, 2]] * size[0]
-    __anchors[:, [1, 3]] = __anchors[:, [1, 3]] * size[1]
-    # xywh --> ltwh 为了plt.Rectangle
-    __anchors[:, :2] = __anchors[:, :2] - __anchors[:, 2:] / 2.
-    import matplotlib.pyplot as plt
-    # 构造点
-    w = [i for i in range(size[0])]
-    h = [i for i in range(size[1])]
-    ww, hh = np.meshgrid(w, h)
-    p = 0  # 图片显示padding
-    # ----------图形配置---------
-    fig = plt.figure()
-    ax = fig.add_subplot(121)
-    plt.ylim(-p, size[0] + p)
-    plt.xlim(-p, size[1] + p)
-    ax.invert_yaxis()  # y轴反向
-    plt.scatter(ww.reshape(-1), hh.reshape(-1))
-    for a in __anchors:  # 画矩形框
-        rect = plt.Rectangle((a[0], a[1]), a[2], a[3], color="r", fill=False)
-        ax.add_patch(rect)
-    # -------------下面是画修正点------------
-    mbox_loc = torch.rand(2, 4)
-    mbox_ldm = torch.rand(2, 10)
-    # xs=[0.1, 0.2]
-    '''核心 box 修复'''
-    fix_bbox(anchors, mbox_loc, (1, 1))
-    # --------------anchors 转换画图--------------
-    __anchors = anchors.clone()
-    __anchors[:, [0, 2]] = __anchors[:, [0, 2]] * size[0]
-    __anchors[:, [1, 3]] = __anchors[:, [1, 3]] * size[1]
-    # 中心点 --> 左上角 为了plt.Rectangle
-    __anchors[:, :2] = __anchors[:, :2] - __anchors[:, 2:] / 2.
-    # ----------图形配置---------
-    ax = fig.add_subplot(122)
-    plt.ylim(-p, size[0] + p)
-    plt.xlim(-p, size[1] + p)
-    ax.invert_yaxis()  # y轴反向
-    for i, a in enumerate(__anchors):  # 画矩形框和中点
-        rect = plt.Rectangle((a[0], a[1]), a[2], a[3], color="r", fill=False)
-        plt.scatter(anchors[i, 0] * size[0], anchors[i, 1] * size[1], color="b")
-        ax.add_patch(rect)
-    plt.show()
-
-
-def __t001():
-    # print(generate_anc_base())
-    # anchor_generator = AnchorsGenerator4Torch(sizes=((32), (64), ((96))),
-    #                                           aspect_ratios=((0.5,), (1.0, 2.0), (0.3, 0.8, 1.5)))
-    # print(anchor_generator(torch.tensor([640, 640]),
-    #                        [torch.tensor([32, 32]), torch.tensor([24, 24])]))
-    '''
-        16---torch.Size([3072, 4])
-        32---torch.Size([3072, 4])
-
-        特图尺寸 * anc个数=32*32*3
-
-
+class FAnchors_v2:
+    def __init__(self, img_in_size, anc_scale, feature_size_steps, anchors_clip=True,
+                 is_xymid=False, is_real_size=False, device=None):
         '''
-    anchor_scales = [[21], [45], [99], [153], [207], [261, 315]]
-    aspect_ratios = [[2], [2, 3], [2, 3], [2, 3], [2], [2]]
-    anchor_scales = [[16], [32]]
-    aspect_ratios = [[0.5, 1, 2], [2]]
-    anchor_generator = AnchorsGenerator4Torch(scales=anchor_scales, aspect_ratios=aspect_ratios)
-    img_size = [300, 300]
-    fms_size = [
-        torch.tensor([38, 38]),
-        torch.tensor([19, 19]),
-        torch.tensor([10, 10]),
-        torch.tensor([5, 5]),
-        torch.tensor([3, 3]),
-        torch.tensor([1, 1]),
-    ]
-    anchors = anchor_generator(torch.tensor(img_size), fms_size)
-    # -----def测试-------
-    feat_size = [38, 19]  # 每个预测层的feature map尺寸
-    steps = [8, 16, 32, 64, 100, 300]  # 每个特征层上的一个cell在原图上的跨度
-    _anchor_scales = [i[0] for i in anchor_scales]
-    _anchor_scales.append(64)
-    dboxes = DefaultBoxes(img_size[0],
-                          feat_size,
-                          steps,
-                          _anchor_scales,
-                          aspect_ratios)
-    import matplotlib.pyplot as plt
-    # 构造点
-    space = 10
-    ws = [i for i in range(0, img_size[0], space)]
-    hs = [i for i in range(0, img_size[1], space)]
-    ww, hh = np.meshgrid(ws, hs)
-    p = 0  # 图片显示padding
-    # ----------图形配置---------
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    plt.ylim(-p, img_size[0] + p)  # 这里反序wh
-    plt.xlim(-p, img_size[1] + p)
-    ax.invert_yaxis()  # y轴反向
-    plt.scatter(ww.reshape(-1), hh.reshape(-1))
-    print(anchors[0].shape[0])
-    # index_start = int(anchors[0].shape[0] / 2)
-    index_start = 0
-    _anchors = anchors[0][index_start:index_start + len(aspect_ratios) * len(anchor_scales)]
-    # anchors = anchors[0]
-    colors_str = ['k', 'r', 'y', 'g', 'c', 'b', 'm',
-                  'gray', 'brown', 'coral', 'gold',
-                  'saga']
-    for i, (a, cor_key) in enumerate(zip(_anchors, cor_names)):  # 画矩形框
-        a = ltrb2ltwh(a[None])
-        a = a.reshape(-1)
-        # 这里要左上长宽,左上长宽
-        rect = plt.Rectangle((a[0], a[1]), a[2], a[3], color=cor_names[cor_key], fill=False)
-        # rect = plt.Rectangle((a[0], a[1]), a[2], a[3], color=cor_names['yellowgreen'], fill=False)
-        ax.add_patch(rect)
-    plt.show()
+        用于动态anc
+        :param img_in_size:
+        :param anc_scale:
+            ANCHORS_SIZE = [
+                [[0.13, 0.10666667], [0.06, 0.15733333], [0.036, 0.06006006], ],
+                [[0.196, 0.51466667], [0.29, 0.28], [0.12, 0.28], ],
+                [[0.81786211, 0.872], [0.374, 0.72266667], [0.612, 0.452], ],
+            ]
+        :param feature_size_steps:
+        :param anchors_clip:
+        :param is_xymid:
+        :param is_real_size:
+        '''
+        self.anchors_clip = anchors_clip  # 是否剔除超边界---超参
+        self.ancs_scale = anc_scale
+        self.is_real_size = is_real_size  # 以 anchors_size 的真实尺寸输出 非归一化
+        self.is_xymid = is_xymid  # 是否将anc中心点移到格子中间
+        # 特征层对应的步距   [8, 16, 32] 原图size/特图size = images/feature_maps = steps
+        self.feature_size_steps = feature_size_steps  # 这个定义特图下采样比例
+
+        self.img_in_size = img_in_size
+        # 根据预处理后的尺寸及步距 计算每一个特图的尺寸
+        from math import ceil
+        # 根据预处理图片及下采倍数，计算特图尺寸 <class 'list'>: [[52, 52], [26, 26], [13, 13]] (w,h)
+        self.feature_sizes = [[ceil(self.img_in_size[0] / step), ceil(self.img_in_size[1] / step)]
+                              for step in self.feature_size_steps]
+        self.device = device
+        self.ancs = self.cre_anchors()
+
+    def cre_anchors(self):
+        '''
+        形成的顺序是 每一个特图->每个格子(行优先) 建议从小到大 需与模型匹配 ->每一个尺寸
+        :return:
+            返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框
+            这里是 x,y,w,h 调整系数
+        '''
+        ret_ancs = torch.empty(0, 4)
+        for i, (row, col) in enumerate(self.feature_sizes):
+            # 求xy 中心点坐标 行列与xy是反的
+            _row_index = torch.arange(row)  # 3行 4列
+            _col_index = torch.arange(col)
+            y, x = torch.meshgrid(_row_index, _col_index)
+            _row_col_index = torch.stack((x, y), dim=2)
+            grid_index = _row_col_index.view(-1, 2)
+            # 一个anc的数量
+            num_anc_one = len(grid_index)  # 2704
+            fancs_wh = self.ancs_scale[i]
+            # anc 数
+            grid_index = grid_index.repeat_interleave(len(fancs_wh), dim=0)
+            rowcol = torch.tensor((row, col))
+            ancs_xy = torch.true_divide(grid_index, rowcol)
+            if self.is_xymid:
+                midxy = torch.true_divide(1, rowcol)/2
+                ancs_xy = ancs_xy + midxy
+
+            ancs_wh = torch.tensor(fancs_wh).repeat(num_anc_one, 1)
+            ans_xywh = torch.cat([ancs_xy, ancs_wh], dim=-1)
+            ret_ancs = torch.cat([ret_ancs, ans_xywh], dim=0)
+        if self.anchors_clip:  # 对于xywh 来说这个参数 是没有用的
+            xywh2ltrb(ret_ancs, safe=False)
+            ret_ancs.clamp_(min=0, max=1)  # 去除超边际的
+            if self.is_real_size:
+                ret_ancs = ret_ancs * torch.tensor(self.img_in_size)[None].repeat(1, 2)
+            ltrb2xywh(ret_ancs, safe=False)
+        __d = 1
+        if self.device is not None:
+            ret_ancs = ret_ancs.to(self.device)
+        return ret_ancs
 
 
 if __name__ == '__main__':
     # __t001()
     # __t_anc4found()
-    size = [416, 416]
+    size = [640, 640]
     # anchors_size = [
     #     [[10, 13], [16, 30], [33, 23]],  # 大特图小目标 52, 52
     #     [[30, 61], [62, 45], [59, 119]],  # 26, 26
@@ -792,38 +741,56 @@ if __name__ == '__main__':
     # anchors = Anchors(size, anchors_size, feature_map_steps,
     #                   is_xymid=False, is_real_size=True, anchors_clip=False).get_anchors()  # torch.Size([10647, 4]
 
+    # anc_scale = [
+    #     [[0.13, 0.10666667], [0.06, 0.15733333], [0.036, 0.06006006], ],
+    #     [[0.196, 0.51466667], [0.29, 0.28], [0.12, 0.28], ],
+    #     [[0.81786211, 0.872], [0.374, 0.72266667], [0.612, 0.452], ],
+    # ]
     anc_scale = [
-        [[0.13, 0.10666667], [0.06, 0.15733333], [0.036, 0.06006006], ],
-        [[0.196, 0.51466667], [0.29, 0.28], [0.12, 0.28], ],
-        [[0.81786211, 0.872], [0.374, 0.72266667], [0.612, 0.452], ],
+        [[0.025, 0.025], [0.05, 0.05]],
+        [[0.1, 0.1], [0.2, 0.2], ],
+        [[0.4, 0.4], [0.8, 0.8], ],
     ]
-    anchors = FAnchors(size, anc_scale, feature_map_steps,
-                       anchors_clip=True, is_xymid=False, is_real_size=True).cre_anchors()  # torch.Size([10647, 4])
-    index_start = 0
-    len = 9
+    anchors = FAnchors_v2(size, anc_scale, feature_map_steps,
+                          anchors_clip=True, is_xymid=True, is_real_size=False).cre_anchors()
+    # print(anchors)
+    # anchors = FAnchors(size, anc_scale, feature_map_steps,
+    #                    anchors_clip=True, is_xymid=False, is_real_size=True).cre_anchors()  # torch.Size([10647, 4])
+
+    # [[52, 52], [26, 26], [13, 13]]
+    # index_start = int((52**2+26**2)*3+13**2/2+100)
+    index_start = len(anchors)-460
+    len = 6
     anchors = anchors[index_start:index_start + len]  # 这里选出 anchors
     # --------------anchors 转换画图--------------
-    __anchors = anchors.clone()
-    # __anchors[:, [0, 2]] = __anchors[:, [0, 2]] * size[0]
-    # __anchors[:, [1, 3]] = __anchors[:, [1, 3]] * size[1]
+    # __anchors = anchors.clone()
+    # __anchors = xywh2ltrb(__anchors)
+    # __anchors[:, ::2] = __anchors[:, ::2] * size[0]
+    # __anchors[:, 1::2] = __anchors[:, 1::2] * size[1]
     # xywh --> ltwh 为了plt.Rectangle
-    __anchors[:, :2] = __anchors[:, :2] - __anchors[:, 2:] / 2.
-    import matplotlib.pyplot as plt
+    # __anchors[:, :2] = __anchors[:, :2] - __anchors[:, 2:] / 2.
 
-    # 构造点
-    w = [i for i in range(size[0])]
-    h = [i for i in range(size[1])]
-    ww, hh = np.meshgrid(w, h)
-    p = 100  # 图片显示padding
-    # ----------图形配置---------
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    plt.ylim(-p, size[0] + p)
-    plt.xlim(-p, size[1] + p)
-    ax.invert_yaxis()  # y轴反向
-    plt.scatter(ww.reshape(-1), hh.reshape(-1))
-    for a in __anchors:  # 画矩形框
-        rect = plt.Rectangle((a[0], a[1]), a[2], a[3], color="r", fill=False)
-        ax.add_patch(rect)
-    plt.show()
+    # img_pil_new = Image.new('RGB', list(np.array(size) * 2), (128, 128, 128))
+    img_pil_new = Image.new('RGB', size, (128, 128, 128))
+    # show_bbox4pil(img_pil_new, xywh2ltrb(__anchors))
+    show_bbox4pil(img_pil_new, xywh2ltrb(anchors))
+
+    # import matplotlib.pyplot as plt
+    #
+    # # 构造点
+    # w = [i for i in range(size[0])]
+    # h = [i for i in range(size[1])]
+    # ww, hh = np.meshgrid(w, h)
+    # p = 100  # 图片显示padding
+    # # ----------图形配置---------
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111)
+    # plt.ylim(-p, size[0] + p)
+    # plt.xlim(-p, size[1] + p)
+    # ax.invert_yaxis()  # y轴反向
+    # plt.scatter(ww.reshape(-1), hh.reshape(-1))
+    # for a in __anchors:  # 画矩形框
+    #     rect = plt.Rectangle((a[0], a[1]), a[2], a[3], color="r", fill=False)
+    #     ax.add_patch(rect)
+    # plt.show()
     pass

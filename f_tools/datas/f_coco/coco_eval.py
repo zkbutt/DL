@@ -1,36 +1,26 @@
 import json
+import copy
+import sys
+from collections import defaultdict
 
 import numpy as np
-import copy
 import torch
 import torch._six
-
 from pycocotools.cocoeval import COCOeval
 from pycocotools.coco import COCO
 import pycocotools.mask as mask_util
 
-from collections import defaultdict
-
-from object_detection.ssd.train_utils import train_eval_utils as utils
+from f_tools.fits.f_gpu.f_gpu_api import all_gather
 
 
 class CocoEvaluator(object):
-    '''
-    gt创建类 通过updata方法 输入结果
-    '''
-
     def __init__(self, coco_gt, iou_types):
-        '''
-
-        :param coco_gt:
-        :param iou_types: 这个要传数组 [bbox, segm, keypoints]
-        '''
         assert isinstance(iou_types, (list, tuple))
         coco_gt = copy.deepcopy(coco_gt)
         self.coco_gt = coco_gt
 
         self.iou_types = iou_types
-        self.coco_eval = {} # coco
+        self.coco_eval = {}
         for iou_type in iou_types:
             self.coco_eval[iou_type] = COCOeval(coco_gt, iouType=iou_type)
 
@@ -39,13 +29,8 @@ class CocoEvaluator(object):
 
     def update(self, predictions):
         '''
-        list(dict{
-            'bboxes':tensor(x,4),
-            'lalels':tensor(x), # int64
-            'scores':tensor(x), # float32
-            'height_width':tensor(h,w), # int64
-        })
-        :param predictions:
+
+        :param predictions:不能为空
         :return:
         '''
         img_ids = list(np.unique(list(predictions.keys())))
@@ -92,16 +77,8 @@ class CocoEvaluator(object):
             if len(prediction) == 0:
                 continue
 
-            # xmin, ymin, xmax, ymax
-            boxes = prediction["boxes"]
-            # 将box的相对坐标信息（0-1）转为绝对值坐标
-            height_width = prediction["height_width"]
-            height_width = height_width.to(boxes.device)
-            # height_width = [300, 300]
-            boxes[:, [0, 2]] = boxes[:, [0, 2]] * height_width[1]
-            boxes[:, [1, 3]] = boxes[:, [1, 3]] * height_width[0]
-            boxes = convert_to_xywh(boxes)  # ltrb -> ltwh
-            boxes = boxes.tolist()
+            boxes = prediction["boxes"].tolist()
+            # boxes = convert_to_xywh(boxes).tolist()
             scores = prediction["scores"].tolist()
             labels = prediction["labels"].tolist()
 
@@ -124,8 +101,6 @@ class CocoEvaluator(object):
             if len(prediction) == 0:
                 continue
 
-            scores = prediction["scores"]
-            labels = prediction["labels"]
             masks = prediction["masks"]
 
             masks = masks > 0.5
@@ -159,8 +134,8 @@ class CocoEvaluator(object):
             if len(prediction) == 0:
                 continue
 
-            boxes = prediction["boxes"]
-            boxes = convert_to_xywh(boxes).tolist()
+            boxes = prediction["boxes"].tolist()
+            # boxes = convert_to_xywh(boxes).tolist()
             scores = prediction["scores"].tolist()
             labels = prediction["labels"].tolist()
             keypoints = prediction["keypoints"]
@@ -186,8 +161,8 @@ def convert_to_xywh(boxes):
 
 
 def merge(img_ids, eval_imgs):
-    all_img_ids = utils.all_gather(img_ids)
-    all_eval_imgs = utils.all_gather(eval_imgs)
+    all_img_ids = all_gather(img_ids)
+    all_eval_imgs = all_gather(eval_imgs)
 
     merged_img_ids = []
     for p in all_img_ids:

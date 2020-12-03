@@ -46,8 +46,14 @@ if __name__ == '__main__':
     usage: t001.py [-h] [--name NAME] -f FAMILY t4 integers [integers ...]
     '''
     # random_ = torch.LongTensor(5).random_() % 4
-    random_ = torch.tensor([1])
-    print(labels2onehot4ts(random_, 4))
+    # random_ = torch.tensor([1])
+    # print(labels2onehot4ts(random_, 4))
+    bbox_index = torch.tensor([1, 1, 1])
+    anc_index = torch.tensor([0, 0])
+    _ids = torch.arange(0, anc_index.size(0), dtype=torch.int64).to(bbox_index)
+    bbox_index[anc_index[_ids]] = _ids
+    print(bbox_index)
+
     # nB, nA, nG, nG = 4, 2, 6, 6
     # obj_mask = torch.ByteTensor(nB, nA, nG, nG).fill_(0)
     # noobj_mask = torch.ByteTensor(nB, nA, nG, nG).fill_(1)

@@ -168,7 +168,7 @@ class Csv2CocoKeypoints(Csv2CocoInstances):
         self.skeleton = skeleton
 
     def _init_categories(self):
-        for k, v in classname_to_id.items():
+        for k, v in classes_ids.items():
             category = {}
             category['id'] = v
             category['name'] = k
@@ -289,17 +289,24 @@ if __name__ == '__main__':
     '''
     np.random.seed(20200925)
 
-    path_classname = '../_file/classes_ids_voc.json'  # 0为背景
-    file_csv = "../_file/csv_labels_voc.csv"
-    type = 'val2017'  # train2017
-    # path_img = r'M:\AI\datas\widerface\val\images'  # 真实图片路径
-    path_img = r'M:\AI\datas\widerface\val\images'  # 真实图片路径
-    mode = 'boxes'  # 'keypoints'  # 'boxes':
-    path_coco_save = r"M:\AI\datas\widerface"  # 这个是生成的根
+    path_classes_ids = 'M:\AI\datas\widerface\coco\classes_ids_widerface.json'
+    path_img = r'M:\AI\datas\widerface\coco\images\train2017'  # 真实图片路径
+    # file_csv = "../_file/csv_labels_boxes.csv"
+    file_csv = "../_file/csv_labels_keypoints.csv"
+    type = 'train2017'
+    mode = 'keypoints' # 'boxes'
+    path_coco_save = r"M:\temp\11\widerface"
 
-    with open(path_classname, 'r', encoding='utf-8') as f:
-        classname_to_id = json.load(f)  # 文件转dict 或list
+    # path_classes_ids = 'M:\AI\datas\VOC2012\classes_ids_voc.json'
+    # path_img = r'M:\AI\datas\VOC2012\test\JPEGImages'  # 真实图片路径
+    # file_csv = "../_file/csv_labels_voc.csv"
+    # type = 'val2017'  # train2017
+    # mode = 'boxes'  # 'keypoints'  # 'boxes':
+    # path_coco_save = r"M:\temp\11\voc_coco"  # 这个是生成的根 目录必须存在
 
-    to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode, is_copy=True, is_move=False, type=type)
+    with open(path_classes_ids, 'r', encoding='utf-8') as f:
+        classes_ids = json.load(f)  # 文件转dict 或list
+
+    to_coco(file_csv, classes_ids, path_img, path_coco_save, mode, is_copy=False, is_move=False, type=type)
 
     flog.info('数据生成成功 %s', )

@@ -104,8 +104,8 @@ def show_bbox4pil(img_pil, boxs, labels=None):
         l, t, r, b = box.astype(np.int)
         # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=1,
-                  # fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)],
-                  fill='White',
+                  fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)],
+                  # fill='White',
                   )
         # __draw_text(draw, labels[i], box, l, r, t, b, STANDARD_COLORS)
     pil_copy.show()
@@ -118,9 +118,14 @@ def show_bbox4ts(img_ts, boxs, labels=None):
     show_bbox4pil(img_pil, boxs.numpy(), labels)
 
 
-def show_anc4pil(img_pil, anc, size):
+def show_anc4pil(img_pil, anc, size=(1, 1)):
     # _clone = anc[:300, :].clone()
-    _clone = anc.clone()
+    if isinstance(anc, np.ndarray):
+        _clone = anc.copy()
+    elif isinstance(anc, torch.Tensor):
+        _clone = anc.clone()
+    else:
+        raise Exception('类型错误', type(anc))
     _clone[:, ::2] = _clone[:, ::2] * size[0]
     _clone[:, 1::2] = _clone[:, 1::2] * size[1]
     draw = ImageDraw.Draw(img_pil)
@@ -137,6 +142,13 @@ def show_anc4pil(img_pil, anc, size):
 
 
 def show_anc4ts(img_ts, anc, size):
+    '''
+
+    :param img_ts: torch.Size([3, 416, 416])
+    :param anc: torch.Size([196, 25]) ltrb
+    :param size: (w,h)
+    :return:
+    '''
     img_pil = transforms.ToPILImage()(img_ts)
     show_anc4pil(img_pil, anc, size)
 
@@ -236,11 +248,25 @@ def show_pic_label_np(img_np, boxes, labels):
     cv2.waitKey(0)
 
 
+def f_show_od4pil_yolo(img_pil, p_yolo, id_to_class=None):
+    '''
+
+    :param img_pil:
+    :param p_yolo:  按实尺寸的框 n,25
+    :param id_to_class:
+    :return:
+    '''
+    boxes_confs = p_yolo[:, :5]
+    _, labels_ts = p_yolo[:, 5:].max(dim=1)
+    labels = list(labels_ts.numpy() + 1)
+    f_show_od4pil(img_pil, boxes_confs, labels, id_to_class)
+
+
 def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, text_fill=True):
     '''
     需扩展按conf排序  或conf过滤的功能
     :param img_pil: 一张 pil
-    :param boxes_confs: np(9, 5)  前4 bbox  后1 conf
+    :param boxes_confs: np(9, 5)  前4 bbox  后1 conf 已按实尺寸的框
     :param labels: list(int)
     :param id_to_class: dict{id,name}
     :return:
@@ -335,7 +361,7 @@ def _draw_box4pil(draw, boxes, color=None, width=4):
     return draw
 
 
-def f_show_iou4pil(img_pil, g_boxes=None, boxes2=None, grids=None,is_safe=True):
+def f_show_iou4pil(img_pil, g_boxes=None, boxes2=None, grids=None, is_safe=True):
     '''
 
     :param img_pil:
@@ -346,7 +372,7 @@ def f_show_iou4pil(img_pil, g_boxes=None, boxes2=None, grids=None,is_safe=True):
     if is_safe:
         pil_copy = img_pil.copy()
     else:
-        pil_copy=img_pil
+        pil_copy = img_pil
     draw = ImageDraw.Draw(pil_copy)
     whwh = np.array(img_pil.size).repeat(2, axis=0)  # 单体复制
 

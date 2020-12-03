@@ -2,6 +2,7 @@ import math
 import os
 import sys
 
+'''用户命令行启动'''
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
@@ -48,7 +49,7 @@ if __name__ == '__main__':
 
     if CFG.IS_MOSAIC:
         CFG.IMAGE_SIZE = [512, 512]
-        CFG.ANC_SCALE = list(np.array(CFG.ANC_SCALE,dtype=np.float32) / 4)
+        # CFG.ANC_SCALE = list(np.array(CFG.ANC_SCALE,dtype=np.float32) / 2)
 
     # CFG.FILE_FIT_WEIGHT = None
 

@@ -1,7 +1,12 @@
+import math
+import os
+
 import cv2
 import matplotlib
 import torch
 import numpy as np
+
+from f_tools.GLOBAL_LOG import flog
 
 
 class FitBase(torch.nn.Module):
@@ -22,165 +27,60 @@ def init_od():
     cv2.setNumThreads(0)
 
 
-def ap_per_class(tp, conf, pred_cls, target_cls):
-    """ Compute the average precision, given the recall and precision curves.
-    Source: https://github.com/rafaelpadilla/Object-Detection-Metrics.
-    # Arguments
-        tp:    True positives (nparray, nx1 or nx10).
-        conf:  Objectness value from 0-1 (nparray).
-        pred_cls: Predicted object classes (nparray).
-        target_cls: True object classes (nparray).
-    # Returns
-        The average precision as computed in py-faster-rcnn.
-    """
+def base_set(cfg):
+    cfg.DATA_NUM_WORKERS = min([os.cpu_count(), cfg.DATA_NUM_WORKERS])
 
-    # Sort by objectness
-    i = np.argsort(-conf)
-    tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
+    # 检查保存权重文件夹是否存在，不存在则创建
+    if not os.path.exists(cfg.PATH_SAVE_WEIGHT):
+        try:
+            os.makedirs(cfg.PATH_SAVE_WEIGHT)
+        except Exception as e:
+            flog.error(' %s %s', cfg.PATH_SAVE_WEIGHT, e)
 
-    # Find unique classes
-    unique_classes = np.unique(target_cls)
-
-    # Create Precision-Recall curve and compute AP for each class
-    pr_score = 0.1  # score to evaluate P and R https://github.com/ultralytics/yolov3/issues/898
-    s = [unique_classes.shape[0], tp.shape[1]]  # number class, number iou thresholds (i.e. 10 for mAP0.5...0.95)
-    ap, p, r = np.zeros(s), np.zeros(s), np.zeros(s)
-    for ci, c in enumerate(unique_classes):
-        i = pred_cls == c
-        n_gt = (target_cls == c).sum()  # Number of ground truth objects
-        n_p = i.sum()  # Number of predicted objects
-
-        if n_p == 0 or n_gt == 0:
-            continue
-        else:
-            # Accumulate FPs and TPs
-            fpc = (1 - tp[i]).cumsum(0)
-            tpc = tp[i].cumsum(0)
-
-            # Recall
-            recall = tpc / (n_gt + 1e-16)  # recall curve
-            r[ci] = np.interp(-pr_score, -conf[i], recall[:, 0])  # r at pr_score, negative x, xp because xp decreases
-
-            # Precision
-            precision = tpc / (tpc + fpc)  # precision curve
-            p[ci] = np.interp(-pr_score, -conf[i], precision[:, 0])  # p at pr_score
-
-            # AP from recall-precision curve
-            for j in range(tp.shape[1]):
-                ap[ci, j] = compute_ap(recall[:, j], precision[:, j])
-
-            # Plot
-            # fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-            # ax.plot(recall, precision)
-            # ax.set_xlabel('Recall')
-            # ax.set_ylabel('Precision')
-            # ax.set_xlim(0, 1.01)
-            # ax.set_ylim(0, 1.01)
-            # fig.tight_layout()
-            # fig.savefig('PR_curve.png', dpi=300)
-
-    # Compute F1 score (harmonic mean of precision and recall)
-    f1 = 2 * p * r / (p + r + 1e-16)
-
-    return p, r, ap, f1, unique_classes.astype('int32')
-
-
-def compute_ap(recall, precision):
-    """ Compute the average precision, given the recall and precision curves.
-    Source: https://github.com/rbgirshick/py-faster-rcnn.
-    # Arguments
-        recall:    The recall curve (list).
-        precision: The precision curve (list).
-    # Returns
-        The average precision as computed in py-faster-rcnn.
-    """
-
-    # Append sentinel values to beginning and end
-    mrec = np.concatenate(([0.], recall, [min(recall[-1] + 1E-3, 1.)]))
-    mpre = np.concatenate(([0.], precision, [0.]))
-
-    # Compute the precision envelope
-    mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
-
-    # Integrate area under curve
-    method = 'interp'  # methods: 'continuous', 'interp'
-    if method == 'interp':
-        x = np.linspace(0, 1, 101)  # 101-point interp (COCO)
-        ap = np.trapz(np.interp(x, mrec, mpre), x)  # integrate
-    else:  # 'continuous'
-        i = np.where(mrec[1:] != mrec[:-1])[0]  # points where x axis (recall) changes
-        ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])  # area under curve
-
-    return ap
-
-
-def bbox_iou(box1, box2, x1y1x2y2=True):
-    """
-    Returns the IoU of two bounding boxes
-    """
-    if not x1y1x2y2:
-        # Transform from center and width to exact coordinates
-        b1_x1, b1_x2 = box1[:, 0] - box1[:, 2] / 2, box1[:, 0] + box1[:, 2] / 2
-        b1_y1, b1_y2 = box1[:, 1] - box1[:, 3] / 2, box1[:, 1] + box1[:, 3] / 2
-        b2_x1, b2_x2 = box2[:, 0] - box2[:, 2] / 2, box2[:, 0] + box2[:, 2] / 2
-        b2_y1, b2_y2 = box2[:, 1] - box2[:, 3] / 2, box2[:, 1] + box2[:, 3] / 2
+    # cfg.SAVE_FILE_NAME = os.path.basename(__file__)
+    if torch.cuda.is_available():
+        device = torch.device('cuda:%s' % 0)
     else:
-        # Get the coordinates of bounding boxes
-        b1_x1, b1_y1, b1_x2, b1_y2 = box1[:, 0], box1[:, 1], box1[:, 2], box1[:, 3]
-        b2_x1, b2_y1, b2_x2, b2_y2 = box2[:, 0], box2[:, 1], box2[:, 2], box2[:, 3]
+        device = torch.device("cpu")
+        cfg.IS_MIXTURE_FIX = False
+    flog.info('模型当前设备 %s', device)
 
-    # get the corrdinates of the intersection rectangle
-    inter_rect_x1 = torch.max(b1_x1, b2_x1)
-    inter_rect_y1 = torch.max(b1_y1, b2_y1)
-    inter_rect_x2 = torch.min(b1_x2, b2_x2)
-    inter_rect_y2 = torch.min(b1_y2, b2_y2)
-    # Intersection area
-    inter_area = torch.clamp(inter_rect_x2 - inter_rect_x1 + 1, min=0) * torch.clamp(
-        inter_rect_y2 - inter_rect_y1 + 1, min=0
-    )
-    # Union Area
-    b1_area = (b1_x2 - b1_x1 + 1) * (b1_y2 - b1_y1 + 1)
-    b2_area = (b2_x2 - b2_x1 + 1) * (b2_y2 - b2_y1 + 1)
+    if cfg.DEBUG:
+        flog.warning('debug模式')
+        # device = torch.device("cpu")
+        cfg.PRINT_FREQ = 1
+        # cfg.PATH_SAVE_WEIGHT = None
+        cfg.BATCH_SIZE = 5
+        cfg.DATA_NUM_WORKERS = 0
+        pass
+    else:
+        torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
 
-    iou = inter_area / (b1_area + b2_area - inter_area + 1e-16)
+    if cfg.IS_MOSAIC:
+        # cfg.IMAGE_SIZE = [512, 512]
+        # cfg.ANC_SCALE = list(np.array(cfg.ANC_SCALE,dtype=np.float32) / 2)
+        pass
 
-    return iou
+    # cfg.FILE_FIT_WEIGHT = None
 
+    if hasattr(cfg, 'FEATURE_MAP_STEPS'):
+        # 预设尺寸必须是下采样倍数的整数倍 输入一般是正方形
+        down_sample = cfg.FEATURE_MAP_STEPS[-1]  # 模型下采样倍数
+        assert math.fmod(cfg.IMAGE_SIZE[0], down_sample) == 0, "尺寸 %s must be a %s 的倍数" % (cfg.IMAGE_SIZE, down_sample)
+        # assert math.fmod(cfg.IMAGE_SIZE[1], down_sample) == 0, "尺寸 %s must be a %s 的倍数" % (cfg.IMAGE_SIZE, small_conf)
 
-def get_batch_statistics(outputs, targets, iou_threshold):
-    """ Compute true positives, predicted scores and predicted labels per sample """
-    batch_metrics = []
-    for sample_i in range(len(outputs)):
-
-        if outputs[sample_i] is None:
-            continue
-
-        output = outputs[sample_i]
-        pred_boxes = output[:, :4]
-        pred_scores = output[:, 4]
-        pred_labels = output[:, -1]
-
-        true_positives = np.zeros(pred_boxes.shape[0])
-
-        annotations = targets[targets[:, 0] == sample_i][:, 1:]
-        target_labels = annotations[:, 0] if len(annotations) else []
-        if len(annotations):
-            detected_boxes = []
-            target_boxes = annotations[:, 1:]
-
-            for pred_i, (pred_box, pred_label) in enumerate(zip(pred_boxes, pred_labels)):
-
-                # If targets are found break
-                if len(detected_boxes) == len(annotations):
-                    break
-
-                # Ignore if label is not one of the target labels
-                if pred_label not in target_labels:
-                    continue
-
-                iou, box_index = bbox_iou(pred_box.unsqueeze(0), target_boxes).max(0)
-                if iou >= iou_threshold and box_index not in detected_boxes:
-                    true_positives[pred_i] = 1
-                    detected_boxes += [box_index]
-        batch_metrics.append([true_positives, pred_scores, pred_labels])
-    return batch_metrics
+    '''-----多尺度训练-----'''
+    # if cfg.IS_MULTI_SCALE:
+    #     # 动态输入尺寸选定 根据预设尺寸  0.667~1.5 之间 满足32的倍数
+    #     imgsz_min = cfg.IMAGE_SIZE[0] // cfg.MULTI_SCALE_VAL[1]
+    #     imgsz_max = cfg.IMAGE_SIZE[0] // cfg.MULTI_SCALE_VAL[0]
+    #     # 将给定的最大，最小输入尺寸向下调整到32的整数倍
+    #     grid_min, grid_max = imgsz_min // down_sample, imgsz_max // down_sample
+    #     imgsz_min, imgsz_max = int(grid_min * down_sample), int(grid_max * down_sample)
+    #     sizes_in = []
+    #     for i in range(imgsz_min, imgsz_max + 1, down_sample):
+    #         sizes_in.append(i)
+    #     # imgsz_train = imgsz_max  # initialize with max size
+    #     # img_size = random.randrange(grid_min, grid_max + 1) * gs
+    #     flog.info("输入画像的尺寸范围为[{}, {}] 可选尺寸为{}".format(imgsz_min, imgsz_max, sizes_in))
+    return device, cfg

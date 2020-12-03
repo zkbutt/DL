@@ -2,10 +2,9 @@ import torch
 import torch.nn as nn
 from collections import OrderedDict
 
-from f_pytorch.backbone_t.f_model_api import SPP
-from f_pytorch.backbone_t.f_models.darknet import Darknet
-from f_pytorch.backbone_t.model_look import f_look, f_look2
-from object_detection.yolo3.nets.darknet import darknet53
+from f_pytorch.tools_model.f_layer_get import ModelOut4Densenet121
+from f_pytorch.tools_model.fmodels.model_modules import SPP
+from f_pytorch.tools_model.model_look import f_look_model
 
 
 def conv2d(filter_in, filter_out, kernel_size):
@@ -74,7 +73,7 @@ class YoloV3SPP(nn.Module):
         # F.interpolate(x,scale_factor=2,mode='nearest')
         self.last_layer3_upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
-        self.sigmoid_out = nn.Sigmoid()
+        # self.sigmoid_out = nn.Sigmoid()
 
     def forward(self, x):
         def _branch(last_layer, layer_in, is_spp=False):
@@ -112,8 +111,8 @@ class YoloV3SPP(nn.Module):
         # 自定义数据重装函数 torch.Size([1, 10647, 25])
         outs = self.data_packaging([out1, out2, out3], self.nums_anc)
         '''这里输出每层每格的对应三个anc'''
-        outs[:, :, :2] = self.sigmoid_out(outs[:, :, :2])  # xy归一
-        outs[:, :, 4:] = self.sigmoid_out(outs[:, :, 4:])  # 支持多标签
+        # outs[:, :, :2] = self.sigmoid_out(outs[:, :, :2])  # xy归一
+        # outs[:, :, 4:] = self.sigmoid_out(outs[:, :, 4:])  # 支持多标签
         '''为每一个特图预测三个尺寸的框,拉平堆叠'''
         return outs
 
@@ -135,27 +134,26 @@ class YoloV3SPP(nn.Module):
 
 
 if __name__ == '__main__':
-    # model = models.densenet121(pretrained=True)
-    # dim_layer1_out = model.features.transition2.conv.in_channels  # 512
-    # dim_layer2_out = model.features.transition3.conv.in_channels  # 1024
-    # dim_layer3_out = model.classifier.in_features  # 1024
-    # dims_out = [dim_layer1_out, dim_layer2_out, dim_layer3_out]
-    # model = Output4Densenet(model)
+    from torchvision import models
 
-    # model = models.resnext50_32x4d(pretrained=True)
-    # return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
+    model = models.densenet121(pretrained=True)
+    # # f_look(model, input=(1, 3, 416, 416))
+    # # conv 可以取 in_channels 不支持数组层
+    dims_out = [512, 1024, 1024]
+    # print(dims_out)
+    ret_name_dict = {'denseblock2': 1, 'denseblock3': 2, 'denseblock4': 3}
+    model = ModelOut4Densenet121(model, 'features', ret_name_dict)
+    f_look_model(model, input=(1, 3, 416, 416))
+
+    # model = Darknet(nums_layer=(1, 2, 8, 8, 4))
+    # return_layers = {'block3': 1, 'block4': 2, 'block5': 3}
     # model = Output4Return(model, return_layers)
-    # dims_out = [512, 1024, 2048]
-
-    model = Darknet(nums_layer=(1, 2, 8, 8, 4))
-    return_layers = {'block3': 1, 'block4': 2, 'block5': 3}
-    model = Output4Return(model, return_layers)
-    dims_out = [256, 512, 1024]
+    # dims_out = [256, 512, 1024]
 
     nums_anc = [3, 3, 3]
     num_classes = 20
     model = YoloV3SPP(model, nums_anc, num_classes, dims_out, is_spp=True)
-    # f_look(model, input=(1, 3, 416, 416))
+    f_look_model(model, input=(1, 3, 416, 416))
     # f_look2(model, input=(3, 416, 416))
 
     # torch.save(model, 'yolov3spp.pth')

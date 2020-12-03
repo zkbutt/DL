@@ -1,4 +1,5 @@
 import os
+from collections import OrderedDict
 
 import torch
 
@@ -26,6 +27,17 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=to
 
         '''对多gpu的k进行修复'''
         pretrained_dict = checkpoint['model']
+        # 特殊处理
+        # if True:
+        #     del pretrained_dict['module.ClassHead.0.conv1x1.weight']
+        #     del pretrained_dict['module.ClassHead.0.conv1x1.bias']
+        #     del pretrained_dict['module.ClassHead.1.conv1x1.weight']
+        #     del pretrained_dict['module.ClassHead.1.conv1x1.bias']
+        #     del pretrained_dict['module.ClassHead.2.conv1x1.weight']
+        #     del pretrained_dict['module.ClassHead.2.conv1x1.bias']
+        #     model.load_state_dict(pretrained_dict, strict=False)
+        #     start_epoch = checkpoint['epoch'] + 1
+        #     return start_epoch
         dd = {}
         ss = 'module.'
         if is_mgpu:
@@ -39,15 +51,6 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=to
         else:
             for k, v in pretrained_dict.items():
                 dd[k.replace(ss, '')] = v
-        # 特殊处理
-        # if True:
-        #     # del checkpoint['model']['ClassHead.0.conv1x1.weight']
-        #     # del checkpoint['model']['ClassHead.0.conv1x1.bias']
-        #     # del checkpoint['model']['ClassHead.1.conv1x1.weight']
-        #     # del checkpoint['model']['ClassHead.1.conv1x1.bias']
-        #     # del checkpoint['model']['ClassHead.2.conv1x1.weight']
-        #     # del checkpoint['model']['ClassHead.2.conv1x1.bias']
-        #     model.load_state_dict(checkpoint['model'], strict=False)
         '''重组权重'''
         # load_weights_dict = {k: v for k, v in weights_dict.items()
         #                      if model.state_dict()[k].numel() == v.numel()}

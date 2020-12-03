@@ -1,18 +1,26 @@
 class CFG:
     DEBUG = False
+
     IS_MOSAIC = True
+    BATCH_SIZE = 16  # batch过小需要设置连续前传
+    FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
+    PRINT_FREQ = int(400 / BATCH_SIZE)  # 400张图打印
+    END_EPOCH = 35
+
+    # NUM_NEG = 2000  # 负样本最大数量
+    NUM_NEG = 99999  # 负样本最大数量
+    NEG_IOU_THRESHOLD = 0.3  # 小于时作用负例
+    PREDICT_CONF_THRESHOLD = 0.3  # 用于预测的阀值
+    PREDICT_NMS_THRESHOLD = 0.3  # 用于预测的阀值
+
     IS_TRAIN = True
-    IS_MIXTURE_FIX = False
+    IS_MIXTURE_FIX = True  # 半精度训练
     # PATH_ROOT = 'M:/'
     PATH_ROOT = '/home/bak3t/bak299g/'  # 需要尾部加/
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
-    BATCH_SIZE = 8  # batch过小需要设置连续前传
-    FORWARD_COUNT = 2  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
-    PRINT_FREQ = 50  # 每50批打印一次
-    END_EPOCH = 50
-    IS_MULTI_SCALE = True
-    MULTI_SCALE_VAL = [0.667, 1.5]
+    IS_MULTI_SCALE = True  # 多尺度训练
+    MULTI_SCALE_VAL = [0.667, 1.5]  # 多尺寸的比例0.667~1.5 之间 满足32的倍数
 
     '''可视化'''
     IS_VISUAL = False
@@ -38,17 +46,14 @@ class CFG:
     '''模型权重'''
     PATH_SAVE_WEIGHT = PATH_ROOT + 'AI/weights/feadre'
     SAVE_FILE_NAME = 'def'  # 预置一个 实际无用 根据文件名确定
-    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_yolo3_DDP.pydarknet53-13_5.952162265777588.pth'
+    FILE_FIT_WEIGHT = PATH_ROOT + 'AI/weights/feadre/train_yolo3_DDP.pydensenet121-35_5.027892589569092.pth'
+
     # FILE_FIT_WEIGHT = None
 
     '''Loss参数'''
-    # PREDICT_IOU_THRESHOLD = 0.3  # 用于预测的阀值
-    NUM_NEG = 2000  # 负样本最大数量
-    NEG_IOU_THRESHOLD = .0  # 小于时作用负例
     # IGNORE_THRESH = 0.225
 
-    '''ANCHORS相关'''
-    # 每层anc数需统一，各层数据才能进行融合处理
+    '''ANCHORS相关'''  # 每层anc数需统一，各层数据才能进行融合处理
     # ANCHORS_SIZE = [
     #     [[10, 13], [16, 30], [33, 23]],  # 大特图小目标 52, 52
     #     [[30, 61], [62, 45], [59, 119]],  # 26, 26

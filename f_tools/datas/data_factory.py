@@ -9,9 +9,10 @@ import xmltodict
 import numpy as np
 
 from PIL import Image, ImageDraw
+from tqdm import tqdm
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.pic.enhance.f_mosaic import mosaic_pics
+from f_tools.pic.enhance.f_mosaic import f_mosaic_pics_ts
 
 
 def _rand(a=0., b=1.):
@@ -80,7 +81,8 @@ class VOCDataSet(Dataset):
             imgs.append(img_pil)  # list(img_pil)
             boxs.append(target["boxes"])
             labels.append(target["labels"])
-        img_pil_mosaic, boxes_mosaic, labels = mosaic_pics(imgs, boxs, labels, self.cfg.IMAGE_SIZE, is_visual=False)
+        img_pil_mosaic, boxes_mosaic, labels = f_mosaic_pics_ts(imgs, boxs, labels, self.cfg.IMAGE_SIZE,
+                                                                is_visual=False)
         target = {}
         target["boxes"] = boxes_mosaic  # 输出左上右下
         target["labels"] = labels
@@ -405,33 +407,46 @@ class WiderfaceDataSet(Dataset):
 
 
 class MapDataSet(Dataset):
-    def __init__(self, path_root, path_dt_res, class_to_idx, transforms=None, is_debug=False, look=False, out='ts', ):
-        path_dt_info = os.path.join(path_dt_res, 'dt_info')
-        if os.path.exists(path_dt_res):
-            if not os.path.exists(path_dt_info):
-                os.mkdir(path_dt_info)
-        else:
-            raise Exception('path_dt_res目录不存在: %s' % path_dt_res)
+    def __init__(self, path_imgs, path_eval_info, class_to_idx, transforms=None,
+                 is_debug=False, look=False, out='ts', ):
+        '''
+
+        :param path_imgs: 图片文件夹
+        :param path_eval_info: GT info手动创建的
+        :param class_to_idx:
+        :param transforms:
+        :param is_debug:
+        :param look:
+        :param out:
+        '''
+        if not os.path.exists(path_eval_info):
+            raise Exception('path_eval_info 目录不存在: %s' % path_eval_info)
+
+        path_gt_info = os.path.join(path_eval_info, 'gt_info')
+        if not os.path.exists(path_gt_info):
+            raise Exception('path_gt_info 目录不存在: %s' % path_gt_info)
+
+        path_dt_info = os.path.join(path_eval_info, 'dt_info')
+        if not os.path.exists(path_dt_info):
+            os.mkdir(path_dt_info)
+
         self.path_dt_info = path_dt_info  # 用于保存结果
+        self.path_gt_info = path_gt_info  # 用于保存结果
 
         self.out = out
         self.look = look
         self.is_debug = is_debug
         self.transform_cpu = transforms
-        self.path_imgages = os.path.join(path_root, 'images')
-        self.path_gt_info = os.path.join(path_root, 'gt_info')
+        self.path_imgs = path_imgs
+        # self.path_gt_info = path_dt_info
         self.class_to_idx = class_to_idx
         self.idx_to_class = {}
         for k, v in class_to_idx.items():
             self.idx_to_class[v] = k
 
-        if os.path.exists(self.path_gt_info):
-            self.names_gt_info = os.listdir(self.path_gt_info)
-        else:
-            raise Exception('标签目录不存在: %s' % self.path_gt_info)
-
+        self.names_gt_info = os.listdir(self.path_gt_info)
         self.targets = []
-        for name in self.names_gt_info:
+        for name in tqdm(self.names_gt_info):
             _labels = []
             _bboxs = []
             with open(os.path.join(self.path_gt_info, name)) as f:
@@ -441,9 +456,13 @@ class MapDataSet(Dataset):
                     label, l, t, r, b = line.split(' ')
                     _labels.append(class_to_idx[label])
                     _bboxs.append([float(l), float(t), float(r), float(b)])
+            # 已提前加载全部的标签
             self.targets.append({'labels': _labels, 'boxes': _bboxs})
+        # __d = 1
 
     def __len__(self):
+        if self.is_debug:
+            return 10
         return len(self.names_gt_info)
 
     def __getitem__(self, index):
@@ -455,19 +474,23 @@ class MapDataSet(Dataset):
 
         names_gt_info = self.names_gt_info[index]
         name_jpg = names_gt_info.split('.')[0] + '.jpg'
-        img_pil = Image.open(os.path.join(self.path_imgages, name_jpg))  # 原图数据
+        img_pil = Image.open(os.path.join(self.path_imgs, name_jpg))  # 原图数据
         target = self.targets[index]
         target['size'] = img_pil.size
-        target['name_txt'] = names_gt_info
+        target['name_txt'] = names_gt_info  # 文件名一致
         target['boxes'] = np.array(target['boxes'], dtype=np.float32)
+        img_ts4 = None
         if self.transform_cpu is not None:
             # 预处理输入 PIL img 和 np的target
-            img_pil, target = self.transform_cpu(img_pil, target)
+            img_ts4, target = self.transform_cpu(img_pil, target)
         if self.out == 'ts':
-            target['boxes'] = torch.tensor(target['boxes']).type(torch.float)
-            target['labels'] = torch.tensor(target['labels']).type(torch.int64)
-            target['size'] = torch.tensor(target['size']).type(torch.int64)
-        return img_pil, target
+            target['boxes'] = torch.tensor(target['boxes'], dtype=torch.float)
+            target['labels'] = torch.tensor(target['labels'], dtype=torch.int64)
+            target['size'] = torch.tensor(target['size'], dtype=torch.int64)
+        # 如果不加 transform_cpu 输出是 img_pil
+        if img_ts4 is None:
+            return img_pil, target
+        return img_ts4, target
 
 
 def load_data4voc(data_transform, path_data_root, batch_size, bbox2one=False, isdebug=False, data_num_workers=0):

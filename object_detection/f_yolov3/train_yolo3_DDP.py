@@ -2,6 +2,8 @@
 import os
 import sys
 
+from torch.utils.tensorboard import SummaryWriter
+
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
@@ -22,10 +24,17 @@ python -m torch.distributed.launch --nproc_per_node=2 /home/win10_sys/tmp/DL/obj
 单GPU B16 416 F2 P50 time: 0.8156  0:15:02 (0.8430 s / it)
 单GPU B8 416 F2 P50 time: 0.7084  0:12:47 (0.7175 s / it)
 
+
 单GPU B15 416 F2 P50 time: 0.8396  0:16:18 (0.8573 s / it) mem: 6583
 双GPU B15 416 F2 P50 time: 0.8950  0:15:49 (0.8869 s / it)
 双GPU B15 416 F2 P50 time: 0.9017   mem: 6824
-双GPU B8 MOSAIC 512 F2 P50 time: 1.1774  data: 0.0001  0:05:08 (1.1557 s / it) mem: 6212 
+双GPU B8 MOSAIC 512 F2 P50 time: 1.1774  0:05:08 (1.1557 s / it) mem: 6212 CPU25 内存21
+双GPU B8 MOSAIC 512 F2 P50 time: 1.0429  0:04:46 (1.0716 s / it) mem: 5761 CPU17 内存20
+
+单GPU B8 MOSAIC 416 F1 P50 time: 1.8259  0:08:03 (1.8043 s / it) mem: 4275 d121 # 锁定
+双GPU B32 MOSAIC 416 F1 P50 time: 2.9522   0:03:20 (3.0394 s / it) mem: 3467 d121 # 锁定
+双GPU B48 MOSAIC 416 F1 P400 time: 4.9589   0:03:20 (3.0394 s / it) mem: 3467 d121 # 锁定
+双GPU B16 MOSAIC 416 F1 P400 time: 1.9799   0:04:21 (1.9644 s / it) mem: 5763 d121
 
 
 '''
@@ -35,8 +44,9 @@ if __name__ == '__main__':
         raise EnvironmentError("未发现GPU")
 
     if CFG.IS_MOSAIC:
-        CFG.IMAGE_SIZE = [512, 512]
-    CFG.ANC_SCALE = list(np.array(CFG.ANC_SCALE, dtype=np.float32) / 4)
+        # CFG.IMAGE_SIZE = [512, 512]
+        # CFG.ANC_SCALE = list(np.array(CFG.ANC_SCALE,dtype=np.float32) / 2)
+        pass
 
     CFG.SAVE_FILE_NAME = os.path.basename(__file__)
     CFG.DATA_NUM_WORKERS = 6
@@ -54,6 +64,11 @@ if __name__ == '__main__':
                 os.makedirs(CFG.PATH_SAVE_WEIGHT)
             except Exception as e:
                 flog.error(' %s %s', CFG.PATH_SAVE_WEIGHT, e)
+        tb_writer = SummaryWriter()
+        tags = ["loss", "accuracy", "learning_rate"]
+        tb_writer.add_scalar(tags[0], mean_loss, epoch)
+        tb_writer.add_scalar(tags[1], acc, epoch)
+        tb_writer.add_scalar(tags[2], optimizer.param_groups[0]["lr"], epoch)
 
     '''------------------模型定义---------------------'''
     model, losser, optimizer, lr_scheduler, start_epoch, anc_obj = init_model(CFG, device, id_gpu=args.gpu)  # 初始化完成

@@ -3,6 +3,7 @@ import torch
 import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.f_general import labels2onehot4ts
 
 from f_tools.pic.f_show import f_show_iou4plt, show_anc4pil, f_show_iou4pil
 
@@ -169,6 +170,17 @@ def fix_bbox(anc, p_loc, variances=(0.1, 0.2)):
     return _t
 
 
+def fix_boxes4yolo3(boxes, anc):
+    '''
+
+    :param boxes: torch.Size([10647, 4])
+    :param anc: torch.Size([10647, 4])
+    :return:
+    '''
+    boxes
+    return boxes
+
+
 def fix_keypoints(anc, p_keypoints, variances=(0.1, 0.2)):
     '''
     可以不用返回值
@@ -328,7 +340,7 @@ def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
             return diou
 
         if is_ciou:
-            box1_atan_wh = torch.atan(box1_xywh[:, 2:3] / box1_xywh[:, 3:]) # w/h
+            box1_atan_wh = torch.atan(box1_xywh[:, 2:3] / box1_xywh[:, 3:])  # w/h
             box2_atan_wh = torch.atan(box2_xywh[:, 2:3] / box2_xywh[:, 3:])
             # torch.squeeze(ts)
             v = torch.pow(box1_atan_wh[:, None, :] - box2_atan_wh, 2) * (4 / math.pi ** 2)
@@ -351,7 +363,7 @@ def calc_iou_wh4ts(wh1, wh2):
 
 def nms(boxes, scores, iou_threshold):
     ''' IOU大于0.5的抑制掉
-         boxes (Tensor[N, 4])) – bounding boxes坐标. 格式：(x1, y1, x2, y2)
+         boxes (Tensor[N, 4])) – bounding boxes坐标. 格式：(ltrb
          scores (Tensor[N]) – bounding boxes得分
          iou_threshold (float) – IoU过滤阈值
      返回:NMS过滤后的bouding boxes索引（降序排列）
@@ -396,6 +408,7 @@ def pos_match(ancs, bboxs, criteria):
         anc_bbox_ind : 通过 g_bbox[anc_bbox_ind]  可选出标签 与anc对应 其它为0
     '''
     # (bboxs个,anc个)
+    # print(bboxs.shape[0])
     iou = calc_iou4ts(bboxs, xywh2ltrb(ancs))
     # (1,anc个值)降维  每一个anc对应的bboxs  最大的iou和index
     anc_bbox_iou, anc_bbox_ind = iou.max(dim=0)  # 存的是 bboxs的index
@@ -422,7 +435,48 @@ def pos_match(ancs, bboxs, criteria):
     return label_neg_mask, anc_bbox_ind
 
 
-@torch.no_grad()
+def pos_match_retinaface(ancs, g_bboxs, g_labels, g_keypoints, threshold_pos=0.5, threshold_neg=0.3):
+    '''
+
+    :param ancs:
+    :param g_bboxs:
+    :param g_labels:
+    :param g_keypoints:
+    :param threshold_pos:
+    :param threshold_neg:
+    :return:
+    '''
+    # (bboxs个,anc个)
+    # print(bboxs.shape[0])
+    iou = calc_iou4ts(g_bboxs, xywh2ltrb(ancs))
+    # anc对应box最大的  anc个 bbox_index
+    anc_max_iou, bbox_index = iou.max(dim=0)  # 存的是 bboxs的index
+
+    # box对应anc最大的  box个 anc_index
+    bbox_max_iou, anc_index = iou.max(dim=1)  # 存的是 anc的index
+
+    # 强制保留 将每一个bbox对应的最大的anc索引 的anc_bbox_iou值强设为2 大于阀值即可
+    anc_max_iou.index_fill_(0, anc_index, 2)  # dim index val
+
+    # 大的
+    # _ids = torch.arange(0, anc_index.size(0), dtype=torch.int64).to(bbox_index) # [0,1]
+    # # 把anc的index全部取出来
+    # bbox_index[anc_index[_ids]] = _ids
+
+    # ----------正例的index 和 正例对应的bbox索引----------
+    mask_pos = anc_max_iou >= threshold_pos  # anc 的正例 index 不管
+    mask_neg = anc_max_iou <= threshold_neg  # anc 的反例 index
+    mash_ignore = torch.logical_and(anc_max_iou < threshold_pos, anc_max_iou > threshold_neg)
+
+    match_bboxs = g_bboxs[bbox_index]
+    match_keypoints = g_keypoints[bbox_index]
+    match_labels = g_labels[bbox_index]
+    match_labels[mask_neg] = 0.
+    match_labels[mash_ignore] = -1.0
+
+    return match_bboxs, match_keypoints, match_labels
+
+
 def pos_match4yolo(ancs, bboxs, criteria):
     '''
     正例与GT最大的 负例<0.5 >0.5忽略
@@ -559,6 +613,44 @@ def match4yolo1(boxes, labels, num_anc=1, num_bbox=2, num_class=20, grid=7, devi
     return target
 
 
+def fmatch4yolo1(boxes, labels,  num_class, grid, device=None):
+    '''
+    一个网格只能预测一个对象
+    :param boxes:
+    :param labels:
+    :param num_class:
+    :param grid:
+    :param device:
+    :return:
+    '''
+    dim_out = 4 + 1 + num_class
+    # dim_out = 4 * num_bbox + 1 + num_class
+    p_yolo = torch.zeros((grid, grid, dim_out), device=device)
+
+    labels_onehot = labels2onehot4ts(labels - 1, num_class)
+
+    # ltrb -> xywh
+    boxes_xywh = ltrb2xywh(boxes)
+    wh = boxes_xywh[:, 2:]
+    cxcy = boxes_xywh[:, :2]
+
+    grids_ts = torch.tensor([grid] * 2, device=device, dtype=torch.int16)
+    '''xy与 row col相反'''
+    colrow_index = (cxcy * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xy = torch.true_divide(colrow_index, grid)  # 网络index 对应归一化的实距
+    grid_xy = (cxcy - offset_xy) / grids_ts  # 归一尺寸 - 归一实距 / 网格数 = 相对一格左上角的偏移
+
+    # 这里如果有两个GT在一个格子里将丢失
+    for i, (col, row) in enumerate(colrow_index):
+        # 这里一定是一个gt 的处理
+        offxywh = torch.cat([grid_xy[i], wh[i]], dim=0)
+        # 正例的conf 和 onehot
+        t = torch.cat([offxywh, torch.tensor([1], device=device, dtype=torch.int16),labels_onehot[i]], dim=0)
+        p_yolo[row, col] = t
+    # p_yolo = p_yolo.permute(2, 0, 1)
+    return p_yolo
+
+
 def build_targets(model, targets):
     # targets = [image, class, x, y, w, h]
     # 这里的image是一个数字，代表是当前batch的第几个图片
@@ -656,6 +748,7 @@ def build_targets(model, targets):
 
 if __name__ == '__main__':
     from f_tools.datas.data_factory import VOCDataSet
+
     path = r'M:\AI\datas\VOC2012\trainval'
 
     dataset_train = VOCDataSet(

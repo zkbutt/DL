@@ -78,7 +78,7 @@ def x_select_max_num(labels_neg):
 
 
 def mershgrid():
-    a = torch.arange(3)
+    a = torch.arange(3)  # 3行 4列
     b = torch.arange(4)
     x, y = torch.meshgrid(a, b)  # row=3 col=5
     '''
@@ -90,18 +90,19 @@ def mershgrid():
         [0, 1, 2, 3, 4]])
     '''
 
-    for i in range(3):
-        for j in range(4):
-            print("(", x[i, j], ",", y[i, j], ")")
+    # for i in range(3):
+    #     for j in range(4):
+    # print("(", x[i, j], ",", y[i, j], ")")
 
     # print(torch.stack((x, y), 2))
-    print(torch.stack((x, y), dim=2))  # 升维
+    stack = torch.stack((x, y), dim=2)
+    print(stack.view(-1,2))  # 升维
 
 
 if __name__ == '__main__':
     # x_select_1()
     # x_select_2()
-    # mershgrid()
-    a = torch.arange(5)
-    b = torch.arange(5, 10)
-    print(torch.stack([a, b], dim=1))  # 升级连接
+    mershgrid()
+    # a = torch.arange(5)
+    # b = torch.arange(5, 10)
+    # print(torch.stack([a, b], dim=1))  # 升级连接

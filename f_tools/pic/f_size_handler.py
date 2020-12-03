@@ -141,7 +141,7 @@ if __name__ == '__main__':
     img_pil = Image.open(file_pic).convert('RGB')
     # img_pil.show()
     # img_pil = resize_img_pil_keep(img_pil, (416, 416), is_fill=True)
-    img_pil, _ = resize_img_pil_keep(img_pil, (416, 600), is_fill=False)
+    img_pil, _, _ = resize_img_pil_keep(img_pil, (416, 600), is_fill=False)
     # img_pil = img_pil.crop((0, 0, 300, 200))
 
     # interpolation = cv2.INTER_LINEAR if ratio > 1.0 else cv2.INTER_AREA

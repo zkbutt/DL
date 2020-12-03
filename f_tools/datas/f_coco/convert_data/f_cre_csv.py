@@ -10,16 +10,16 @@ from f_tools.GLOBAL_LOG import flog
 
 class Widerface2Csv:
 
-    def __init__(self, path_root, file_txt, mode) -> None:
+    def __init__(self, path_root, file_name, mode) -> None:
         '''
 
         :param path_root:
-        :param file_txt:
-        :param mode: 'boxes'  'keypoints'   'caption'
+        :param file_name:
+        :param mode: bbox segm keypoints caption
         '''
         super().__init__()
         self.path_root = path_root
-        self.path_file_txt = os.path.join(path_root, file_txt)
+        self.path_file_label = os.path.join(path_root, file_name)
         self.mode = mode
 
     def to_csv(self, is_copy=False, path_dst=None, is_move=False):
@@ -39,10 +39,10 @@ class Widerface2Csv:
                    ...
                    58_Hockey_icehockey_puck_58_825.jpg,90,384,141,435,Hockey
            '''
-        if os.path.exists(self.path_file_txt):
-            f = open(self.path_file_txt, 'r')
+        if os.path.exists(self.path_file_label):
+            f = open(self.path_file_label, 'r')
         else:
-            raise Exception('标签文件不存在: %s' % self.path_file_txt)
+            raise Exception('标签文件不存在: %s' % self.path_file_label)
 
         if is_move:
             fun_copy = shutil.move
@@ -50,7 +50,7 @@ class Widerface2Csv:
             fun_copy = shutil.copy
         lines = f.readlines()
 
-        if self.mode == 'boxes':
+        if self.mode == 'bbox':
             classes, infos = self.handler_b_k(fun_copy, is_copy, lines, path_dst)
         elif self.mode == 'keypoints':
             classes, infos = self.handler_b_k(fun_copy, is_copy, lines, path_dst)
@@ -59,7 +59,7 @@ class Widerface2Csv:
             classes, infos = self.handler_caption(fun_copy, is_copy, lines, path_dst)
 
         f.close()
-        self.cre_file_json(classes, self.mode)
+        self.cre_file_json(classes, 'ids_widerface')
 
         # shutil.move(srcfile, dstfile)
         self.cre_file_csv(infos, self.mode)
@@ -79,7 +79,7 @@ class Widerface2Csv:
         _ts = []
         file = ''
         label = ''
-        for line in tqdm(lines):
+        for line in tqdm(lines, desc='标注框个数'):
             line = line.rstrip()
             if line.startswith('#'):  # 删除末尾空格
                 # 添加文件名
@@ -89,7 +89,7 @@ class Widerface2Csv:
                 _file_dst = os.path.join(path_dst, file)
 
                 if os.path.exists(_file_dst):
-                    flog.warning('文件已复制 %s', _file_dst)
+                    # flog.warning('文件已复制 %s', _file_dst)
                     continue
                 if is_copy:
                     fun_copy(path_src, path_dst)
@@ -137,12 +137,12 @@ class Widerface2Csv:
         return classes, infos
 
     def cre_file_json(self, classes, name):
-        file_json = './_file/classes_' + name + '.json'
+        file_json = '../_file/classes_' + name + '.json'
         with open(file_json, 'w', encoding='utf-8') as f:
             json.dump(classes, f, ensure_ascii=False, )
 
     def cre_file_csv(self, infos, name):
-        path_csv = './_file/csv_labels_' + name + '.csv'
+        path_csv = '../_file/csv_labels_' + name + '.csv'
         with open(path_csv, "w") as csv_labels:
             for info in infos:
                 info = [str(i) for i in info]
@@ -153,25 +153,25 @@ class Widerface2Csv:
 
 def handler_widerface():
     # 标注文件
-    mode = 'train'  # val  test
-    # mode = 'val'
-    path_root = os.path.join('M:\AI\datas\widerface', mode)
-    file_txt = 'label.txt'
-    # widerface_csv = Widerface2Csv(path_root, file_txt, 'boxes')
-    widerface_csv = Widerface2Csv(path_root, file_txt, 'keypoints')
+    data_type = 'train'  # val  test
+    # type = 'val'
+    path_root = os.path.join('M:\AI\datas\widerface', data_type)
+    file_name = 'label.txt'
+    mode = 'keypoints'  # bbox segm keypoints caption
+    widerface_csv = Widerface2Csv(path_root, file_name, mode)
+    # widerface_csv = Widerface2Csv(path_root, file_txt, 'keypoints')
     path_dst = os.path.join(path_root, 'images')  # 图片移动到此处
-    widerface_csv.to_csv(True, path_dst, is_move=True)
+    widerface_csv.to_csv(is_copy=False, path_dst=path_dst, is_move=False)
 
 
 def hadler_voc():
-    path_data_root = r'M:\AI\datas\VOC2012\trainval'
+    path_data_root = r'M:\AI\datas\VOC2012\test'
     path_file_txt = 'train.txt'
     path_txt = os.path.join(path_data_root, path_file_txt)
     path_xml = os.path.join(path_data_root, 'Annotations')
     with open(path_txt) as read:
         # 读每一行加上路径和扩展名---完整路径
-        xml_list = [os.path.join(path_xml, line.strip() + ".xml")
-                    for line in read.readlines()]
+        xml_list = [os.path.join(path_xml, line.strip() + ".xml") for line in read.readlines()]
     # try:
     #     # {"类别1": 1, "类别2":2}
     #     path_classes = os.path.join(r'D:\tb\tb\ai_code\DL\f_tools\datas\f_coco\_file', 'classes_ids_voc.json')
@@ -182,7 +182,7 @@ def hadler_voc():
     #     exit(-1)
 
     rets = []
-    for file_xml in xml_list:
+    for file_xml in tqdm(xml_list[:1000]):  # 这里定义测试数量
         with open(file_xml) as file:
             str_xml = file.read()
         doc = xmltodict.parse(str_xml)
@@ -212,7 +212,8 @@ def hadler_voc():
                 rets.append(ret.copy())
                 ret.clear()
 
-    print(rets)
+    # print(rets)
+    # ['2007_000027.jpg', '174.0', '101.0', '349.0', '351.0', 'person']
     infos = rets
     path_csv = '../_file/csv_labels_' + 'voc' + '.csv'
     with open(path_csv, "w") as csv_labels:
@@ -226,8 +227,7 @@ if __name__ == '__main__':
     '''
     将文件进行重新标注 并 重构到一个文件夹中  选框为 ltrb 可选复制或移动
     搜 # ---类别--- 写死
-    
-    
+    bbox segm keypoints
     
     1、文件名,bbox,类别名
         0_Parade_marchingband_1_465.jpg,345,211,349,215,human_face 

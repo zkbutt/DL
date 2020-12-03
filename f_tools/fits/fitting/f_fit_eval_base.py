@@ -7,9 +7,12 @@ import datetime
 import torch
 from collections import defaultdict, deque
 from torch.cuda.amp import GradScaler, autocast
+from tqdm import tqdm
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.f_coco.coco_eval import CocoEvaluator
 from f_tools.f_torch_tools import save_weight
+import torch.distributed as dist
 
 
 def is_mgpu():
@@ -31,9 +34,10 @@ def calc_average_loss(value, log_dict):
         value /= num_gpu
         value = value.detach().item()
         _t = log_dict['loss_total']
-        log_dict['loss_total'] = value # 变成平均值
+        log_dict['loss_total'] = value  # 变成平均值
         log_dict['loss_g'] = _t
         return value
+
 
 def mgpu_init():
     parser = argparse.ArgumentParser()
@@ -56,13 +60,15 @@ def mgpu_init():
                                          rank=args.rank
                                          )
     torch.distributed.barrier()  # 等待所有GPU初始化 初始化完成 629M
-    return args,device
+    return args, device
+
 
 def f_train_one_base(data_loader, loss_process, optimizer, epoch, end_epoch,
                      print_freq=60, lr_scheduler=None,
                      ret_train_loss=None, ret_train_lr=None,
                      is_mixture_fix=True,
                      forward_count=1,
+                     tb_writer=None,
                      ):
     '''
 
@@ -79,13 +85,14 @@ def f_train_one_base(data_loader, loss_process, optimizer, epoch, end_epoch,
     :param forward_count:
     :return:
     '''
+    cfg = loss_process.model.cfg
     metric_logger = MetricLogger(delimiter="  ")  # 日志记录器
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}/{}]'.format(epoch + 1, end_epoch)
 
     # ---半精度训练1---
     # enable_amp = True if "cuda" in device.type else False
-    scaler = GradScaler(enabled=True)
+    scaler = GradScaler(enabled=cfg.IS_MIXTURE_FIX)
     for i, batch_data in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         if is_mixture_fix:
             # ---半精度训练2---
@@ -121,7 +128,7 @@ def f_train_one_base(data_loader, loss_process, optimizer, epoch, end_epoch,
             optimizer.step()
             optimizer.zero_grad()
 
-        #  多GPU输出均值 对loss_total 进行修正'loss_total'  'loss_g'
+        '''多GPU输出均值 对 loss_total 进行修正'loss_total'  'loss_g' '''
         loss_total = calc_average_loss(loss_total, log_dict)
 
         # if lr_scheduler is not None:  # 每批训练lr更新器 感觉没必要
@@ -137,8 +144,15 @@ def f_train_one_base(data_loader, loss_process, optimizer, epoch, end_epoch,
             ret_train_loss.append(loss_total)
         if ret_train_lr is not None and isinstance(ret_train_lr, list):
             ret_train_lr.append(now_lr)
+        if tb_writer is not None:
+            tb_writer.add_scalar('Train/loss_total', loss_total, i)
     # 这里返回的是该设备的平均loss ,不是所有GPU的
-    return metric_logger.meters['loss_total'].avg  # 默认这epoch使用平均值
+
+    log_dict_avg = {}
+    log_dict_avg['lr'] = metric_logger.meters['lr'].value
+    for k, v in log_dict.items():
+        log_dict_avg[k] = metric_logger.meters[k].avg
+    return log_dict_avg  # 默认这epoch使用平均值
 
 
 def f_train_one_epoch(data_loader, loss_process, optimizer, epoch, end_epoch,
@@ -203,7 +217,7 @@ def f_train_one_epoch2(model, data_loader, loss_process, optimizer, epoch, cfg,
         return ret
 
     # 每个epoch保存
-    if not cfg.DEBUG:
+    if not cfg.DEBUG or cfg.IS_FORCE_SAVE:
         flog.info('训练完成正在保存模型...')
         save_weight(
             path_save=cfg.PATH_SAVE_WEIGHT,
@@ -214,7 +228,157 @@ def f_train_one_epoch2(model, data_loader, loss_process, optimizer, epoch, cfg,
             lr_scheduler=lr_scheduler,
             epoch=epoch)
 
+        if cfg.IS_FORCE_SAVE:
+            flog.info('IS_FORCE_SAVE 保存完成')
+            sys.exit(-1)
     return ret
+
+
+def f_train_one_epoch3(model, data_loader, loss_process, optimizer, epoch,
+                       lr_scheduler=None,
+                       tb_writer=None,
+                       train_sampler=None,
+                       ):
+    cfg = model.cfg
+    end_epoch = cfg.END_EPOCH
+    print_freq = cfg.PRINT_FREQ
+    is_mixture_fix = cfg.IS_MIXTURE_FIX
+    forward_count = cfg.FORWARD_COUNT
+
+    if train_sampler is not None:
+        train_sampler.set_epoch(epoch)  # 使每一轮多gpu获取的数据不一样
+
+    # data_loader, loss_process, optimizer, epoch, end_epoch,
+    log_dict_avg = f_train_one_base(data_loader=data_loader,
+                                    loss_process=loss_process,
+                                    optimizer=optimizer,
+                                    epoch=epoch,
+                                    end_epoch=end_epoch,
+                                    print_freq=print_freq, lr_scheduler=lr_scheduler,
+                                    is_mixture_fix=is_mixture_fix,
+                                    forward_count=forward_count,
+                                    tb_writer=tb_writer,
+                                    )
+
+    if is_mgpu() and torch.distributed.get_rank() != 0:
+        # 只有0进程才需要保存
+        return log_dict_avg
+
+    if tb_writer is not None:
+        for k, v, in log_dict_avg.items():
+            tb_writer.add_scalar('Loss/%s' % k, v, epoch)
+
+    # 每个epoch保存
+    if not cfg.DEBUG or cfg.IS_FORCE_SAVE:
+        flog.info('训练完成正在保存模型...')
+        save_weight(
+            path_save=cfg.PATH_SAVE_WEIGHT,
+            model=model,
+            name=cfg.SAVE_FILE_NAME,
+            loss=log_dict_avg['loss_total'],
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            epoch=epoch)
+
+        if cfg.IS_FORCE_SAVE:
+            flog.info('IS_FORCE_SAVE 完成')
+            sys.exit(-1)
+
+    return log_dict_avg
+
+
+def f_train_one_epoch4(model, data_loader, optimizer, epoch,
+                       fun_datas_l2=None,
+                       lr_scheduler=None,
+                       tb_writer=None,
+                       train_sampler=None,
+                       device=None,
+                       ):
+    cfg = model.cfg
+    end_epoch = cfg.END_EPOCH
+    print_freq = cfg.PRINT_FREQ
+    is_mixture_fix = cfg.IS_MIXTURE_FIX
+    forward_count = cfg.FORWARD_COUNT
+
+    if train_sampler is not None:
+        train_sampler.set_epoch(epoch)  # 使每一轮多gpu获取的数据不一样
+
+    metric_logger = MetricLogger(delimiter="  ")  # 日志记录器
+    metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    header = 'Epoch: [{}/{}]'.format(epoch + 1, end_epoch)
+
+    # ---半精度训练1---
+    # enable_amp = True if "cuda" in device.type else False
+    scaler = GradScaler(enabled=cfg.IS_MIXTURE_FIX)
+    for i, batch_data in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+        # ---半精度训练2---
+        with autocast(enabled=cfg.IS_MIXTURE_FIX):
+            #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
+            if fun_datas_l2 is not None:
+                img_ts4, p_yolos = fun_datas_l2(batch_data, device, cfg)
+
+            loss_total, log_dict = model(img_ts4, p_yolos)
+
+            if not math.isfinite(loss_total):  # 当计算的损失为无穷大时停止训练
+                flog.critical("Loss is {}, stopping training".format(loss_total))
+                flog.critical(log_dict)
+                sys.exit(1)
+            # ---半精度训练2  完成---
+
+        # ---半精度训练3---
+        scaler.scale(loss_total).backward()
+
+        # 每训练n批图片更新一次权重
+        if i % forward_count == 0:
+            scaler.step(optimizer)
+            scaler.update()  # 查看是否要更新scaler
+            optimizer.zero_grad()
+
+        '''多GPU输出均值 对 loss_total 进行修正'loss_total'  'loss_g' '''
+        loss_total = calc_average_loss(loss_total, log_dict)
+
+        # if lr_scheduler is not None:  # 每批训练lr更新器 感觉没必要
+        #     lr_scheduler.step()
+
+        # 这里记录日志输出 直接用字典输入
+        metric_logger.update(**log_dict)
+        now_lr = optimizer.param_groups[0]["lr"]
+        metric_logger.update(lr=now_lr)
+
+        if tb_writer is not None:
+            tb_writer.add_scalar('Train/loss_total', loss_total, i)
+    # 这里返回的是该设备的平均loss ,不是所有GPU的
+
+    log_dict_avg = {}
+    log_dict_avg['lr'] = metric_logger.meters['lr'].value
+    for k, v in log_dict.items():
+        log_dict_avg[k] = metric_logger.meters[k].avg
+
+    if is_mgpu() and torch.distributed.get_rank() != 0:
+        # 只有0进程才需要保存
+        return log_dict_avg
+
+    if tb_writer is not None:
+        for k, v, in log_dict_avg.items():
+            tb_writer.add_scalar('Loss/%s' % k, v, epoch)
+
+    # 每个epoch保存
+    if not cfg.DEBUG or cfg.IS_FORCE_SAVE:
+        flog.info('训练完成正在保存模型...')
+        save_weight(
+            path_save=cfg.PATH_SAVE_WEIGHT,
+            model=model,
+            name=cfg.SAVE_FILE_NAME,
+            loss=log_dict_avg['loss_total'],
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            epoch=epoch)
+
+        if cfg.IS_FORCE_SAVE:
+            flog.info('IS_FORCE_SAVE 完成')
+            sys.exit(-1)
+
+    return log_dict_avg
 
 
 @torch.no_grad()
@@ -226,13 +390,66 @@ def f_evaluate(data_loader, predict_handler, epoch, res_eval):
     for batch_data in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         _dataset = data_loader.dataset
-        d = predict_handler.handler_map_dt_txt(batch_data,
-                                               path_dt_info=_dataset.path_dt_info,
-                                               idx_to_class=_dataset.idx_to_class,
-                                               )
+        d = predict_handler.handler_fmap(batch_data,
+                                         path_dt_info=_dataset.path_dt_info,
+                                         idx_to_class=_dataset.idx_to_class,
+                                         )
 
         end_time = time.time() - start_time
         metric_logger.update(eval_time=end_time)  # 这个填字典 添加的字段
+    flog.info('dt_info 生成完成')
+
+
+@torch.no_grad()
+def f_evaluate4fmap(data_loader, predict_handler, epoch, res_eval):
+    metric_logger = MetricLogger(delimiter="  ")
+    header = "Test: "
+    print_freq = max(int(len(data_loader) / 5), 1)
+
+    for batch_data in metric_logger.log_every(data_loader, print_freq, header):
+        start_time = time.time()
+        _dataset = data_loader.dataset
+        d = predict_handler.handler_fmap(batch_data,
+                                         path_dt_info=_dataset.path_dt_info,
+                                         idx_to_class=_dataset.idx_to_class,
+                                         )
+
+        end_time = time.time() - start_time
+        metric_logger.update(eval_time=end_time)  # 这个填字典 添加的字段
+    flog.info('dt_info 生成完成')
+
+
+@torch.no_grad()
+def f_evaluate4coco(data_loader, predict_handler, epoch, res_eval=None, tb_writer=None, mode='bbox', device=None):
+    coco_gt = data_loader.dataset.coco
+    coco_eval = CocoEvaluator(coco_gt, [mode])
+
+    for batch_datas in tqdm(data_loader, desc='当前第 %s 次' % epoch):
+        # 当使用CPU时，跳过GPU相关指令
+        # if device != torch.device("cpu"):
+        #     torch.cuda.synchronize(device)
+
+        res = predict_handler.handler_coco(batch_datas)
+        if len(res) == 0:
+            flog.error('该批次未检测出目标')
+            continue
+        coco_eval.update(res)
+        # __d = 1
+
+    coco_eval.synchronize_between_processes()
+    coco_eval.accumulate()  # 积累
+    coco_eval.summarize()  # 总结
+
+    if is_mgpu() and torch.distributed.get_rank() != 0:
+        # 才进行以下操作, 只有0进程
+        return
+
+    # 返回np float64 [0.9964964476743241, 0.9964964476743239, 0.9964964476743239, 1.0, 1.0, 0.9964562827964212, 0.7050492610837438, 0.9983579638752053, 0.9997947454844007, 1.0, 1.0, 0.9997541789577189]
+    result_info = coco_eval.coco_eval[mode].stats.tolist()
+
+    if tb_writer is not None:
+        tb_writer.add_scalar('mAP Precision @[IoU=0.50:0.95]', result_info[0], epoch)
+        tb_writer.add_scalar('mAP Recall @[IoU=0.50:0.95]', result_info[6], epoch)
 
 
 class SmoothedValue(object):
