@@ -107,13 +107,14 @@ def init_model(cfg, device, id_gpu=None):
 
     pg = model.parameters()
     # 最初学习率
-    lr0 = 1e-3
+    lr0 = cfg.LR0
     lrf = lr0 / 100
     # 权重衰减(如L2惩罚)(默认: 0)
     optimizer = optim.Adam(pg, lr0, weight_decay=5e-4)
     # 两次不上升，降低一半
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
-    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
+    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.75, patience=1, verbose=True)
+    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
+    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg
     return model, losser, optimizer, lr_scheduler, start_epoch, anc_obj
@@ -232,6 +233,7 @@ def data_loader(cfg, is_mgpu=False):
             collate_fn=_collate_fn,
         )
     elif cfg.IS_COCO_EVAL:
+        cfg.BATCH_SIZE = cfg.BATCH_SIZE * 2
         dataset_val = CocoDataset(cfg.PATH_DATA_ROOT,
                                   # mode='keypoints',
                                   mode='bbox',
@@ -315,3 +317,5 @@ def train_eval(start_epoch, model, anc_obj, losser, optimizer, lr_scheduler=None
                 mode=mode,
                 device=device,
             )
+            if cfg.IS_RUN_ONE:
+                return

@@ -14,6 +14,9 @@ from f_tools.datas.f_coco.coco_eval import CocoEvaluator
 from f_tools.f_torch_tools import save_weight
 import torch.distributed as dist
 
+from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
+from f_tools.pic.f_show import f_show_od4ts
+
 
 def is_mgpu():
     '''是否多GPU'''
@@ -326,6 +329,7 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
             # ---半精度训练2  完成---
 
         # ---半精度训练3---
+        # torch.autograd.set_detect_anomaly(True)
         scaler.scale(loss_total).backward()
 
         # 每训练n批图片更新一次权重
@@ -430,6 +434,81 @@ def f_evaluate4coco(data_loader, predict_handler, epoch, res_eval=None, tb_write
         #     torch.cuda.synchronize(device)
 
         res = predict_handler.handler_coco(batch_datas)
+        if len(res) == 0:
+            flog.error('该批次未检测出目标')
+            continue
+        coco_eval.update(res)
+        # __d = 1
+
+    coco_eval.synchronize_between_processes()
+    coco_eval.accumulate()  # 积累
+    coco_eval.summarize()  # 总结
+
+    if is_mgpu() and torch.distributed.get_rank() != 0:
+        # 才进行以下操作, 只有0进程
+        return
+
+    # 返回np float64 [0.9964964476743241, 0.9964964476743239, 0.9964964476743239, 1.0, 1.0, 0.9964562827964212, 0.7050492610837438, 0.9983579638752053, 0.9997947454844007, 1.0, 1.0, 0.9997541789577189]
+    result_info = coco_eval.coco_eval[mode].stats.tolist()
+
+    if tb_writer is not None:
+        tb_writer.add_scalar('mAP Precision @[IoU=0.50:0.95]', result_info[0], epoch)
+        tb_writer.add_scalar('mAP Recall @[IoU=0.50:0.95]', result_info[6], epoch)
+
+
+@torch.no_grad()
+def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
+                     res_eval=None, tb_writer=None, mode='bbox',
+                     device=None):
+    cfg = model.cfg
+    coco_gt = data_loader.dataset.coco
+    coco_eval = CocoEvaluator(coco_gt, [mode])
+
+    for batch_data in tqdm(data_loader, desc='当前第 %s 次' % epoch):
+        img_ts4, p_yolos = fun_datas_l2(batch_data, device, cfg)
+        # 处理size 和 ids 用于coco
+        images, targets = batch_data
+        sizes = []
+        ids_coco = []
+        for target in targets:
+            ids_coco.append(target['image_id'])
+            sizes.append(target['size'].to(device))  # tesor
+
+        # ids_batch 用于把一批的box label score 一起弄出来
+        ids_batch, p_boxes_ltrb, p_labels, p_scores = model(img_ts4)
+        res = {}
+        # 每一张图的 id 与批次顺序保持一致 选出匹配
+        for i, (size, image_id) in enumerate(zip(sizes, ids_coco)):
+            mask = ids_batch == i  # 构建 batch 次的mask
+            if torch.any(mask):  # 如果最终有目标存在 将写出info中
+                if cfg.IS_VISUAL:
+                    img_ts = img_ts4[i]
+                    from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
+                    from f_tools.pic.f_show import show_bbox4ts
+                    _img_ts = f_recover_normalization4ts(img_ts)
+                    _size = torch.tensor(cfg.IMAGE_SIZE * 2)
+                    _target = targets[i]
+
+                    import json
+                    import os
+                    json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_voc.json'), 'r')
+                    ids_classes = json.load(json_file) # json key是字符
+                    # ids_classes = data_loader.dataset.classes_ids
+                    ids_classes = data_loader.dataset.ids_classes # key是数字
+                    show_bbox4ts(_img_ts, _target['boxes'] * _size, _target['labels'])
+                    # show_bbox4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_labels[mask])
+                    f_show_od4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_scores[mask], p_labels[mask], ids_classes)
+
+                # coco需要 ltwh
+                boxes_ltwh = ltrb2ltwh(p_boxes_ltrb[mask] * size.repeat(2)[None])
+                res[image_id] = {
+                    'boxes': boxes_ltwh,
+                    'labels': p_labels[mask],
+                    'scores': p_scores[mask],
+                }
+            else:
+                # flog.warning('没有预测出框 %s', files_txt)
+                pass
         if len(res) == 0:
             flog.error('该批次未检测出目标')
             continue

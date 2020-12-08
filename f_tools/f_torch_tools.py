@@ -29,15 +29,17 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=to
         pretrained_dict = checkpoint['model']
         # 特殊处理
         # if True:
-        #     del pretrained_dict['module.ClassHead.0.conv1x1.weight']
-        #     del pretrained_dict['module.ClassHead.0.conv1x1.bias']
-        #     del pretrained_dict['module.ClassHead.1.conv1x1.weight']
-        #     del pretrained_dict['module.ClassHead.1.conv1x1.bias']
-        #     del pretrained_dict['module.ClassHead.2.conv1x1.weight']
-        #     del pretrained_dict['module.ClassHead.2.conv1x1.bias']
+        #     del pretrained_dict['module.head_yolov1.weight']
+        #     del pretrained_dict['module.head_yolov1.bias']
+        #     # del pretrained_dict['module.ClassHead.1.conv1x1.weight']
+        #     # del pretrained_dict['module.ClassHead.1.conv1x1.bias']
+        #     # del pretrained_dict['module.ClassHead.2.conv1x1.weight']
+        #     # del pretrained_dict['module.ClassHead.2.conv1x1.bias']
         #     model.load_state_dict(pretrained_dict, strict=False)
         #     start_epoch = checkpoint['epoch'] + 1
+        #     flog.error('已特殊加载 feadre 权重文件为 %s', file_weight)
         #     return start_epoch
+
         dd = {}
         ss = 'module.'
         if is_mgpu:
@@ -67,7 +69,7 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=to
         flog.warning('已加载 feadre 权重文件为 %s', file_weight)
     else:
         # raise Exception(' 未加载 feadre权重文件 ')
-        flog.warning(' 未加载 feadre权重文件 %s', file_weight)
+        flog.error(' 未加载 feadre权重文件 %s', file_weight)
     return start_epoch
 
 

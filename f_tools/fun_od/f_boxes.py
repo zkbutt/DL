@@ -8,6 +8,20 @@ from f_tools.f_general import labels2onehot4ts
 from f_tools.pic.f_show import f_show_iou4plt, show_anc4pil, f_show_iou4pil
 
 
+def offxy2xy(xy, colrow_index, z_grids):
+    '''
+
+    :param xy:
+    :param colrow_index:
+    :param z_grids: [7,7]
+    :return:
+    '''
+    # offxy = torch.true_divide(colrow_index, z_grids)
+    # ret = torch.true_divide(xy, z_grids) + offxy
+    ret2 = torch.true_divide(xy + colrow_index, z_grids)
+    return ret2
+
+
 def ltrb2xywh(bboxs, safe=True):
     dim = len(bboxs.shape)
     if safe:
@@ -572,61 +586,22 @@ def xy2offxy(p1, p2):
     return offset_xy_wh, colrow_index
 
 
-def match4yolo1(boxes, labels, num_anc=1, num_bbox=2, num_class=20, grid=7, device=None):
+def fmatch4yolo1(boxes, labels, num_bbox, num_class, grid, device=None):
     '''
-    将ltrb 转换为 7*7*(2*(4+1)+20) = grid*grid*(num_bbox(4+1)+num_class)
-    这个必须和anc的顺序一致
-    :param boxes:已原图归一化的bbox ltrb
-    :param labels: 1~n值
-    :param num_bbox:
-    :param num_class:
-    :param grid:
-    :return:
-        torch.Size([7, 7, 25])  c r
-
-    '''
-    target = torch.zeros((grid, grid, 5 * num_bbox + num_class))
-    if device is not None:
-        target = target.to(device)
-    # ltrb -> xywh
-    boxes_xywh = ltrb2xywh(boxes)
-    wh = boxes_xywh[:, 2:]
-    cxcy = boxes_xywh[:, :2]
-
-    for i in range(cxcy.size()[0]):  # 遍历每一个框 cxcy.size()[0]  与shape等价
-        '''计算GT落在7x7哪个网格中 同时ij也表示网格的左上角的坐标'''
-        # cxcy * 7  这里是 col row的索引, int(0.1,0.5)*3(格子) =(0,1)
-        colrow_index = (cxcy[i] * grid).type(torch.int16)
-        # 计算格子与大图的偏移(0,1) /3 =(0,0.3333)
-        offset_xy = torch.true_divide(colrow_index, grid)
-        # 大图xy-格子xy /格子 = 该格子的相对距离
-        grid_xy = (cxcy[i] - offset_xy) / grid  # GT相对于所在网格左上角的值, 网格的左上角看做原点 需进行放大
-
-        # 这里如果有两个GT在一个格子里将丢失
-        for j in range(num_bbox):
-            target[colrow_index[1], colrow_index[0], (j + 1) * 5 - 1] = 1  # conf
-            start = j * 5
-            target[colrow_index[1], colrow_index[0], start:start + 2] = grid_xy  # 相对于所在网格左上角
-            target[colrow_index[1], colrow_index[0], start + 2:start + 4] = wh[i]  # wh值相对于整幅图像的尺寸
-        target[colrow_index[1], colrow_index[0], labels[i] + 5 * num_bbox - 1] = 1
-    target = target.repeat(1, 1, num_anc)
-    return target
-
-
-def fmatch4yolo1(boxes, labels,  num_class, grid, device=None):
-    '''
-    一个网格只能预测一个对象
-    :param boxes:
+    一个网格匹配两个对象 只能预测一个类型
+    输入一个图片的 target
+    :param boxes: ltrb
     :param labels:
+    :param num_bbox:
     :param num_class:
     :param grid:
     :param device:
     :return:
     '''
-    dim_out = 4 + 1 + num_class
+    dim_out = num_bbox * (4 + 1) + num_class
     # dim_out = 4 * num_bbox + 1 + num_class
-    p_yolo = torch.zeros((grid, grid, dim_out), device=device)
-
+    p_yolo = torch.zeros((grid, grid, dim_out), device=device)  # [7, 7, 11]
+    # onehot 只有第一个类别 index 为0
     labels_onehot = labels2onehot4ts(labels - 1, num_class)
 
     # ltrb -> xywh
@@ -638,15 +613,20 @@ def fmatch4yolo1(boxes, labels,  num_class, grid, device=None):
     '''xy与 row col相反'''
     colrow_index = (cxcy * grids_ts).type(torch.int16)  # 网格7的index
     offset_xy = torch.true_divide(colrow_index, grid)  # 网络index 对应归一化的实距
-    grid_xy = (cxcy - offset_xy) / grids_ts  # 归一尺寸 - 归一实距 / 网格数 = 相对一格左上角的偏移
+    grid_xy = (cxcy - offset_xy) * grids_ts  # 归一尺寸 - 归一实距 / 网格数 = 相对一格左上角的偏移
 
     # 这里如果有两个GT在一个格子里将丢失
     for i, (col, row) in enumerate(colrow_index):
-        # 这里一定是一个gt 的处理
+        # 这里一定是一个gt 的处理 shape4
         offxywh = torch.cat([grid_xy[i], wh[i]], dim=0)
         # 正例的conf 和 onehot
-        t = torch.cat([offxywh, torch.tensor([1], device=device, dtype=torch.int16),labels_onehot[i]], dim=0)
-        p_yolo[row, col] = t
+        conf2 = torch.tensor([1] * 2, device=device, dtype=torch.int16)
+        t = torch.cat([offxywh.repeat(2), conf2, labels_onehot[i]], dim=0)
+        if p_yolo[row, col, 8] == 1:  # 该网格已有一个GT框了
+            # 改第一个框 ,  一个格子最多两个目标
+            p_yolo[row, col, :4] = offxywh
+        else:
+            p_yolo[row, col] = t
     # p_yolo = p_yolo.permute(2, 0, 1)
     return p_yolo
 

@@ -8,11 +8,10 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 from f_tools.f_torch_tools import load_weight
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco, f_evaluate4coco2
 from f_tools.fun_od.f_boxes import fmatch4yolo1
 from f_tools.pic.enhance.f_data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
     Normalization4TS, Resize
-from object_detection.z_yolov1.fun_train_eval import TEProcess
 from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1
 
 
@@ -70,16 +69,17 @@ def _collate_fn(batch_datas):
 def fdatas_l2(batch_data, device, cfg=None):
     images, targets = batch_data
     images = images.to(device)
+    batch = images.shape[0]
 
     # 匹配后最终结果 一个网格只匹配一个
-    dim_out = 4 + 1 + cfg.NUM_CLASSES
-    p_yolos = torch.empty((cfg.BATCH_SIZE, cfg.NUM_GRID, cfg.NUM_GRID, dim_out), device=device)
+    dim_out = cfg.NUM_BBOX * (4 + 1) + cfg.NUM_CLASSES
+    p_yolos = torch.zeros((batch, cfg.NUM_GRID, cfg.NUM_GRID, dim_out), device=device)
 
     for i, target in enumerate(targets):
         # 这里是每一个图片
         boxes_one = target['boxes'].to(device)
-        labels_one = target['labels'].to(device)
-        p_yolo = fmatch4yolo1(boxes=boxes_one, labels=labels_one,
+        labels_one = target['labels'].to(device)  # ltrb
+        p_yolo = fmatch4yolo1(boxes=boxes_one, labels=labels_one, num_bbox=cfg.NUM_BBOX,
                               num_class=cfg.NUM_CLASSES, grid=cfg.NUM_GRID, device=device)
         p_yolos[i] = p_yolo
         # target['size'] = target['size'].to(self.device)
@@ -93,7 +93,7 @@ def init_model(cfg, device, id_gpu=None):
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'mobilenet_v2'
 
     model = Yolo_v1(backbone=model, dim_in=model.dim_out, grid=cfg.NUM_GRID,
-                    num_classes=cfg.NUM_CLASSES, num_bbox=cfg.NUM_BBOX)
+                    num_classes=cfg.NUM_CLASSES, num_bbox=cfg.NUM_BBOX, cfg=cfg)
     # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))
 
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
@@ -123,9 +123,11 @@ def init_model(cfg, device, id_gpu=None):
     lr0 = 1e-3
     lrf = lr0 / 100
     # 权重衰减(如L2惩罚)(默认: 0)
-    optimizer = optim.Adam(pg, lr0, weight_decay=5e-4)
+    optimizer = optim.Adam(pg, lr0)
+    # optimizer = optim.Adam(pg, lr0, weight_decay=5e-4)
     # 两次不上升，降低一半
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
+    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=1, verbose=True)
+    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
     start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg
@@ -138,15 +140,17 @@ def data_loader(cfg, is_mgpu=False):
     loader_train, loader_val_fmap, loader_val_coco, train_sampler = [None] * 4
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
     if cfg.IS_TRAIN:
-        dataset_train = CocoDataset(cfg.PATH_DATA_ROOT,
-                                    # mode='keypoints',
-                                    mode='bbox',
-                                    data_type='train2017',
-                                    transform=data_transform['train'],
-                                    is_mosaic=cfg.IS_MOSAIC,
-                                    is_debug=cfg.DEBUG,
-                                    cfg=cfg
-                                    )
+        dataset_train = CocoDataset(
+            path_coco_target=cfg.PATH_COCO_TARGET_TRAIN,
+            path_img=cfg.PATH_IMG_TRAIN,
+            # mode='keypoints',
+            mode='bbox',
+            data_type='train2017',
+            transform=data_transform['train'],
+            is_mosaic=cfg.IS_MOSAIC,
+            is_debug=cfg.DEBUG,
+            cfg=cfg
+        )
         # __d = dataset_train[0]  # 调试
         if is_mgpu:
             # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
@@ -195,17 +199,21 @@ def data_loader(cfg, is_mgpu=False):
             collate_fn=_collate_fn,
         )
     elif cfg.IS_COCO_EVAL:
-        dataset_val = CocoDataset(cfg.PATH_DATA_ROOT,
-                                  # mode='keypoints',
-                                  mode='bbox',
-                                  data_type='val2017',
-                                  transform=data_transform['val'],
-                                  is_debug=cfg.DEBUG,
-                                  cfg=cfg
-                                  )
+        dataset_val = CocoDataset(
+            path_coco_target=cfg.PATH_COCO_TARGET_EVAL,
+            path_img=cfg.PATH_IMG_EVAL,
+            # mode='keypoints',
+            mode='bbox',
+            data_type='val2017',
+            transform=data_transform['val'],
+            is_mosaic=cfg.IS_MOSAIC,
+            is_debug=cfg.DEBUG,
+            cfg=cfg
+        )
+
         loader_val_coco = torch.utils.data.DataLoader(
             dataset_val,
-            batch_size=cfg.BATCH_SIZE,
+            batch_size=int(cfg.BATCH_SIZE * 1.5),
             num_workers=cfg.DATA_NUM_WORKERS,
             # shuffle=True,
             pin_memory=True,  # 不使用虚拟内存 GPU要报错
@@ -241,6 +249,23 @@ def train_eval(start_epoch, model, optimizer, lr_scheduler=None,
             if lr_scheduler is not None:
                 lr_scheduler.step(log_dict['loss_total'])  # 更新学习
 
+        if model.cfg.IS_COCO_EVAL:
+            flog.info('COCO 验证开始 %s', epoch + 1)
+            model.eval()
+            # with torch.no_grad():
+            mode = 'bbox'
+            res_eval = []
+            f_evaluate4coco2(
+                model=model,
+                fun_datas_l2=fun_datas_l2,
+                data_loader=loader_val_coco,
+                epoch=epoch,
+                tb_writer=tb_writer,
+                res_eval=res_eval,
+                mode=mode,
+                device=device,
+            )
+            return
         # if model.cfg.IS_FMAP_EVAL:
         #     flog.info('FMAP 验证开始 %s', epoch + 1)
         #     res_eval = []
@@ -258,17 +283,3 @@ def train_eval(start_epoch, model, optimizer, lr_scheduler=None,
         #               plot_res=False, animation=False)
         #     return
         #
-        # if model.cfg.IS_COCO_EVAL:
-        #     flog.info('COCO 验证开始 %s', epoch + 1)
-        #     # with torch.no_grad():
-        #     mode = 'bbox'
-        #     res_eval = []
-        #     f_evaluate4coco(
-        #         data_loader=loader_val_coco,
-        #         predict_handler=predict_handler,
-        #         epoch=epoch,
-        #         tb_writer=tb_writer,
-        #         res_eval=res_eval,
-        #         mode=mode,
-        #         device=device,
-        #     )

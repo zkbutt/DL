@@ -9,23 +9,10 @@ import pylab
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fun_od.f_boxes import ltwh2ltrb
 from f_tools.pic.f_show import show_anc4pil
+import skimage.io as io
 
 
-def f查看类别():
-    '''返回类别信息'''
-    # 获取指定名称的类别序号（找category name为 x 的 category id）
-    catIds = coco.getCatIds(catNms=['person', 'dog', 'skateboard'])
-    # 指定类别 catIds 获取类别ID对应的图片ID list   如果没有会返回0
-    imgIds = coco.getImgIds(catIds=catIds)
-    # # 随机选择一个ID
-    ids_ = imgIds[np.random.randint(0, len(imgIds))]
-    # 加载图片基本信息  ["license", "file_name","coco_url", "height", "width", "date_captured", "id"]
-    return coco.loadImgs(ids_)[0]
-
-
-def f查看网络图片():
-    img_info = f查看类别()
-
+def f_show_coco_net_pic():
     # 加载公交车示例
     id = 233727
     img_info = coco.loadImgs(id)[0]
@@ -57,7 +44,7 @@ def f_show_coco_pics(coco, path_img, ids_img=None):
     :param path_img:
     :return:
     '''
-    import skimage.io as io
+
     # id = 1
     # imgIds = coco.getImgIds(imgIds=[id])
     if not ids_img:

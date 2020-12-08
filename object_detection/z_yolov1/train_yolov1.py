@@ -1,18 +1,21 @@
 import os
 import sys
 
+'''用户命令行启动'''
+curPath = os.path.abspath(os.path.dirname(__file__))
+rootPath = os.path.split(curPath)[0]
+sys.path.append(os.path.split(rootPath)[0])
 from torch.utils.tensorboard import SummaryWriter
 
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
 from object_detection.z_yolov1.process_fun import data_loader, init_model, train_eval
 
-'''用户命令行启动'''
-curPath = os.path.abspath(os.path.dirname(__file__))
-rootPath = os.path.split(curPath)[0]
-sys.path.append(os.path.split(rootPath)[0])
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_fit_fun import init_od, base_set
 
+'''
+linux用这个   python -m /home/win10_sys/tmp/DL/object_detection/z_yolov1/train_yolov1.py
+'''
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
     # -----------通用系统配置----------------

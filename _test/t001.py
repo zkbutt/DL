@@ -45,14 +45,17 @@ if __name__ == '__main__':
     '''
     usage: t001.py [-h] [--name NAME] -f FAMILY t4 integers [integers ...]
     '''
+    import torch.nn.functional as F
+
     # random_ = torch.LongTensor(5).random_() % 4
     # random_ = torch.tensor([1])
     # print(labels2onehot4ts(random_, 4))
-    bbox_index = torch.tensor([1, 1, 1])
-    anc_index = torch.tensor([0, 0])
-    _ids = torch.arange(0, anc_index.size(0), dtype=torch.int64).to(bbox_index)
-    bbox_index[anc_index[_ids]] = _ids
-    print(bbox_index)
+    ious1 = torch.tensor([[2, 1, 3], [2, 1, 1]], dtype=torch.float)
+    ious2 = torch.tensor([[2, 1, 3], [2, 1, 6]], dtype=torch.float)
+    # ious = torch.tensor([[2], [1], [3]])
+    print(ious1[[0, 1], :])
+    # print(ious.max(dim=1))
+    print(F.mse_loss(ious1, ious2, reduction='none'))
 
     # nB, nA, nG, nG = 4, 2, 6, 6
     # obj_mask = torch.ByteTensor(nB, nA, nG, nG).fill_(0)
@@ -61,4 +64,3 @@ if __name__ == '__main__':
     # iou_scores = torch.FloatTensor(nB, nA, nG, nG).fill_(0)
     # print(torch.zeros(nB, nA, nG, nG,dtype=torch.float).shape)
     # print(obj_mask.shape)
-#

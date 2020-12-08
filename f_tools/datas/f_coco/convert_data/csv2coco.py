@@ -289,20 +289,30 @@ if __name__ == '__main__':
     '''
     np.random.seed(20200925)
 
-    path_classes_ids = 'M:\AI\datas\widerface\coco\classes_ids_widerface.json'
-    path_img = r'M:\AI\datas\widerface\coco\images\train2017'  # 真实图片路径
-    # file_csv = "../_file/csv_labels_boxes.csv"
-    file_csv = "../_file/csv_labels_keypoints.csv"
-    type = 'train2017'
-    mode = 'keypoints' # 'boxes'
-    path_coco_save = r"M:\temp\11\widerface"
+    '''widerface数据集'''
+    # path_classes_ids = 'M:\AI\datas\widerface\coco\classes_ids_widerface.json'
+    # path_img = r'M:\AI\datas\widerface\coco\images\train2017'  # 真实图片路径
+    # # file_csv = "../_file/csv_labels_boxes.csv"
+    # file_csv = "../_file/csv_labels_keypoints.csv"
+    # type = 'train2017'
+    # mode = 'keypoints' # 'boxes'
+    # path_coco_save = r"M:\temp\11\widerface"
 
+    '''voc 数据集'''
+    # 验证集
     # path_classes_ids = 'M:\AI\datas\VOC2012\classes_ids_voc.json'
     # path_img = r'M:\AI\datas\VOC2012\test\JPEGImages'  # 真实图片路径
     # file_csv = "../_file/csv_labels_voc.csv"
     # type = 'val2017'  # train2017
     # mode = 'boxes'  # 'keypoints'  # 'boxes':
-    # path_coco_save = r"M:\temp\11\voc_coco"  # 这个是生成的根 目录必须存在
+    # path_coco_save = r"M:\AI\datas\VOC2012"  # 这个是生成的根 目录必须存在
+    # 训练集
+    path_classes_ids = 'M:\AI\datas\VOC2012\classes_ids_voc.json'
+    path_img = r'M:\AI\datas\VOC2012\trainval\JPEGImages'  # 真实图片路径
+    file_csv = "../_file/csv_labels_voc.csv"
+    type = 'train2017'  # train2017
+    mode = 'boxes'  # 'keypoints'  # 'boxes':
+    path_coco_save = r"M:\AI\datas\VOC2012"  # 这个是生成的根 目录必须存在
 
     with open(path_classes_ids, 'r', encoding='utf-8') as f:
         classes_ids = json.load(f)  # 文件转dict 或list

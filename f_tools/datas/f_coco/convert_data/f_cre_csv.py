@@ -165,13 +165,17 @@ def handler_widerface():
 
 
 def hadler_voc():
-    path_data_root = r'M:\AI\datas\VOC2012\test'
+    # path_data_root = r'M:\AI\datas\VOC2012\test'
+    path_data_root = r'M:\AI\datas\VOC2012\trainval'
     path_file_txt = 'train.txt'
+
     path_txt = os.path.join(path_data_root, path_file_txt)
     path_xml = os.path.join(path_data_root, 'Annotations')
     with open(path_txt) as read:
         # 读每一行加上路径和扩展名---完整路径
         xml_list = [os.path.join(path_xml, line.strip() + ".xml") for line in read.readlines()]
+
+    '''读文件获取类型名称'''
     # try:
     #     # {"类别1": 1, "类别2":2}
     #     path_classes = os.path.join(r'D:\tb\tb\ai_code\DL\f_tools\datas\f_coco\_file', 'classes_ids_voc.json')
@@ -182,7 +186,8 @@ def hadler_voc():
     #     exit(-1)
 
     rets = []
-    for file_xml in tqdm(xml_list[:1000]):  # 这里定义测试数量
+    # for file_xml in tqdm(xml_list[:1000]):  # 这里定义测试数量
+    for file_xml in tqdm(xml_list):
         with open(file_xml) as file:
             str_xml = file.read()
         doc = xmltodict.parse(str_xml)
@@ -234,5 +239,5 @@ if __name__ == '__main__':
     2、图片移到一个文件夹
     
     '''
-    handler_widerface()
-    # hadler_voc()
+    # handler_widerface()
+    hadler_voc()

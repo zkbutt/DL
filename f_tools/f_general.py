@@ -97,7 +97,7 @@ def mkdir(path):
 
 def labels2onehot4ts(labels, num_class):
     '''
-    通常label从1开始   这里是从0开始
+    通常 label 从1开始   这里是必须0开始  需labels-1
     :param labels: 类别 index [,2,1,1,3,5]
     :param num_class:
     :return: torch.Size([1, 20])

@@ -153,6 +153,36 @@ def show_anc4ts(img_ts, anc, size):
     show_anc4pil(img_pil, anc, size)
 
 
+def show_bbox_scores4pil(img_pil, bboxs, scores):
+    '''
+
+    :param img_pil:
+    :param bboxs:
+    :param scores:
+    :return:
+    '''
+    pil_copy = img_pil.copy()
+    draw = ImageDraw.Draw(pil_copy)
+    cw = 3
+    for bbox, k, s in zip(bboxs, scores):
+        if isinstance(bboxs, np.ndarray):
+            l, t, r, b = bbox.astype(np.int)
+        elif isinstance(bboxs, torch.Tensor):
+            l, t, r, b = bbox.type(torch.int)
+        else:
+            raise Exception('类型错误', type(bboxs))
+
+        draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
+                  fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)])
+        # draw.text((l, t), "hello", (0, 255, 0))
+        # draw.point([(20, 20), (25, 25), (50, 50), (30, 30)], (0, 255, 0))
+        # ltrb 角度顺时间 框色 填充色
+        # draw.chord((0, 0, 3, 3), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+    pil_copy.show()
+    # plt.imshow(img_pil)
+    # plt.show()
+
+
 def show_bbox_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
     '''
 
@@ -281,10 +311,12 @@ def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, 
     # color = random.randint(0, len(STANDARD_COLORS))
     for box, conf, label in zip(boxes_confs[:, :4], boxes_confs[:, 4], labels):
         left, top, right, bottom = box
+        _s_text = '{}:{:.1%}'
         if id_to_class:
-            show_text = 'type={}:{:.1%}'.format(id_to_class[label], conf)
+            show_text = _s_text.format(id_to_class[label], conf)
         else:
-            show_text = 'type={}:{:.1%}'.format(label, conf)
+            show_text = _s_text.format(label, conf)
+        flog.debug(show_text)
         text_width, text_height = font.getsize(show_text)
         margin = np.ceil(0.05 * text_height)
         # 超出屏幕判断
@@ -305,6 +337,15 @@ def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, 
             draw.text((left + margin, text_bottom - text_height - margin),
                       show_text, fill=color, font=font)
     img_pil_copy.show()
+
+
+def f_show_od4ts(img_ts, boxes_ltrb, scores, labels, class_dict=None):
+    img_pil = transforms.ToPILImage()(img_ts)
+    boxes_confs = torch.cat([boxes_ltrb, scores[:, None]], dim=1)
+    f_show_od4pil(img_pil, boxes_confs,
+                  (labels.type(torch.int)).tolist(),  # 支持数字key  dict
+                  id_to_class=class_dict
+                  )
 
 
 def f_show_iou4plt(box1, box2):
