@@ -15,8 +15,8 @@ class CFG:
     IS_COCO_EVAL = True
     IS_FMAP_EVAL = False  # FMAP只运行生成一次
 
-    PATH_HOST = 'M:'  # 416
-    # PATH_HOST = '/home/bak3t/bak299g'  # 需要尾部加/
+    # PATH_HOST = 'M:'  # 416
+    PATH_HOST = '/home/bak3t/bak299g'  # 需要尾部加/
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
 
@@ -41,8 +41,11 @@ class CFG:
 
     '''模型权重'''
     PATH_SAVE_WEIGHT = PATH_HOST + '/AI/weights/feadre'
-    SAVE_FILE_NAME = 'train_yolov1'  # 预置一个 实际无用 根据文件名确定
-    FILE_FIT_WEIGHT = PATH_HOST + '/AI/weights/feadre/train_yolov1mobilenet_v2-80_6.111559867858887.pth'
+    SAVE_FILE_NAME = 'train_yolov1_'  # 预置一个 实际无用 根据文件名确定
+    FILE_FIT_WEIGHT = PATH_HOST + '/AI/weights/feadre/train_yolov1mobilenet_v2-110_1.7359310388565063.pth'
+    # [0.060798525304197784, 0.16004431729031623, 0.032818981070488314, 0.0, 0.02438206740414694, 0.08068660961275709, 0.08239716312056737, 0.10574468085106382, 0.10574468085106382, 0.0, 0.06552526595744682, 0.1241599707815924]
+    # FILE_FIT_WEIGHT = PATH_HOST + '/AI/weights/feadre/train_yolov1mobilenet_v2-102_2.189227819442749.pth'  # 最好一次
+    # [0.061976429380835085, 0.16622805719398262, 0.03247406096586994, 0.0002994048486785443, 0.02573890122808864, 0.08035893212461312, 0.08181733108740409, 0.10648979973797493, 0.10648979973797493, 0.008108108108108109, 0.06542025148908008, 0.12504663898417284]
     # FILE_FIT_WEIGHT = PATH_ROOT + '/AI/weights/feadre/train_yolov1mobilenet_v2-57_5.949509143829346.pth'
 
     '''Loss参数'''

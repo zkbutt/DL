@@ -5,9 +5,10 @@ import sys
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
+from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
+from object_detection.z_yolov3.process_fun import init_model, data_loader, train_eval
+
 from torch.utils.tensorboard import SummaryWriter
-from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
-from object_detection.z_yolov1.process_fun import init_model, data_loader, train_eval
 
 '''解决linux导入出错 完成'''
 import torch
@@ -16,13 +17,13 @@ from f_tools.fits.fitting.f_fit_eval_base import mgpu_init
 
 '''
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py
-pycharm用这个 --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/z_yolov1/train_yolov1_DDP.py
+pycharm用这个 --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/z_yolov3/train_yolov3_DDP.py
 linux用这个   
-python -m torch.distributed.launch --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/z_yolov1/train_yolov1_DDP.py
+python -m torch.distributed.launch --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/z_yolov3/train_yolov3_DDP.py
 
 
-单GPU B128 416 F1 P400 time: 3.5156  0:07:13 (4.2914 s / it) mem: 4285 mv2 # 锁定
-双GPU B128 416 F1 P400 time: 4.6866  0:04:09 (4.9945 s / it) mem: 4287 mv2 # 锁定
+双GPU B128 416 F1 P400 time: 7.5721  data: 0.0006  0:08:31 (7.7556 s / it) mem: 6241 mv2 # 锁定
+双GPU B128 416 F1 P400 time: 7.5721  data: 0.0006  0:08:31 (7.7556 s / it) mem: 6241 mv2 # 锁定 IS_MOSAIC
 双GPU B52  416 F1 P400 time: 3.0276  0:06:29 (3.1640 s / it) mem: 6133 mv2 
 双GPU B52  416 F1 P400 time: 3.0864  0:06:32 (3.1897 s / it) mem: 6133 mv2 
 

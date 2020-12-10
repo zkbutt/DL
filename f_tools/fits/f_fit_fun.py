@@ -56,18 +56,12 @@ def base_set(cfg):
     else:
         torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
 
-    if cfg.IS_MOSAIC:
+    # if cfg.IS_MOSAIC:
         # cfg.IMAGE_SIZE = [512, 512]
         # cfg.ANC_SCALE = list(np.array(cfg.ANC_SCALE,dtype=np.float32) / 2)
-        pass
+        # pass
 
     # cfg.FILE_FIT_WEIGHT = None
-
-    if hasattr(cfg, 'FEATURE_MAP_STEPS'):
-        # 预设尺寸必须是下采样倍数的整数倍 输入一般是正方形
-        down_sample = cfg.FEATURE_MAP_STEPS[-1]  # 模型下采样倍数
-        assert math.fmod(cfg.IMAGE_SIZE[0], down_sample) == 0, "尺寸 %s must be a %s 的倍数" % (cfg.IMAGE_SIZE, down_sample)
-        # assert math.fmod(cfg.IMAGE_SIZE[1], down_sample) == 0, "尺寸 %s must be a %s 的倍数" % (cfg.IMAGE_SIZE, small_conf)
 
     '''-----多尺度训练-----'''
     # if cfg.IS_MULTI_SCALE:

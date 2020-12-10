@@ -119,6 +119,13 @@ def show_bbox4ts(img_ts, boxs, labels=None):
 
 
 def show_anc4pil(img_pil, anc, size=(1, 1)):
+    '''
+
+    :param img_pil:
+    :param anc:  n,4
+    :param size:
+    :return:
+    '''
     # _clone = anc[:300, :].clone()
     if isinstance(anc, np.ndarray):
         _clone = anc.copy()
@@ -278,6 +285,24 @@ def show_pic_label_np(img_np, boxes, labels):
     cv2.waitKey(0)
 
 
+def f_plot_od4np(img_np, p_boxes, p_keypoints, p_scores):
+    '''这个是直接修改 img_np'''
+    for b, k, s in zip(p_boxes, p_keypoints, p_scores):
+        b = list(b.type(torch.int64).numpy())
+        k = list(k.type(torch.int64).numpy())
+        text = "{:.4f}".format(s)
+        cv2.rectangle(img_np, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)  # (l,t),(r,b),颜色.宽度
+        cx = b[0]
+        cy = b[1] + 12
+        cv2.putText(img_np, text, (cx, cy), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
+
+        cv2.circle(img_np, (k[0], k[1]), 1, (0, 0, 255), 4)
+        cv2.circle(img_np, (k[2], k[3]), 1, (0, 255, 255), 4)
+        cv2.circle(img_np, (k[4], k[5]), 1, (255, 0, 255), 4)
+        cv2.circle(img_np, (k[6], k[7]), 1, (0, 255, 0), 4)
+        cv2.circle(img_np, (k[8], k[9]), 1, (255, 0, 0), 4)
+
+
 def f_show_od4pil_yolo(img_pil, p_yolo, id_to_class=None):
     '''
 
@@ -292,18 +317,22 @@ def f_show_od4pil_yolo(img_pil, p_yolo, id_to_class=None):
     f_show_od4pil(img_pil, boxes_confs, labels, id_to_class)
 
 
-def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, text_fill=True):
+def f_plot_od4pil(img_pil, boxes_ltrb, scores, labels, id_to_class=None, font_size=10, text_fill=True):
     '''
-    需扩展按conf排序  或conf过滤的功能
-    :param img_pil: 一张 pil
-    :param boxes_confs: np(9, 5)  前4 bbox  后1 conf 已按实尺寸的框
-    :param labels: list(int)
-    :param id_to_class: dict{id,name}
+
+    :param img_pil:
+    :param labels:list(int)  torch.tensor
+    :param id_to_class: 支持dict + list ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle',]
+    :param font_size:
+    :param text_fill:
     :return:
     '''
-    img_pil_copy = img_pil.copy()
+    if isinstance(labels, torch.Tensor):
+        labels = labels.type(torch.int).tolist()
+
+    boxes_confs = torch.cat([boxes_ltrb, scores[:, None]], dim=1)
     try:
-        font = ImageFont.truetype('arial.ttf', font_size)  # 参数1：字体文件路径，参数2：字体大小
+        font = ImageFont.truetype('simhei.ttf', font_size, encoding='utf-8')  # 参数1：字体文件路径，参数2：字体大小
     except IOError:
         font = ImageFont.load_default()
 
@@ -316,7 +345,7 @@ def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, 
             show_text = _s_text.format(id_to_class[label], conf)
         else:
             show_text = _s_text.format(label, conf)
-        flog.debug(show_text)
+        # flog.debug(show_text)
         text_width, text_height = font.getsize(show_text)
         margin = np.ceil(0.05 * text_height)
         # 超出屏幕判断
@@ -326,7 +355,7 @@ def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, 
             text_bottom = bottom + text_height
         color = STANDARD_COLORS[label]
 
-        draw = ImageDraw.Draw(img_pil_copy)
+        draw = ImageDraw.Draw(img_pil)
         draw.rectangle([left, top, right, bottom], outline=color, width=2)
         if text_fill:
             draw.rectangle([(left, text_bottom - text_height - 2 * margin),
@@ -336,15 +365,31 @@ def f_show_od4pil(img_pil, boxes_confs, labels, id_to_class=None, font_size=10, 
         else:
             draw.text((left + margin, text_bottom - text_height - margin),
                       show_text, fill=color, font=font)
+        # font = ImageFont.truetype('simhei.ttf', 30, encoding='utf-8')
+        # draw.text((100, 100), '优秀, 哈哈', (0, 255, 255), font=font)
+    return img_pil
+
+
+def f_show_od4pil(img_pil, boxes_ltrb, scores, labels, id_to_class=None, font_size=10, text_fill=True):
+    '''
+    需扩展按conf排序  或conf过滤的功能
+    :param img_pil: 一张 pil
+    :param boxes_confs: np(9, 5)  前4 bbox  后1 conf 已按实尺寸的框
+    :param labels: list(int)
+    :param id_to_class: dict{id,name}
+    :return:
+    '''
+    img_pil_copy = img_pil.copy()
+    img_pil_copy = f_plot_od4pil(img_pil_copy, boxes_ltrb, scores, labels, id_to_class, font_size, text_fill)
     img_pil_copy.show()
 
 
 def f_show_od4ts(img_ts, boxes_ltrb, scores, labels, class_dict=None):
     img_pil = transforms.ToPILImage()(img_ts)
-    boxes_confs = torch.cat([boxes_ltrb, scores[:, None]], dim=1)
-    f_show_od4pil(img_pil, boxes_confs,
-                  (labels.type(torch.int)).tolist(),  # 支持数字key  dict
-                  id_to_class=class_dict
+    # boxes_confs = torch.cat([boxes_ltrb, scores[:, None]], dim=1)
+    f_show_od4pil(img_pil, boxes_ltrb, scores,
+                  # (labels.type(torch.int)).tolist(),  # 支持数字key  dict
+                  labels, id_to_class=class_dict
                   )
 
 
@@ -455,13 +500,31 @@ def f_show_grid4pil(img_pil, grids=(7, 7)):
 
 if __name__ == '__main__':
     file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_006046.jpg'
-    file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_000121.jpg'
+    # file_pic = r'D:\tb\tb\ai_code\DL\_test_pic\2007_000121.jpg'
 
     # img = cv2.imread(file_img)
     from PIL import Image
     from torchvision.transforms import functional as F
 
-    # 直接拉伸 pil打开为RGB
+    # # 直接拉伸 pil打开为RGB
     img_pil = Image.open(file_pic).convert('RGB')
+    #
+    # f_show_grid4pil(img_pil, (20, 5))
 
-    f_show_grid4pil(img_pil, (20, 5))
+    # pil_img = Image.fromarray(cv2.cvtColor(img_pil, cv2.COLOR_BGR2RGB))
+    # pil_img.show()
+    # 生成画笔
+    draw = ImageDraw.Draw(img_pil)
+    # 第一个参数是字体文件的路径，第二个是字体大小
+    font = ImageFont.truetype('simhei.ttf', 30, encoding='utf-8')
+    # 第一个参数是文字的起始坐标，第二个需要输出的文字，第三个是字体颜色，第四个是字体类型
+    draw.text((100, 100), '优秀, 哈哈', (0, 255, 255), font=font)
+
+    # PIL图片转cv2
+    img_np = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+    # 变得可以拉伸 winname 必须要一样，且设置可以拉伸在前面
+    cv2.namedWindow('w_img', cv2.WINDOW_NORMAL)
+    # 显示
+    cv2.imshow("w_img", img_np)
+    # 等待
+    cv2.waitKey(0)

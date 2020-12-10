@@ -2,17 +2,17 @@ import torch
 from torch import optim
 from torchvision import models
 
-from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2
+from f_pytorch.tools_model.f_layer_get import ModelOuts4Mobilenet_v2
 from f_pytorch.tools_model.model_look import f_look_model
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 from f_tools.f_torch_tools import load_weight
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco, f_evaluate4coco2, is_mgpu
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2
 from f_tools.fun_od.f_boxes import fmatch4yolo1
 from f_tools.pic.enhance.f_data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
-    Normalization4TS, Resize
-from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1
+    Normalization4TS, Resize, ResizeKeep
+from object_detection.z_yolov3.nets.net_yolov3 import YoloV3SPP
 
 
 def cre_data_transform(cfg):
@@ -36,16 +36,16 @@ def cre_data_transform(cfg):
     else:
         data_transform = {
             "train": Compose([
-                # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
-                Resize(cfg.IMAGE_SIZE),
+                ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+                # Resize(cfg.IMAGE_SIZE),
                 ColorJitter(),
                 ToTensor(),
                 RandomHorizontalFlip4TS(0.5),
                 Normalization4TS(),
             ], cfg),
             "val": Compose([
-                # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
-                Resize(cfg.IMAGE_SIZE),
+                ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+                # Resize(cfg.IMAGE_SIZE),
                 ToTensor(),
                 Normalization4TS(),
             ], cfg)
@@ -69,31 +69,23 @@ def _collate_fn(batch_datas):
 def fdatas_l2(batch_data, device, cfg=None):
     images, targets = batch_data
     images = images.to(device)
-    batch = images.shape[0]
 
-    # 匹配后最终结果 一个网格只匹配一个
-    dim_out = cfg.NUM_BBOX * (4 + 1) + cfg.NUM_CLASSES
-    p_yolos = torch.zeros((batch, cfg.NUM_GRID, cfg.NUM_GRID, dim_out), device=device)
+    for target in targets:
+        target['boxes'] = target['boxes'].to(device)
+        target['labels'] = target['labels'].to(device)
+        # target['size'] = target['size'].to(device)
+        # target['image_id'] = target['image_id'].to(device)
 
-    for i, target in enumerate(targets):
-        # 这里是每一个图片
-        boxes_one = target['boxes'].to(device)
-        labels_one = target['labels'].to(device)  # ltrb
-        p_yolo = fmatch4yolo1(boxes=boxes_one, labels=labels_one, num_bbox=cfg.NUM_BBOX,
-                              num_class=cfg.NUM_CLASSES, grid=cfg.NUM_GRID, device=device)
-        p_yolos[i] = p_yolo
-        # target['size'] = target['size'].to(self.device)
-
-    return images, p_yolos
+    return images, targets
 
 
 def init_model(cfg, device, id_gpu=None):
     model = models.mobilenet_v2(pretrained=True)
-    model = ModelOut4Mobilenet_v2(model)
+    model = ModelOuts4Mobilenet_v2(model)
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'mobilenet_v2'
 
-    model = Yolo_v1(backbone=model, dim_in=model.dim_out, grid=cfg.NUM_GRID,
-                    num_classes=cfg.NUM_CLASSES, num_bbox=cfg.NUM_BBOX, cfg=cfg)
+    model = YoloV3SPP(backbone=model, nums_anc=cfg.NUMS_ANC, num_classes=cfg.NUM_CLASSES,
+                      dims_rpn_in=model.dims_out, device=device, cfg=cfg, is_spp=True)
     # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))
 
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
@@ -309,4 +301,3 @@ def train_eval(start_epoch, model, optimizer, lr_scheduler=None,
         #               iou_map=[], ignore_classes=[], console_pinter=True,
         #               plot_res=False, animation=False)
         #     return
-        #
