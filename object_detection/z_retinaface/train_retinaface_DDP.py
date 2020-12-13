@@ -2,6 +2,8 @@
 import os
 import sys
 
+from f_tools.fits.f_gpu.f_gpu_api import mgpu_init
+
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
@@ -13,7 +15,6 @@ from object_detection.z_retinaface.process_fun import init_model, data_loader, t
 '''解决linux导入出错 完成'''
 import torch
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.fitting.f_fit_eval_base import mgpu_init
 import numpy as np
 
 '''
@@ -76,21 +77,16 @@ if __name__ == '__main__':
         tb_writer = SummaryWriter()
 
     '''------------------模型定义---------------------'''
-    model, losser, optimizer, lr_scheduler, start_epoch, anc_obj = init_model(cfg, device, id_gpu=args.gpu)  # 初始化完成
+    model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=args)
 
     '''---------------数据加载及处理--------------'''
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler = data_loader(cfg, is_mgpu=True)
+    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = data_loader(model.cfg, is_mgpu=True)
     # loader_train, loader_val, train_sampler = data_loader4mgpu(CFG)
 
     flog.debug('---训练开始---epoch %s', start_epoch + 1)
-    train_eval(start_epoch=start_epoch, model=model, anc_obj=anc_obj,
-               losser=losser, optimizer=optimizer, lr_scheduler=lr_scheduler,
-               loader_train=loader_train,
-               loader_val_fmap=loader_val_fmap,
-               loader_val_coco=loader_val_coco,
-               device=device,
-               train_sampler=train_sampler,
-               tb_writer=tb_writer,
+    train_eval(start_epoch=start_epoch, model=model, optimizer=optimizer, lr_scheduler=lr_scheduler,
+               loader_train=loader_train, loader_val_fmap=loader_val_fmap, loader_val_coco=loader_val_coco,
+               device=device, train_sampler=train_sampler, eval_sampler=eval_sampler, tb_writer=tb_writer,
                )
 
     # torch.distributed.destroy_process_group()  # 释放进程

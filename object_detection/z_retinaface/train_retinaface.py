@@ -23,24 +23,21 @@ if __name__ == '__main__':
     device, cfg = base_set(CFG)
 
     '''------------------模型定义---------------------'''
-    model, losser, optimizer, lr_scheduler, start_epoch, anc_obj = init_model(cfg, device, id_gpu=None)
+    model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=None)
 
     '''---------------数据加载及处理--------------'''
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler = data_loader(model.cfg, is_mgpu=False)
+    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = data_loader(model.cfg, is_mgpu=False)
 
     # flog.debug('---训练开始---epoch %s', start_epoch + 1)
     # 有些参数可通过模型来携带  model.nc = nc
 
-    print('Start Tensorboard with "tensorboard --logdir=runs", view at http://localhost:6006/')
-    tb_writer = SummaryWriter()
+    # print('Start Tensorboard with "tensorboard --logdir=runs", view at http://localhost:6006/')
+    # tb_writer = SummaryWriter()
 
-    train_eval(start_epoch=start_epoch, model=model, anc_obj=anc_obj,
-               losser=losser, optimizer=optimizer, lr_scheduler=lr_scheduler,
-               loader_train=loader_train,
-               loader_val_fmap=loader_val_fmap,
-               loader_val_coco=loader_val_coco,
-               device=device,
-               tb_writer=tb_writer,
+    # flog.debug('---训练开始---epoch %s', start_epoch + 1)
+    # 有些参数可通过模型来携带  model.nc = nc
+    train_eval(start_epoch=start_epoch, model=model, optimizer=optimizer, lr_scheduler=lr_scheduler,
+               loader_train=loader_train, loader_val_fmap=loader_val_fmap, loader_val_coco=loader_val_coco,
+               device=device, train_sampler=None, eval_sampler=None, tb_writer=None,
                )
-
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

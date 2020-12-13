@@ -2,23 +2,33 @@ class CFG:
     DEBUG = False
     IS_FORCE_SAVE = False
 
-    IS_LOCK_BACKBONE_WEIGHT = True  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
-    BATCH_SIZE = 128  # batch过小需要设置连续前传
-    FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
+    IS_LOCK_BACKBONE_WEIGHT = False  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
+    # BATCH_SIZE = 128  # batch过小需要设置连续前传
+    BATCH_SIZE = 40  # batch过小需要设置连续前传
+    FORWARD_COUNT = 4  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
     PRINT_FREQ = int(400 / BATCH_SIZE)  # 400张图打印
-    END_EPOCH = 10
+    END_EPOCH = 100
 
     IS_TRAIN = True
     IS_MOSAIC = False
-    IS_COCO_EVAL = True
+    IS_MOSAIC_KEEP_WH = False  # IS_MOSAIC 使用
+    IS_MOSAIC_FILL = False  # IS_MOSAIC 使用
+    IS_COCO_EVAL = False
     IS_FMAP_EVAL = False  # FMAP只运行生成一次
 
     # NUM_NEG = 2000  # 负样本最大数量
     NUM_NEG = 99999  # 负样本最大数量
     THRESHOLD_CONF_NEG = 0.3  # 负例权重减小
     THRESHOLD_CONF_POS = 0.7  # 负例权重减小
-    THRESHOLD_PREDICT_CONF = 0.5  # 用于预测的阀值
+    # THRESHOLD_PREDICT_CONF = 0.5  # 用于预测的阀值
+    THRESHOLD_PREDICT_CONF = 0.1  # 用于预测的阀值
     THRESHOLD_PREDICT_NMS = 0.3  # 用于预测的阀值
+
+    # 调参区
+    LOSS_WEIGHT = [2., 2., 1., 1.]  # l_box_p,l_conf_p,l_cls_p,l_conf_n
+    FOCALLOSS_ALPHA = 0.25
+    FOCALLOSS_GAMMA = 2.
+    LR = 1e-3
 
     # 暂时未处理
     IS_MULTI_SCALE = True  # 多尺度训练
@@ -37,9 +47,11 @@ class CFG:
     DATA_NUM_WORKERS = 8
     # PATH_DATA_ROOT = PATH_ROOT + '/AI/datas/widerface/coco'
     PATH_DATA_ROOT = PATH_HOST + '/AI/datas/VOC2012'
+
+    # 训练
     PATH_COCO_TARGET_TRAIN = PATH_DATA_ROOT + '/coco/annotations'
     PATH_IMG_TRAIN = PATH_DATA_ROOT + '/trainval/JPEGImages'
-
+    # 验证
     PATH_COCO_TARGET_EVAL = PATH_DATA_ROOT + '/coco/annotations'
     PATH_IMG_EVAL = PATH_DATA_ROOT + '/test/JPEGImages'
 
@@ -49,7 +61,7 @@ class CFG:
     '''模型权重'''
     PATH_SAVE_WEIGHT = PATH_HOST + '/AI/weights/feadre'
     SAVE_FILE_NAME = 'train_yolov3_'  # 预置一个 实际无用 根据文件名确定
-    FILE_FIT_WEIGHT = PATH_HOST + '/AI/weights/feadre/train_yolov3_mobilenet_v2-3_106.90217590332031.pth'
+    FILE_FIT_WEIGHT = PATH_SAVE_WEIGHT + '/train_yolov3_mobilenet_v2-50_7.309931755065918.pth'
 
     '''Loss参数'''
     # IGNORE_THRESH = 0.225

@@ -1,7 +1,9 @@
 import torch
 from torchvision.models import _utils
 import torch.nn as nn
+import types
 
+from f_pytorch.tools_model.f_model_api import NoneLayer
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_torch_tools import save_weight, load_weight
 
@@ -48,17 +50,25 @@ class ModelOut4Densenet121(nn.Module):
         return out1, out2, out3
 
 
+def objfun_amend_mobilenet_v2(self, x):
+    # 实例方法重写
+    x = self.features(x)
+    return x
+
+
 class ModelOuts4Mobilenet_v2(nn.Module):
     def __init__(self, model):
         super().__init__()
-        # del model.classifier
+        del model.classifier
         self.model_hook = model
+        self.model_hook._forward_impl = types.MethodType(objfun_amend_mobilenet_v2, model)
+        # self.model_hook.classifier = NoneLayer()  # 直接输出层
+        self.model_hook.features[7].conv[1][0].register_forward_hook(self.fun_layer1)
+        self.model_hook.features[14].conv[1][0].register_forward_hook(self.fun_layer2)
+        # model.features[18][2].register_forward_hook(self.fun_layer3)
 
         self.dims_out = [192, 576, 1280]
-        model.features[7].conv[1][0].register_forward_hook(self.fun_layer1)
-        model.features[14].conv[1][0].register_forward_hook(self.fun_layer2)
-        model.features[18][2].register_forward_hook(self.fun_layer3)
-        self.out_layout1, self.out_layout2, self.out_layout3 = [0] * 3
+        self.out_layout1, self.out_layout2 = [0] * 2
 
     def fun_layer1(self, module, input, output):
         self.out_layout1 = input[0]
@@ -66,32 +76,29 @@ class ModelOuts4Mobilenet_v2(nn.Module):
     def fun_layer2(self, module, input, output):
         self.out_layout2 = input[0]
 
-    def fun_layer3(self, module, input, output):
-        self.out_layout3 = output
-
     def forward(self, inputs):
-        hook = self.model_hook(inputs)
+        outs = self.model_hook(inputs)
         # torch.Size([10, 192, 52, 52]))  torch.Size([10, 576, 26, 26]) torch.Size([10, 1280, 13, 13])
-        return self.out_layout1, self.out_layout2, self.out_layout3
+        return self.out_layout1, self.out_layout2, outs
         # return hook
 
 
 class ModelOut4Mobilenet_v2(nn.Module):
     def __init__(self, model):
         super().__init__()
-        # del model.classifier
+        del model.classifier
         self.model_hook = model
-
+        self.model_hook._forward_impl = types.MethodType(objfun_amend_mobilenet_v2, model)
         self.dim_out = 1280
-        model.features[18][2].register_forward_hook(self.fun_layer1)
-        self.out_layout1 = None
+        # model.features[18][2].register_forward_hook(self.fun_layer1)
+        # self.out_layout1 = None
 
-    def fun_layer1(self, module, input, output):
-        self.out_layout1 = output
+    # def fun_layer1(self, module, input, output):
+    #     self.out_layout1 = output
 
     def forward(self, inputs):
-        hook = self.model_hook(inputs)
-        return self.out_layout1
+        ous = self.model_hook(inputs)
+        return ous
 
 
 class ModelOut4Utils(nn.Module):
@@ -144,11 +151,11 @@ if __name__ == '__main__':
     # f_look_model(model, input=(1, 3, 416, 416))
 
     # 这个分不出来
-    # model = models.mobilenet_v2(pretrained=True)
+    model = models.mobilenet_v2(pretrained=True)
     # f_look(model, input=(1, 3, 416, 416))
-    # model = ModelOut4Mobilenet_v2(model)
-    # dims_out = [192, 576, 1280]
-    # f_look_model(model, input=(1, 3, 416, 416))
+    model = ModelOut4Mobilenet_v2(model)
+    dims_out = [192, 576, 1280]
+    f_look_model(model, input=(1, 3, 416, 416))
 
     '''通过 只支持顶层 _utils.IntermediateLayerGetter(backbone, return_layers) 提取'''
 
@@ -171,8 +178,8 @@ if __name__ == '__main__':
     # model = models.mnasnet0_5(pretrained=True)
     model = models.mobilenet_v2(pretrained=True)
     model = ModelOuts4Mobilenet_v2(model)
-    save_weight('.', model, '123')
-    load_weight('./123-1_None.pth', model)
+    # save_weight('.', model, '123')
+    # load_weight('./123-1_None.pth', model)
 
     # checkpoint = torch.load('./123-1_None.pth')
     # pretrained_dict = checkpoint['model']

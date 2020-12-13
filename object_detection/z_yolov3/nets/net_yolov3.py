@@ -5,8 +5,101 @@ from collections import OrderedDict
 from f_pytorch.tools_model.f_layer_get import ModelOut4Densenet121
 from f_pytorch.tools_model.fmodels.model_modules import SPP
 from f_pytorch.tools_model.model_look import f_look_model
+from f_tools.GLOBAL_LOG import flog
+from f_tools.f_od_gen import f_get_rowcol_index
+from f_tools.f_predictfun import label_nms
 from f_tools.fits.f_lossfun import LossYOLOv3
+import numpy as np
+
 from f_tools.fun_od.f_anc import FAnchors
+from f_tools.fun_od.f_boxes import xywh2ltrb
+from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
+from f_tools.pic.f_show import show_anc4pil
+
+
+class PredictYolov3(nn.Module):
+    def __init__(self, anc_obj, cfg, threshold_conf=0.5, threshold_nms=0.3, ):
+        super(PredictYolov3, self).__init__()
+        # self.num_bbox = num_bbox
+        # self.num_classes = num_classes
+        # self.num_grid = num_grid
+        self.cfg = cfg
+        self.anc_obj = anc_obj
+        self.threshold_nms = threshold_nms
+        self.threshold_conf = threshold_conf
+
+    def forward(self, p_yolo_ts4, imgs_ts=None):
+        '''
+        批量处理 conf + nms
+        :param p_yolo_ts: torch.Size([7, 10647, 25])
+        :return:
+            ids_batch2 [nn]
+            p_boxes_ltrb2 [nn,4]
+            p_labels2 [nn]
+            p_scores2 [nn]
+        '''
+        # 确认一阶段有没有目标
+        torch.sigmoid_(p_yolo_ts4[:, :, 4:])  # 处理conf 和 label
+        # torch.Size([7, 10647, 25]) -> torch.Size([7, 10647])
+        mask_box = p_yolo_ts4[:, :, 4] > self.threshold_conf
+        if not torch.any(mask_box):  # 如果没有一个对象
+            flog.error('该批次没有找到目标')
+            return [None] * 4
+
+        device = p_yolo_ts4.device
+        # batch = p_yolo_ts4.shape[0]
+        # dim = 4 + 1 + self.cfg.NUM_CLASSES
+
+        # tensor([[52, 52],[26, 26],[13, 13]])
+        # feature_sizes = np.array(self.anc_obj.feature_sizes)
+        # nums_feature_offset = feature_sizes.prod(axis=1)  # 2704 676 169
+        feature_sizes = np.array(self.anc_obj.feature_sizes, dtype=np.float32)
+        # 2704 676 169 -> tensor([8112, 2028,  507])
+        nums_ceng = (feature_sizes.prod(axis=1) * 3).astype(np.int64)
+        # 索引要int
+        fsize_p = np.repeat(feature_sizes, nums_ceng, axis=0)
+        fsize_p = torch.tensor(fsize_p, device=device)
+
+        # 匹配 rowcol
+        # rowcol_index = torch.empty((0, 2), device=device)
+        # for s, num_anc in zip(self.anc_obj.feature_sizes, self.cfg.NUMS_ANC):
+        #     _rowcol_index = f_get_rowcol_index(*s).repeat_interleave(3, dim=0)
+        #     rowcol_index = torch.cat([rowcol_index, _rowcol_index], dim=0)
+
+        '''全量 修复box '''
+        p_boxes_xy = p_yolo_ts4[:, :, :2] / fsize_p + self.anc_obj.ancs[:, :2]  # offxy -> xy
+        p_boxes_wh = p_yolo_ts4[:, :, 2:4].exp() * self.anc_obj.ancs[:, 2:]  # wh修复
+        p_boxes_xywh = torch.cat([p_boxes_xy, p_boxes_wh], dim=-1)
+
+        '''第一阶段'''
+        ids_batch1, _ = torch.where(mask_box)
+        # torch.Size([7, 10647, 4]) -> (nn,4)
+        p_boxes_ltrb1 = xywh2ltrb(p_boxes_xywh[mask_box])
+        # torch.Size([7, 10647, 1]) -> (nn)
+        p_scores1 = p_yolo_ts4[:, :, 4][mask_box]
+        # torch.Size([7, 10647, 20]) -> (nn,20)
+        p_labels1_one = p_yolo_ts4[:, :, 5:][mask_box]
+        _, p_labels1_index = p_labels1_one.max(dim=1)
+        p_labels1 = p_labels1_index + 1
+
+        # if self.cfg.IS_VISUAL:
+        #     # 可视化1 原目标图 --- 初始化图片
+        #     img_ts = imgs_ts[0]
+        #     from torchvision.transforms import functional as transformsF
+        #     img_ts = f_recover_normalization4ts(img_ts)
+        #     img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
+        #     show_anc4pil(img_pil, p_boxes_ltrb1, size=img_pil.size)
+        #     # img_pil.save('./1.jpg')
+
+        # 分类 nms
+        ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2 = label_nms(ids_batch1,
+                                                                    p_boxes_ltrb1,
+                                                                    p_labels1,
+                                                                    p_scores1,
+                                                                    device,
+                                                                    self.threshold_nms)
+
+        return ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2
 
 
 def conv2d(filter_in, filter_out, kernel_size):
@@ -78,6 +171,7 @@ class YoloV3SPP(nn.Module):
 
         self.loss = LossYOLOv3(anc_obj, cfg)
         # self.sigmoid_out = nn.Sigmoid()
+        self.pred = PredictYolov3(anc_obj, cfg, cfg.THRESHOLD_PREDICT_CONF, cfg.THRESHOLD_PREDICT_NMS)
 
     def forward(self, x, targets=None):
         def _branch(last_layer, layer_in, is_spp=False):
@@ -125,7 +219,7 @@ class YoloV3SPP(nn.Module):
             return loss_total, log_dict
         else:
             # with torch.no_grad(): # 这个没用
-            ids_batch, p_boxes_ltrb, p_labels, p_scores = self.pred(outs)
+            ids_batch, p_boxes_ltrb, p_labels, p_scores = self.pred(outs, x)
             return ids_batch, p_boxes_ltrb, p_labels, p_scores
         # if torch.jit.is_scripting():  # 这里是生产环境部署
 

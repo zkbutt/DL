@@ -6,7 +6,7 @@ from PIL import Image
 from f_tools.GLOBAL_LOG import flog
 
 
-def resize_img_keep_np(img_np, new_size, mode='lt', is_fill=True, fill_color=(114, 114, 114)):
+def resize_np_keep(img_np, new_size, mode='lt', is_fill=True, fill_color=(114, 114, 114)):
     '''
     
     :param path_img: 一张图片 np图片 h,w,c
@@ -77,7 +77,14 @@ def resize_img_tensor(image, new_size):
     return image.squeeze(0), old_size
 
 
-def resize_img_pil_keep(img_pil, new_size, is_fill=True):
+def resize_pil_keep(img_pil, new_size, is_fill=True):
+    '''
+
+    :param img_pil:
+    :param new_size:
+    :param is_fill: True 充满图片  False 时并不填充
+    :return:
+    '''
     old_size = img_pil.size
 
     if is_fill:
@@ -140,24 +147,24 @@ if __name__ == '__main__':
     # 直接拉伸 pil打开为RGB
     img_pil = Image.open(file_pic).convert('RGB')
     # img_pil.show()
-    # img_pil = resize_img_pil_keep(img_pil, (416, 416), is_fill=True)
-    img_pil, _, _ = resize_img_pil_keep(img_pil, (416, 600), is_fill=False)
+    # img_pil, _, _ = resize_img_pil_keep(img_pil, (416, 416), is_fill=True)
+    # img_pil, _, _ = resize_img_pil_keep(img_pil, (416, 600), is_fill=False)
     # img_pil = img_pil.crop((0, 0, 300, 200))
 
     # interpolation = cv2.INTER_LINEAR if ratio > 1.0 else cv2.INTER_AREA
     # img_pil = img_pil.resize((300, 600), Image.ANTIALIAS)
-    img_pil.show()
+    # img_pil.show()
 
     ''' h,w,c(brg) '''
     # img_np = img_np[:, :, ::-1].transpose(2, 0, 1) #  BGR to RGB
-    # img_np = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-    # img_np, ratio, old_size, (left, top, right, bottom) = resize_img_keep_np(img_np, (600, 400), mode='center')
+    img_np = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+    img_np, ratio, old_size, (left, top, right, bottom) = resize_np_keep(img_np, (600, 400), mode='center')
     # img_np, ratio, old_size, _ = resize_img_keep_np(img_np, (416, 416), is_fill=False, )
     # print(ratio, old_size, (left, top, right, bottom))
     # img_np = cv2.imread(file_pic)  # 读取原始图像
     # img_np, ratio, (dw, dh) = letterbox(img_np, scaleup=False)
-    # cv2.imshow("img", img_np)  # 显示只支持BGR
-    # cv2.waitKey(0)
+    cv2.imshow("img", img_np)  # 显示只支持BGR
+    cv2.waitKey(0)
 
     # img_pil = Image.fromarray(img_np, mode="RGB")
     # img_pil.show()

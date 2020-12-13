@@ -5,7 +5,7 @@ import numpy as np
 from f_tools.f_general import rand
 from f_tools.fun_od.f_boxes import resize_boxes4np
 from f_tools.pic.f_show import f_show_od4pil
-from f_tools.pic.f_size_handler import resize_img_pil_keep
+from f_tools.pic.f_size_handler import resize_pil_keep
 
 '''
 1、增加数据的多样性
@@ -15,7 +15,7 @@ from f_tools.pic.f_size_handler import resize_img_pil_keep
 
 
 def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 0.6),
-                     is_keep_wh=True):
+                     is_mosaic_keep_wh=True, is_mosaic_fill=False):
     '''
 
     :param imgs: list(4张图片) list(img_pil)
@@ -23,10 +23,12 @@ def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 
     :param out_size: w,h
     :param is_visual: debug
     :param range: 中点随机范围
-    :param is_keep_wh: 是否保持wh
+    :param is_mosaic_keep_wh: 保持WH
+    :param is_mosaic_fill: 保持WH 时 是否自动剪切
     :return:
-       img_pil_mosaic_one:已归一化的图片
-       boxes_mosaic :拼接缩小后的box
+       img_pil_mosaic: 一张图片
+       boxes_ltrb_mosaic: box ltrb [n,4]
+       labels_mosaic: tensor([15,  1,  1, 15, 15,  1,  1,  1, 20]) [n]
     '''
     '''区域划分---确定4张图片的左上角位置'''
     ow, oh = out_size
@@ -40,8 +42,8 @@ def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 
     place_x = [0, 0, offset_x, offset_x]  # <class 'list'>: [0, 0, 166, 166]
     place_y = [0, offset_y, offset_y, 0]  # <class 'list'>: [0, 166, 166, 0]
     img_pil_mosaic = Image.new('RGB', (ow, oh), (128, 128, 128))
-    boxes_ts = torch.zeros((0, 4))
-    labels_ts = torch.zeros(0, dtype=torch.int64)
+    boxes_ltrb_mosaic = torch.zeros((0, 4))
+    labels_mosaic = torch.zeros(0, dtype=torch.int64)
 
     index = 0
 
@@ -66,8 +68,8 @@ def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 
         else:  # index == 3:
             nw, nh = ow - offset_x, offset_y
 
-        if is_keep_wh:
-            img_pil, _, nsize = resize_img_pil_keep(img_pil, (nw, nh), is_fill=True)
+        if is_mosaic_keep_wh:
+            img_pil, _, nsize = resize_pil_keep(img_pil, (nw, nh), is_fill=is_mosaic_fill)
         else:
             img_pil = img_pil.resize((nw, nh), Image.BICUBIC)
 
@@ -80,7 +82,7 @@ def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 
         # Image.fromarray((image_data*255).astype(np.uint8)).save(str(index)+"distort.jpg")
         if len(box) > 0:
             # 这里可以改进 有些框会变得很小
-            if is_keep_wh:
+            if is_mosaic_keep_wh:
                 box = resize_boxes4np(box, np.array([iw, ih]), np.array(nsize))
             else:
                 box = resize_boxes4np(box, np.array([iw, ih]), np.array([nw, nh]))
@@ -91,6 +93,7 @@ def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 
             # box[:, 1::2] = box[:, 1::2].clip(min=0, max=nh)
             box[:, ::2].clamp_(min=0, max=nw)
             box[:, 1::2].clamp_(min=0, max=nh)
+            '''-------wh都为0的不要-------'''
             wh = box[:, 2:] - box[:, :2]
             _mask = (wh == 0).any(axis=1)  # 降维 np.array([[0,0,0,0],[0,0,3,0],[0,0,0,0],])
             box = box[torch.logical_not(_mask)]
@@ -102,8 +105,8 @@ def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 
             # dxdydxdy = np.concatenate([_dxdy, _dxdy], axis=1)
             dxdydxdy = torch.cat([_dxdy, _dxdy], dim=1)
             box = box + dxdydxdy
-            boxes_ts = torch.cat([boxes_ts, box], dim=0)
-            labels_ts = torch.cat([labels_ts, label], dim=0)
+            boxes_ltrb_mosaic = torch.cat([boxes_ltrb_mosaic, box], dim=0)
+            labels_mosaic = torch.cat([labels_mosaic, label], dim=0)
         index = index + 1
 
         if is_visual:
@@ -115,7 +118,7 @@ def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 
                 draw.rectangle([left, top, right, bottom], outline=(255, 255, 255), width=2)
             img_pil_copy.show()
 
-    return img_pil_mosaic, boxes_ts, labels_ts
+    return img_pil_mosaic, boxes_ltrb_mosaic, labels_mosaic
 
 
 if __name__ == "__main__":
@@ -159,12 +162,19 @@ if __name__ == "__main__":
         boxs.append(target["boxes"])
         labels4.append(target["labels"])
         if i % 4 == 0:
-            img_pil_mosaic, boxes_mosaic, labels = f_mosaic_pics_ts(imgs, boxs, labels4, [550, 550], is_visual=False)
-            print(len(boxes_mosaic), len(boxes_mosaic) == len(labels))
-            boxes_confs = np.concatenate([boxes_mosaic, np.ones((boxes_mosaic.shape[0], 1))], axis=1)
-            f_show_od4pil(img_pil_mosaic, boxes_confs, list(labels.type(torch.int16).numpy()))
+            img_pil_mosaic, boxes_ltrb_mosaic, labels_mosaic = f_mosaic_pics_ts(imgs, boxs,
+                                                                                labels4, [550, 550],
+                                                                                is_visual=False,
+                                                                                is_mosaic_keep_wh=True,
+                                                                                is_mosaic_fill=False,
+                                                                                )
+            print(len(boxes_ltrb_mosaic), len(boxes_ltrb_mosaic) == len(labels_mosaic))
+            f_show_od4pil(img_pil_mosaic, boxes_ltrb_mosaic,
+                          torch.ones((boxes_ltrb_mosaic.shape[0])),
+                          labels_mosaic.tolist())
             # f_show_od4pil(img_pil_mosaic, boxes_confs, labels, text_fill=False)
             # img_pil_mosaic.save("box_all.jpg")
             imgs.clear()
             boxs.clear()
+            labels4.clear()
         i += 1

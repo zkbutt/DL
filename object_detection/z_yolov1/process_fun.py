@@ -8,8 +8,9 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 from f_tools.f_torch_tools import load_weight
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco, f_evaluate4coco2, is_mgpu
-from f_tools.fun_od.f_boxes import fmatch4yolo1
+from f_tools.fits.f_gpu.f_gpu_api import model_device_init
+from f_tools.fits.f_match import fmatch4yolo1
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4,  f_evaluate4coco2, is_mgpu
 from f_tools.pic.enhance.f_data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
     Normalization4TS, Resize
 from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1
@@ -103,20 +104,7 @@ def init_model(cfg, device, id_gpu=None):
         # if "fc" not in name:
         #     param.requires_grad_(False)
 
-    if id_gpu is not None:
-        # 多GPU初始化
-        is_mgpu = True
-        if cfg.SYSNC_BN:
-            # 不冻结权重的情况下可, 使用SyncBatchNorm后训练会更耗时
-            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
-        else:
-            model.to(device)  # 这个不需要加等号
-        # 转为DDP模型
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[id_gpu], find_unused_parameters=True)
-    else:
-        model.to(device)  # 这个不需要加等号
-        is_mgpu = False
-    # model.train()
+    model, is_mgpu = model_device_init(model, device, id_gpu, cfg)
     # ------------------------模型完成-------------------------------
 
     pg = model.parameters()
@@ -128,8 +116,8 @@ def init_model(cfg, device, id_gpu=None):
     # optimizer = optim.Adam(pg, lr0, weight_decay=5e-4)
     # 两次不上升，降低一半
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=1, verbose=True)
-    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
-    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
+    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
+    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg
     return model, optimizer, lr_scheduler, start_epoch
@@ -142,8 +130,8 @@ def data_loader(cfg, is_mgpu=False):
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
     if cfg.IS_TRAIN:
         dataset_train = CocoDataset(
-            path_coco_target=cfg.PATH_COCO_TARGET_TRAIN,
-            path_img=cfg.PATH_IMG_TRAIN,
+            path_coco_target=cfg.PATH_COCO_TARGET_EVAL,
+            path_img=cfg.PATH_IMG_EVAL,
             # mode='keypoints',
             mode='bbox',
             data_type='train2017',

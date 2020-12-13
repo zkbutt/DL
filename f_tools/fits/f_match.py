@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+from f_tools.f_general import labels2onehot4ts
 from f_tools.fun_od.f_boxes import ltrb2xywh, xy2offxy, xywh2ltrb, calc_iou4ts
 
 
@@ -164,3 +165,126 @@ def match4yolo3(targets, anchors_obj, nums_anc=(3, 3, 3), num_class=20, device=N
                     # flog.info('找到一个重复的')
                     pass
     return targets_yolo
+
+
+def pos_match4yolo(ancs, bboxs, criteria):
+    '''
+    正例与GT最大的 负例<0.5 >0.5忽略
+    :param ancs: xywh
+    :param bboxs: ltrb
+    :param criteria: 0.5
+    :return:
+
+    '''
+    threshold = 99
+    # (bboxs个,anc个)
+    gn = bboxs.shape[0]
+    num_anc = ancs.shape[0]
+    iou = calc_iou4ts(bboxs, xywh2ltrb(ancs), is_ciou=True)
+
+    maxs_iou_index = torch.argsort(-iou, dim=1)
+    anc_bbox_ind = torch.argsort(-iou, dim=0)
+    pos_ancs_index = []  # [n]
+    pos_bboxs_index = []  # [n]
+    for i in range(gn):
+        for j in range(num_anc):
+            # 已匹配好anc选第二大的
+            if maxs_iou_index[i][j] not in pos_ancs_index:
+                iou[i, j] = threshold  # 强制最大 大于阀值即可
+                pos_ancs_index.append(maxs_iou_index[i][j])
+                pos_bboxs_index.append(anc_bbox_ind[i][j])
+                break
+
+    # 反倒 torch.Size([1, 10647])
+    mask_neg = iou <= criteria  # anc 的正例index
+    # torch.Size([1, 10647])
+    mask_ignore = (iou >= criteria) == (iou < threshold)
+
+    return pos_ancs_index, pos_bboxs_index, mask_neg, mask_ignore
+
+
+def pos_match_retinaface(ancs, g_bboxs, g_labels, g_keypoints, threshold_pos=0.5, threshold_neg=0.3):
+    '''
+
+    :param ancs:
+    :param g_bboxs:
+    :param g_labels:
+    :param g_keypoints:
+    :param threshold_pos:
+    :param threshold_neg:
+    :return:
+    '''
+    # (bboxs个,anc个)
+    # print(bboxs.shape[0])
+    iou = calc_iou4ts(g_bboxs, xywh2ltrb(ancs))
+    # anc对应box最大的  anc个 bbox_index
+    anc_max_iou, bbox_index = iou.max(dim=0)  # 存的是 bboxs的index
+
+    # box对应anc最大的  box个 anc_index
+    bbox_max_iou, anc_index = iou.max(dim=1)  # 存的是 anc的index
+
+    # 强制保留 将每一个bbox对应的最大的anc索引 的anc_bbox_iou值强设为2 大于阀值即可
+    anc_max_iou.index_fill_(0, anc_index, 2)  # dim index val
+
+    # 大的
+    # _ids = torch.arange(0, anc_index.size(0), dtype=torch.int64).to(bbox_index) # [0,1]
+    # # 把anc的index全部取出来
+    # bbox_index[anc_index[_ids]] = _ids
+
+    # ----------正例的index 和 正例对应的bbox索引----------
+    mask_pos = anc_max_iou >= threshold_pos  # anc 的正例 index 不管
+    mask_neg = anc_max_iou <= threshold_neg  # anc 的反例 index
+    mash_ignore = torch.logical_and(anc_max_iou < threshold_pos, anc_max_iou > threshold_neg)
+
+    match_bboxs = g_bboxs[bbox_index]
+    match_keypoints = g_keypoints[bbox_index]
+    match_labels = g_labels[bbox_index]
+    match_labels[mask_neg] = 0.
+    match_labels[mash_ignore] = -1.0
+
+    return match_bboxs, match_keypoints, match_labels
+
+
+def fmatch4yolo1(boxes, labels, num_bbox, num_class, grid, device=None):
+    '''
+    一个网格匹配两个对象 只能预测一个类型
+    输入一个图片的 target
+    :param boxes: ltrb
+    :param labels:
+    :param num_bbox:
+    :param num_class:
+    :param grid:
+    :param device:
+    :return:
+    '''
+    dim_out = num_bbox * (4 + 1) + num_class
+    # dim_out = 4 * num_bbox + 1 + num_class
+    p_yolo = torch.zeros((grid, grid, dim_out), device=device)  # [7, 7, 11]
+    # onehot 只有第一个类别 index 为0
+    labels_onehot = labels2onehot4ts(labels - 1, num_class)
+
+    # ltrb -> xywh
+    boxes_xywh = ltrb2xywh(boxes)
+    wh = boxes_xywh[:, 2:]
+    cxcy = boxes_xywh[:, :2]
+
+    grids_ts = torch.tensor([grid] * 2, device=device, dtype=torch.int16)
+    '''xy与 row col相反'''
+    colrow_index = (cxcy * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xy = torch.true_divide(colrow_index, grid)  # 网络index 对应归一化的实距
+    grid_xy = (cxcy - offset_xy) * grids_ts  # 归一尺寸 - 归一实距 / 网格数 = 相对一格左上角的偏移
+
+    # 这里如果有两个GT在一个格子里将丢失
+    for i, (col, row) in enumerate(colrow_index):
+        # 这里一定是一个gt 的处理 shape4
+        offxywh = torch.cat([grid_xy[i], wh[i]], dim=0)
+        # 正例的conf 和 onehot
+        conf2 = torch.tensor([1] * 2, device=device, dtype=torch.int16)
+        t = torch.cat([offxywh.repeat(2), conf2, labels_onehot[i]], dim=0)
+        if p_yolo[row, col, 8] == 1:  # 该网格已有一个GT框了
+            # 改第一个框 ,  一个格子最多两个目标
+            p_yolo[row, col, :4] = offxywh
+        else:
+            p_yolo[row, col] = t
+    # p_yolo = p_yolo.permute(2, 0, 1)
+    return p_yolo

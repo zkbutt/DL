@@ -8,11 +8,11 @@ sys.path.append(os.path.split(rootPath)[0])
 from torch.utils.tensorboard import SummaryWriter
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
 from object_detection.z_yolov1.process_fun import init_model, data_loader, train_eval
+from f_tools.fits.f_gpu.f_gpu_api import mgpu_init
 
 '''解决linux导入出错 完成'''
 import torch
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.fitting.f_fit_eval_base import mgpu_init
 
 '''
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py

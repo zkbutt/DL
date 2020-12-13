@@ -1,8 +1,10 @@
 import torch
 from torch import nn
 
+from f_tools.GLOBAL_LOG import flog
+from f_tools.f_predictfun import label_nms
 from f_tools.fits.f_lossfun import LossYOLOv1
-from f_tools.fun_od.f_boxes import offxy2xy, xywh2ltrb, batched_nms
+from f_tools.fun_od.f_boxes import offxy2xy, xywh2ltrb
 import numpy as np
 
 
@@ -20,21 +22,28 @@ class PredictYolov1(nn.Module):
         批量处理 conf + nms
         :param p_yolo_ts: torch.Size([5, 7, 7, 11])
         :return:
-            ids_batch2
-            p_boxes_ltrb2
-            p_labels2
-            p_scores2
+            ids_batch2 [nn]
+            p_boxes_ltrb2 [nn,4]
+            p_labels2 [nn]
+            p_scores2 [nn]
         '''
-        device = p_yolo_ts4.device
-        batch = p_yolo_ts4.shape[0]
+        # 确认一阶段有没有目标
         _is = self.num_bbox * 4
         torch.sigmoid_(p_yolo_ts4[:, :, :, _is:])  # 处理conf 和 label
+        mask_box = p_yolo_ts4[:, :, :, _is: _is + 2] > self.threshold_conf  # torch.Size([104, 7, 7, 2])
+        if not torch.any(mask_box):  # 如果没有一个对象
+            flog.error('没有找到目标')
+            return [None] * 4
+
+        device = p_yolo_ts4.device
+        # batch = p_yolo_ts4.shape[0]
 
         '''处理box'''
         # [5, 7, 7, 8] -> [5, 7, 7, 2, 4]
         p_boxes_offxywh = p_yolo_ts4[:, :, :, :_is].view(*p_yolo_ts4.shape[:-1], self.num_bbox, 4)
         # torch.Size([5, 7, 7, 2])
-        mask_box = p_yolo_ts4[:, :, :, _is: _is + 2] > self.threshold_conf # torch.Size([104, 7, 7, 2])
+
+
         # [5, 7, 7, 2, 4]^^[5, 7, 7, 2] -> [nn,4] 全正例
         _p_boxes = p_boxes_offxywh[mask_box]
         torch.sigmoid_(_p_boxes[:, :2])
@@ -61,26 +70,12 @@ class PredictYolov1(nn.Module):
         p_scores1 = torch.tensor(p_scores1, device=device, dtype=torch.float)
 
         # 分类 nms
-        p_labels_unique = p_labels1.unique()  # nn -> n
-        ids_batch2 = torch.tensor([], device=device)
-        p_scores2 = torch.tensor([], device=device)
-        p_labels2 = torch.tensor([], device=device)
-        p_boxes_ltrb2 = torch.tensor(np.empty((0, 4), dtype=np.float), device=device)
-
-        for lu in p_labels_unique:
-            # 过滤类别
-            _mask = p_labels1 == lu
-            _ids_batch = ids_batch1[_mask]
-            _p_scores = p_scores1[_mask]
-            _p_labels = p_labels1[_mask]
-            _p_boxes_ltrb = p_boxes_ltrb1[_mask]
-            keep = batched_nms(_p_boxes_ltrb, _p_scores, _ids_batch, self.threshold_nms)
-            # 极大抑制
-            ids_batch2 = torch.cat([ids_batch2, _ids_batch[keep]])
-            p_scores2 = torch.cat([p_scores2, _p_scores[keep]])
-            p_labels2 = torch.cat([p_labels2, _p_labels[keep]])
-            p_boxes_ltrb2 = torch.cat([p_boxes_ltrb2, _p_boxes_ltrb[keep]])
-            # print('12')
+        ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2 = label_nms(ids_batch1,
+                                                                    p_boxes_ltrb1,
+                                                                    p_labels1,
+                                                                    p_scores1,
+                                                                    device,
+                                                                    self.threshold_nms)
 
         return ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2
 

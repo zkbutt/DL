@@ -1,5 +1,5 @@
 class CFG:
-    DEBUG = False
+    DEBUG = True
     IS_FORCE_SAVE = False
 
     IS_LOCK_BACKBONE_WEIGHT = False  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
@@ -8,15 +8,15 @@ class CFG:
     FORWARD_COUNT = 2  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
     PRINT_FREQ = int(400 / BATCH_SIZE)  # 400张图打印
     # PRINT_FREQ = 1  # 400张图打印
-    END_EPOCH = 110
+    END_EPOCH = 120
 
     IS_TRAIN = False
     IS_MOSAIC = False
     IS_COCO_EVAL = True
     IS_FMAP_EVAL = False  # FMAP只运行生成一次
 
-    # PATH_HOST = 'M:'  # 416
-    PATH_HOST = '/home/bak3t/bak299g'  # 需要尾部加/
+    PATH_HOST = 'M:'  # 416
+    # PATH_HOST = '/home/bak3t/bak299g'  # 需要尾部加/
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
 

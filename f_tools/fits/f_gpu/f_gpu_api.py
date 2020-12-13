@@ -1,3 +1,4 @@
+import argparse
 import pickle
 import os
 from contextlib import contextmanager
@@ -169,3 +170,44 @@ def torch_distributed_zero_first(local_rank: int):
     yield
     if local_rank == 0:
         torch.distributed.barrier()
+
+
+def mgpu_init():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--local_rank', default=0, type=int, help='node rank for distributed training')
+    args = parser.parse_args()
+
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        args.rank = int(os.environ["RANK"])  # 多机时：当前是第几的个机器  单机时：第几个进程
+        args.world_size = int(os.environ['WORLD_SIZE'])  # 多机时：当前是有几台机器 单机时：总GPU个数
+        args.gpu = int(os.environ['LOCAL_RANK'])  # 多机时：当前GPU序号
+    else:
+        raise Exception('环境变量有问题 %s' % os.environ)
+
+    torch.cuda.set_device(args.local_rank)
+
+    device = torch.device("cuda", args.local_rank)  # 获取显示device
+    torch.distributed.init_process_group(backend="nccl",
+                                         init_method="env://",
+                                         world_size=args.world_size,
+                                         rank=args.rank
+                                         )
+    torch.distributed.barrier()  # 等待所有GPU初始化 初始化完成 629M
+    return args, device
+
+
+def model_device_init(model, device, id_gpu, cfg):
+    if id_gpu is not None:
+        # 多GPU初始化
+        is_mgpu = True
+        if cfg.SYSNC_BN:
+            # 不冻结权重的情况下可, 使用SyncBatchNorm后训练会更耗时
+            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).to(device)
+        else:
+            model.to(device)  # 这个不需要加等号
+        # 转为DDP模型
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[id_gpu], find_unused_parameters=True)
+    else:
+        model.to(device)  # 这个不需要加等号
+        is_mgpu = False
+    return model, is_mgpu

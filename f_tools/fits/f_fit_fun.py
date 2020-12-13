@@ -1,3 +1,4 @@
+
 import math
 import os
 
@@ -7,13 +8,7 @@ import torch
 import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
-
-
-class FitBase(torch.nn.Module):
-    def __init__(self, model, device):
-        super(FitBase, self).__init__()
-        self.model = model
-        self.device = device
+import socket
 
 
 def init_od():
@@ -28,6 +23,18 @@ def init_od():
 
 
 def base_set(cfg):
+    host_name = socket.gethostname()
+    flog.info('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
+    # import getpass
+    # # 获取当前系统用户名
+    # user_name = getpass.getuser()
+    # # 获取当前系统用户目录
+    # user_home = os.path.expanduser('~')
+    if host_name == 'Feadre-NB' and cfg.PATH_HOST != 'M:':
+        raise Exception('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
+    if host_name == 'e2680v2' and cfg.PATH_HOST == 'M:':
+        raise Exception('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
+
     cfg.DATA_NUM_WORKERS = min([os.cpu_count(), cfg.DATA_NUM_WORKERS])
 
     # 检查保存权重文件夹是否存在，不存在则创建
@@ -57,9 +64,9 @@ def base_set(cfg):
         torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
 
     # if cfg.IS_MOSAIC:
-        # cfg.IMAGE_SIZE = [512, 512]
-        # cfg.ANC_SCALE = list(np.array(cfg.ANC_SCALE,dtype=np.float32) / 2)
-        # pass
+    # cfg.IMAGE_SIZE = [512, 512]
+    # cfg.ANC_SCALE = list(np.array(cfg.ANC_SCALE,dtype=np.float32) / 2)
+    # pass
 
     # cfg.FILE_FIT_WEIGHT = None
 
@@ -78,3 +85,8 @@ def base_set(cfg):
     #     # img_size = random.randrange(grid_min, grid_max + 1) * gs
     #     flog.info("输入画像的尺寸范围为[{}, {}] 可选尺寸为{}".format(imgsz_min, imgsz_max, sizes_in))
     return device, cfg
+
+
+if __name__ == '__main__':
+    host_name = socket.gethostname()
+    flog.info('当前主机 %s', host_name)

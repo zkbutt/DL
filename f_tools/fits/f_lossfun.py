@@ -6,10 +6,10 @@ from torch.nn import BCEWithLogitsLoss
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
-from f_tools.fun_od.f_boxes import batched_nms, xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints, ltrb2xywh, calc_iou4ts, \
-    bbox_iou4one, xy2offxy, offxy2xy
+from f_tools.fun_od.f_boxes import xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints, ltrb2xywh, calc_iou4ts, \
+    bbox_iou4one, xy2offxy, offxy2xy, get_boxes_colrow_index
 from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
-from f_tools.pic.f_show import show_bbox4ts, f_show_iou4pil, show_anc4pil
+from f_tools.pic.f_show import show_bbox4ts, f_show_3box4pil, show_anc4pil
 
 
 def x_bce(i, o):
@@ -115,53 +115,6 @@ def f_二值交叉熵1():
     print(bce_loss(p_cls_ts, g_cls_ts))
 
 
-class FocalLoss(nn.Module):
-    # Wraps focal loss around existing loss_fcn(), i.e. criteria = FocalLoss(nn.BCEWithLogitsLoss(), gamma=1.5)
-    def __init__(self, loss_fcn, gamma=2., alpha=0.25):
-        '''
-        单用 a>0.5 抑制负样本，推荐.75
-        BCELoss BCEWithLogitsLoss  只支持 ----BCEWithLogitsLoss----
-        :param loss_fcn: BCELoss BCEWithLogitsLoss  sum mean none
-        :param gamma: 0  .1  .2  .5  1.0 2.0 5.0 这个是正反例差距
-        :param alpha: 正样本的权重为0.75，负样本的权重为0.25
-            (1-pt) ** gamma *log(pt)
-        '''
-        super(FocalLoss, self).__init__()
-        self.loss_fcn = loss_fcn  # must be nn.BCEWithLogitsLoss()
-        self.gamma = gamma
-        self.alpha = alpha
-        self.reduction = loss_fcn.reduction
-        self.loss_fcn.reduction = 'none'  # required to apply FL to each element
-
-    def forward(self, pred, true):
-        '''
-        pt = torch.exp(-BCE_loss)
-        F_loss = self.alpha * (1-pt)**self.gamma * BCE_loss
-        :param pred:
-        :param true:
-        :return:
-        '''
-        loss = self.loss_fcn(pred, true)
-
-        # p_t = torch.exp(-loss)
-        # loss *= self.alpha * (1.000001 - p_t) ** self.gamma  # non-zero power for gradient stability
-        # loss = - self.alpha * (1 - x) ** self.gamma * torch.log(x + 1e-8) * target - \
-        #                (1 - self.alpha) * x ** self.gamma * torch.log(1 - x + 1e-8) * (1 - target)
-        # TF implementation https://github.com/tensorflow/addons/blob/v0.7.1/tensorflow_addons/losses/focal_loss.py
-        pred_prob = torch.sigmoid(pred)  # prob from logits
-        p_t = true * pred_prob + (1 - true) * (1 - pred_prob)
-        alpha_factor = true * self.alpha + (1 - true) * (1 - self.alpha)
-        modulating_factor = (1.0 - p_t) ** self.gamma
-        loss *= alpha_factor * modulating_factor
-
-        if self.reduction == 'mean':
-            return loss.mean()
-        elif self.reduction == 'sum':
-            return loss.sum()
-        else:  # 'none'
-            return loss
-
-
 class FocalLoss_v2(nn.Module):
     def __init__(self, alpha=0.25, gamma=2., is_oned=False, reduction='sum'):
         '''
@@ -215,13 +168,14 @@ class LossRetinaface(nn.Module):
         self.location_loss = nn.SmoothL1Loss(reduction='none')
         # self.confidence_loss = nn.CrossEntropyLoss(reduction='none')
         # self.focal_loss = FocalLoss(torch.nn.BCELoss(reduction='sum'), gamma=2., alpha=0.25)
-        self.focal_loss = FocalLoss(torch.nn.BCEWithLogitsLoss(reduction='sum'), gamma=2., alpha=0.25)
+        self.focal_loss = FocalLoss_v2(alpha=cfg.FOCALLOSS_ALPHA, gamma=cfg.FOCALLOSS_GAMMA)
         self.anc = anc.unsqueeze(dim=0)  # 这里加了一维
         self.loss_weight = loss_weight
         self.neg_ratio = neg_ratio
         self.cfg = cfg
 
-    def forward(self, p_bboxs_xywh, g_bboxs_ltrb, p_labels, g_labels, p_keypoints, g_keypoints, imgs_ts=None):
+    # def forward(self, p_bboxs_xywh, g_bboxs_ltrb, p_labels, g_labels, p_keypoints, g_keypoints, imgs_ts=None):
+    def forward(self, outs, g_targets, imgs_ts=None):
         '''
         归一化的box 和 anc
         :param p_bboxs_xywh: torch.Size([batch, 16800, 4])
@@ -232,6 +186,8 @@ class LossRetinaface(nn.Module):
         :param g_keypoints:
         :return:
         '''
+        p_bboxs_xywh, p_labels, p_keypoints = outs
+        g_bboxs_ltrb, g_labels, g_keypoints = g_targets
         # 正样本标签布尔索引 [batch, 16800] 同维运算
         mask_pos = g_labels > 0
         mask_pos_neg = torch.logical_not(g_labels == -1)
@@ -310,9 +266,10 @@ class LossRetinaface(nn.Module):
                      + self.loss_weight[2] * loss_keypoints
 
         log_dict = {}
-        log_dict['loss_bboxs'] = loss_bboxs.item()
-        log_dict['loss_labels'] = loss_labels.item()
-        log_dict['loss_keypoints'] = loss_keypoints.item()
+        log_dict['loss_total'] = loss_total.detach().item()
+        log_dict['l_bboxs'] = loss_bboxs.item()
+        log_dict['l_labels'] = loss_labels.item()
+        log_dict['l_keypoints'] = loss_keypoints.item()
         return loss_total, log_dict
 
 
@@ -338,194 +295,188 @@ class LossYOLOv3(nn.Module):
 
         # loss 基本参数
         batch = len(targets)
-        # 层尺寸   tensor([[52., 52.], [26., 26.], [13., 13.]])
-        feature_sizes = np.array(self.anc_obj.feature_sizes)
-        num_ceng = feature_sizes.prod(axis=1)  # 2704 676 169
-        # 匹配完成的数据
-        _num_total = sum(num_ceng * self.cfg.NUMS_ANC)  # 10647
-        _dim = 4 + 1 + self.cfg.NUM_CLASSES  # 25
         device = p_yolo_ts.device
+        # 层尺寸   tensor([[52., 52.], [26., 26.], [13., 13.]])
+        # feature_sizes = np.array(self.anc_obj.feature_sizes)
+        feature_sizes = torch.tensor(self.anc_obj.feature_sizes, dtype=torch.float32, device=device)
+        nums_feature_offset = feature_sizes.prod(dim=1) * torch.tensor(self.cfg.NUMS_ANC, device=device)  # 2704 676 169
+
+        # 2704 676 169 -> tensor([8112, 2028,  507])
+        nums_ceng = (feature_sizes.prod(axis=1) * 3).type(torch.int)
+        # fszie torch.Size([10647, 2]) 数组索引 只能用np
+        fsize_p_anc = np.repeat(feature_sizes.cpu(), nums_ceng.cpu(), axis=0)
+        fsize_p_anc = fsize_p_anc.clone().detach().to(device)  # 安全
+
+        # 匹配完成的数据
+        _num_total = sum(nums_feature_offset)  # 10647
+        _dim = 4 + 1 + self.cfg.NUM_CLASSES  # 25
 
         loss_cls_pos = 0
         loss_box_pos = 0  # 只计算匹配的
-        loss_conf_pos = 0  # 正反例， 正例*100 取难例
-        loss_conf_neg = 0
-
-        '''-----------------匹配----------------------'''
-        # torch.Size([5, 10647, 25])
-        # targets_yolo = torch.zeros(batch, _num_total, _dim).to(device)  # 存匹配值
+        loss_conf = 0  # 正反例， 正例*100 取难例
 
         # 分批处理
         for i in range(batch):
-            with torch.no_grad():
-                target = targets[i]
-                # 只能一个个的处理
-                boxes = target['boxes']  # ltrb
-                labels = target['labels']
-                if boxes.shape[0] == 0:
-                    # 这里要可视化
-                    flog.error('boxes==0 %s', boxes.shape)
-                    continue
-                if self.cfg.IS_VISUAL:
-                    # 可视化1--- 初始化图片
-                    img_ts = imgs_ts[i]
-                    from torchvision.transforms import functional as transformsF
-                    img_ts = f_recover_normalization4ts(img_ts)
-                    img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
-                    show_anc4pil(img_pil, boxes, size=img_pil.size)
-                    # img_pil.save('./1.jpg')
+            '''------------------负样本选择-------------------'''
+            target = targets[i]
+            # 只能一个个的处理
+            g_boxes_ltrb = target['boxes']  # ltrb
+            g_labels = target['labels']
+            if g_boxes_ltrb.shape[0] == 0:
+                # 没有目标的图片不要
+                flog.error('boxes==0 %s', g_boxes_ltrb.shape)
+                continue
+            if self.cfg.IS_VISUAL:
+                # 可视化1 原目标图 --- 初始化图片
+                img_ts = imgs_ts[i]
+                from torchvision.transforms import functional as transformsF
+                img_ts = f_recover_normalization4ts(img_ts)
+                img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
+                # show_anc4pil(img_pil, g_boxes_ltrb, size=img_pil.size)
+                # img_pil.save('./1.jpg')
 
-                '''组装 BOX 对应的 9个 匹配9个anc 计算出网格index'''
-                boxes_xywh = ltrb2xywh(boxes)
-                num_anc = np.array(self.cfg.NUMS_ANC).sum()  # anc总和数[3,3,3
-                # 优先每个bbox重复9次
-                p1 = boxes_xywh.repeat_interleave(num_anc, dim=0)  # 单体复制 3,4 -> 6,4
-                # 每套尺寸有三个anc 整体复制3,2 ->6,2
-                _n = boxes_xywh.shape[0] * self.cfg.NUMS_ANC[0]  # 只支持每层相同的anc数
-                # 每一个bbox对应的9个anc tensor([[52., 52.], [26., 26.], [13., 13.]])
-                _feature_sizes = torch.tensor(feature_sizes, dtype=torch.float32).to(device)
-                # 单复制-整体复制 只支持每层相同的anc数 [[52., 52.],[52., 52.],[52., 52.], ...[26., 26.]..., [13., 13.]...]
-                p2 = _feature_sizes.repeat_interleave(self.cfg.NUMS_ANC[0], dim=0).repeat(boxes_xywh.shape[0], 1)
-                offxy_xy, colrow_index = xy2offxy(p1[:, :2], p2)  # 用于最终结果
+            '''组装 BOX 对应的 n*9个 匹配9个anc 计算出网格index'''
+            g_boxes_xywh = ltrb2xywh(g_boxes_ltrb)
+            num_anc = np.array(self.cfg.NUMS_ANC).sum()  # anc总和数 [3,3,3].sum() -> 9
+            # 单体复制 每一个box重复9次
+            g_boxes_xywh_p = g_boxes_xywh.repeat_interleave(num_anc, dim=0)
+            # 每一个bbox对应的9个anc tensor([[52., 52.], [26., 26.], [13., 13.]])
+            # sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True) torch复制
+            # feature_sizes = torch.tensor(feature_sizes.copy(), dtype=torch.float32).to(device)
+            # 单复制+整体复制 与多个box匹配 只支持每层相同的anc数(索引不支持数组) [[52., 52.],[52., 52.],[52., 52.], ...[26., 26.]..., [13., 13.]...]
+            num_boxes = g_boxes_xywh.shape[0]
+            # 这里 fsize_p n*9个
+            fsize_p_n9 = feature_sizes.repeat_interleave(self.cfg.NUMS_ANC[0], dim=0).repeat(num_boxes, 1)
+            # XY对就 col rows
+            colrow_index = get_boxes_colrow_index(g_boxes_xywh_p[:, :2], fsize_p_n9)
 
-                '''构造 与输出匹配的 anc'''
-                # 求出anc对应网络的的中心点  归一化中心
-                _ancs_xy = colrow_index / p2  # tensor([[52., 52.], 52., 52.], [52., 52.],[26., 26.],[26., 26.],[26., 26.],[13., 13.],[13., 13.],[13., 13.]])
-                # 大特图对应小目标 _ancs_scale 直接作为wh
-                _ancs_scale = torch.tensor(self.anc_obj.ancs_scale).to(device)
-                _ancs_wh = _ancs_scale.reshape(-1, 2).repeat(boxes_xywh.shape[0], 1)  # 拉平后整体复制
-                ancs_xywh = torch.cat([_ancs_xy, _ancs_wh], dim=1)
+            '''构造 与输出匹配的 n*9个anc'''
+            # 求出anc对应网络的的中心点  在网格左上角
+            _ancs_xy = colrow_index / fsize_p_n9  # tensor([[52., 52.], 52., 52.], [52., 52.],[26., 26.],[26., 26.],[26., 26.],[13., 13.],[13., 13.],[13., 13.]])
+            # 大特图对应小目标 _ancs_scale 直接作为wh
+            _ancs_scale = torch.tensor(self.anc_obj.ancs_scale).to(device)
+            _ancs_wh = _ancs_scale.reshape(-1, 2).repeat(num_boxes, 1)  # 拉平后整体复制
+            ancs_xywh = torch.cat([_ancs_xy, _ancs_wh], dim=1)
 
-                # --------------可视化调试----------------
-                # flog.debug(offxy_xy)
-                # f_show_iou4pil(img_pil, boxes, xywh2ltrb(ancs_xywh), grids=self.anc_obj.feature_sizes[-1])
+            # --------------可视化调试----------------
+            if self.cfg.IS_VISUAL:
+                # 显示 boxes 中心点 黄色, 及计算出来的匹配 anc 的位置 3个层的中心点是不一样的 显示的大框 在网格左上角
+                # ancs_ltrb = xywh2ltrb(ancs_xywh)
+                # f_show_3box4pil(img_pil, g_boxes=g_boxes_ltrb,
+                #                 # boxes1=ancs_ltrb[:3, :],
+                #                 boxes2=ancs_ltrb[3:6, :],
+                #                 boxes3=ancs_ltrb[6:, :],
+                #                 grids=self.anc_obj.feature_sizes[-1])
+                pass
 
-                # 主动构建偏移 使每个框的匹配过程独立 tensor([0, 1, 2, 3, 4, 5, 6, 7], device='cuda:0')
-                ids = torch.arange(boxes.shape[0]).to(device)  # 9个anc 0,1,2 只支持每层相同的anc数
-                # print(boxes.shape)
-                _boxes_offset = boxes + ids[:, None]  # boxes加上偏移 1,2,3
-                # print(boxes.shape)
-                # if boxes.shape == 0:
-                #     flog.warning('有一张没有boxes %s', boxes, labels)
-                #     continue
-                # 主动构建偏移 使每个框的 anc 匹配过程独立
-                ids_offset = ids.repeat_interleave(num_anc)  # 1,2,3 -> 000000000 111111111 222222222
-                # p1 = xywh2ltrb(p1)  # 匹配的bbox
-                p2 = xywh2ltrb(ancs_xywh)  # 转ltrb 用于计划iou
+            '''批量找出每一个box对应的anc index'''
+            # 主动构建偏移 使每个框的匹配过程独立 tensor([0, 1, 2, 3, 4, 5, 6, 7], device='cuda:0')
+            ids = torch.arange(num_boxes).to(device)  # 9个anc 0,1,2 只支持每层相同的anc数
+            g_boxes_ltrb_offset = g_boxes_ltrb + ids[:, None]  # boxes加上偏移 1,2,3
+            # 单体复制 对应anc数 1,2,3 -> 000000000 111111111 222222222
+            ids_offset = ids.repeat_interleave(num_anc)
+            ancs_ltrb = xywh2ltrb(ancs_xywh)  # 转ltrb 用于计划iou
+            # 两边都加了同样的偏移
+            iou = calc_iou4ts(g_boxes_ltrb_offset, ancs_ltrb + ids_offset[:, None], is_ciou=True)  # 这里都等于0
+            # iou_sort = torch.argsort(-iou, dim=1) % num_anc  # 9个
+            # iou_sort = torch.argsort(-iou, dim=1) % num_anc  # 求余数
+            _, max_indexs = iou.max(dim=1)  # box对应anc的 index
+            max_indexs = max_indexs % num_anc  # index 偏移值的修正
 
-                # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None])
-                # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_giou=True)
-                # iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_diou=True)
-                # 两边都加了同样的偏移
-                iou = calc_iou4ts(_boxes_offset, p2 + ids_offset[:, None], is_ciou=True)  # 这里都等于0
-                # iou_sort = torch.argsort(-iou, dim=1) % num_anc  # 9个
-                # iou_sort = torch.argsort(-iou, dim=1) % num_anc  # 求余数
-                _, max_indexs = iou.max(dim=1)  # anc最大的
-                max_indexs = max_indexs % num_anc  # index 偏移值的修正
+            # 找出与pbox  与gbox 最大的index
+            p_offxy = torch.sigmoid(p_yolo_ts[i, :, :2])  # xy 需要归一化修复
+            p_wh = p_yolo_ts[i, :, 2:4]
 
-                # ---------------负例难例挖掘 修复预测框------------------
-                p_offxy = torch.sigmoid(p_yolo_ts[i, :, :2])  # xy 需要归一化修复
-                p_wh = p_yolo_ts[i, :, 2:4]
-                # xy进行网络归一化   单一网格偏移0~1 转换成相对于特图的偏移  10647 匹配 index00000... 1111.. 222..
-                _findex = np.arange(len(num_ceng)).repeat(num_ceng * 3)
-                fsizes = np.array(self.anc_obj.feature_sizes)[_findex, 0]  # 取对应的 10647个尺寸
-                # ---- 修复 torch.Size([10647, 2]) ---
-                p_box_xy = p_offxy / torch.tensor(fsizes, device=device)[:, None] + self.anc_obj.ancs[:, :2]  # xy修复
-                # wh通过 e 的预测次方 是anc的倍数
-                p_box_wh = p_wh.exp() * self.anc_obj.ancs[:, 2:]  # wh修复
-                p_box_xywh = torch.cat([p_box_xy, p_box_wh], dim=-1)
-                p_box_ltrb = xywh2ltrb(p_box_xywh)
-                # print(len(boxes),len(p_box_ltrb))
-                # print(boxes.shape,p_box_ltrb.shape)
-                ious = calc_iou4ts(boxes, p_box_ltrb, is_ciou=True)  # 全部计算IOU
-                # print(ious.shape)
-                try:
-                    _max_ious, _ = ious.max(dim=0)
-                except Exception as e:
-                    flog.error('%s %s', e, ious.shape)
-                    continue
-                # 根据小的为负例
-                _max_ious = _max_ious[_max_ious < self.cfg.THRESHOLD_CONF_NEG]  # iou超参 负例选择
-                _max_index = _max_ious.argsort()  # 选最大的 参数个负例
-                # with torch.no_grad(): 完成
-            '''OHEM选n个负例 OHNM所有正例anc 选择 self.cfg.NUM_NEG(比例) 个损失最大的负样本 '''
-            _p_conf_neg = p_yolo_ts[i, _max_index[:self.cfg.NUM_NEG], 4]  # 反例个数超参
-
-            '''------- 反倒 conf 损失 ---------'''
-            _g_conf_neg = torch.zeros_like(_p_conf_neg)
-            _l_conf_neg = self.focal_loss(_p_conf_neg, _g_conf_neg)
+            '''---- 修复box  anc左上角+偏移  ---'''
+            # torch.Size([10647, 2])
+            p_box_xy = p_offxy / fsize_p_anc + self.anc_obj.ancs[:, :2]  # xy修复
+            # wh通过 e 的预测次方 是anc的倍数
+            p_box_wh = p_wh.exp() * self.anc_obj.ancs[:, 2:]  # wh修复
+            p_box_xywh = torch.cat([p_box_xy, p_box_wh], dim=-1)
+            p_box_ltrb = xywh2ltrb(p_box_xywh)
+            # ious = calc_iou4ts(g_boxes_ltrb, p_box_ltrb, is_ciou=True)  # 全部计算IOU
+            # # p_box_ltrb 对应的最大的 boxes 值(3个预测框 对应4个box 最大的iou值 和box索引)    print(ious.shape)
+            # max_ious, _ = ious.max(dim=0)
+            #
+            # # ----------选出负例----------
+            # _max_ious = max_ious[max_ious < self.cfg.THRESHOLD_CONF_NEG]  # iou超参 负例选择
+            # _max_index = max_ious.argsort()  # 选最大的 参数个负例
+            # # with torch.no_grad(): 完成
+            #
+            # '''OHEM  选n个负例 OHNM所有正例anc 选择 self.cfg.NUM_NEG(比例) 个损失最大的负样本 '''
+            # # _p_conf_neg = p_yolo_ts[i, _max_index[:self.cfg.NUM_NEG], 4]  # 反例个数超参
+            # _p_conf = p_yolo_ts[i, :, 4]  # 反例个数超参
+            # '''------- 反例 conf 损失 ---------'''
+            # _g_conf = torch.zeros_like(_p_conf)
+            # # _l_conf_neg = self.focal_loss(_p_conf, _g_conf)
 
             # 用于缓存每一个正例框的损失
             _l_cls_pos = torch.zeros(1, device=device)
-            _l_conf_pos = torch.zeros(1, device=device)
-            _l_iou_pos = torch.zeros(1, device=device)
-            for j in range(boxes.shape[0]):  # gt个数 GT索引
-                # 取最大的
-                k_ = max_indexs[j]
-                # 匹配特图的索引 1/3 向下取整求
-                match_anc_index = torch.true_divide(k_, len(self.cfg.NUMS_ANC)).type(torch.int16)  # 只支持每层相同的anc数
-                # _match_anc_index = match_anc_index[j]  # 匹配特图的索引
-                # 只支持每层相同的anc数 和正方形
-                offset_ceng = 0
-                if match_anc_index > 0:
-                    offset_ceng = num_ceng[:match_anc_index].sum()
-                # 取出 anc 对应的列行索引
-                _row_index = colrow_index[j * num_anc + k_, 1]  # 行
-                _col_index = colrow_index[j * num_anc + k_, 0]  # 列
-                offset_colrow = _row_index * feature_sizes[match_anc_index][0] + _col_index
-                # 这是锁定开始位置
-                match_index_s = (offset_ceng + offset_colrow) * self.cfg.NUMS_ANC[0]  # 只支持每层相同的anc数
+            _l_conf = torch.zeros(1, device=device)
+            _l_box_pos = torch.zeros(1, device=device)
 
-                # 调试查看算法是否出错
-                # if match_index > _num_total:
-                #     flog.error(
-                #         '行列偏移索引:%s，最终索引:%s，anc索引:%s,最好的特图层索引:%s,'
-                #         'colrow_index:%s,box:%s/%s,当前index%s' % (
-                #             offset_colrow.item(),  # 210
-                #             match_index.item(),  # 10770超了
-                #             iou_sort[:, :9],  # [2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 1]
-                #             match_anc_index,  # [2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0, 1]
-                #             colrow_index,  #
-                #             j, iou_sort.shape[0],
-                #             colrow_index[j * num_anc + k_],
-                #         ))
+            num_feature = len(self.cfg.NUMS_ANC)
+            # 计算最大 anc 索引对应在哪个特图层
+            match_feature_index = torch.true_divide(max_indexs, num_feature).type(torch.int64)  #
+            # tensor([8112., 2028.,  507.]) ->[0., 8112,  2028.+8112.]
+            nums_feature_offset[2] = nums_feature_offset[0] + nums_feature_offset[1]
+            nums_feature_offset[1] = nums_feature_offset[0]
+            nums_feature_offset[0] = 0
+            num_feature_offset = nums_feature_offset[match_feature_index]
+            colrow_num = colrow_index[torch.arange(num_boxes, device=device) * num_anc + max_indexs]
+            _row_index = colrow_num[:, 1]  # [4]
+            _col_index = colrow_num[:, 0]  # [4]
+            offset_colrow = _row_index * feature_sizes[match_feature_index][:, 0] + _col_index
+            # 获取anc数
+            _nums_anc = torch.tensor(self.cfg.NUMS_ANC, device=device)[match_feature_index]
+            offset_total = num_feature_offset + offset_colrow * _nums_anc
+            match_index_pos = (offset_total + max_indexs % num_feature).type(torch.int64)
 
-                # 这里可以用max
-                '''如果这个框匹配到的最大anc已经与其它框匹配了 使用iou第二的框进行'''
-                # if targets_yolo[i, match_index_s + match_anc_index, 4] == 0:  # 同一特图一个网格只有一个目标
-                '''--------计算正例 cls 损失 找到匹配的   进来的是一个-----------'''
-                pcls = p_yolo_ts[i, match_index_s + match_anc_index, 5:]
-                # label是从1开始 找出正例
-                _t = labels2onehot4ts(torch.tensor([labels[j] - 1], device=device), self.cfg.NUM_CLASSES)
-                _l_cls_pos += F.binary_cross_entropy_with_logits(pcls[None], _t.type(torch.float), reduction='sum')
+            '''-------- 计算正例 cls 损失 -----------'''
+            pcls = p_yolo_ts[i, match_index_pos, 5:]
+            # label是从1开始 找出正例
+            _t = labels2onehot4ts(g_labels - 1, self.cfg.NUM_CLASSES)
+            # _l_cls_pos += F.binary_cross_entropy_with_logits(pcls[None], _t.type(torch.float), reduction='sum')
+            _l_cls_pos += (self.focal_loss(pcls, _t.type(torch.float)) / num_boxes)
 
-                pconf = p_yolo_ts[i, match_index_s + match_anc_index, 4]
-                g_conf = torch.tensor(1, dtype=torch.float, device=device)
-                # _l_conf_pos += F.binary_cross_entropy_with_logits(pconf, g_conf)
-                _l_conf_pos += self.focal_loss(pconf, g_conf)
+            '''--------- 正例conf ---------'''
+            pconf = p_yolo_ts[i, :, 4]
+            gconf = torch.zeros_like(pconf)
+            gconf[match_index_pos] = 1
+            # g_conf = torch.ones_like(pconf, dtype=torch.float, device=device)
+            # _l_conf_pos += F.binary_cross_entropy_with_logits(pconf, g_conf)
+            _l_conf += (self.focal_loss(pconf, gconf) / num_boxes)
 
-                # 正例IOU损失
-                ious = bbox_iou4one(boxes[j][None], p_box_ltrb[match_index_s + match_anc_index, :][None])
-                w = 2 - boxes_xywh[j, 2] * boxes_xywh[j, 3]  # 增加小目标的损失
-                _l_iou_pos += w * (1 - ious)
-                if self.cfg.IS_VISUAL:
-                    show_anc4pil(img_pil, p_box_ltrb[match_index_s + match_anc_index, :][None], size=img_pil.size)
+            '''----- 正例box 损失 -----'''
+            ious = bbox_iou4one(g_boxes_ltrb, p_box_ltrb[match_index_pos, :])
+            w = 2 - g_boxes_xywh[:, 2] * g_boxes_xywh[:, 3]  # 增加小目标的损失权重
+            _l_box_pos += torch.mean(w * (1 - ious))  # 每个框的损失
+            # _l_box_pos += torch.sum(w * (1 - ious)) / num_boxes  # 每个框的损失
 
-            loss_cls_pos = loss_cls_pos + _l_cls_pos / boxes.shape[0]
-            loss_box_pos = loss_box_pos + _l_iou_pos / boxes.shape[0]
-            loss_conf_pos = loss_conf_pos + _l_conf_pos / boxes.shape[0]
-            loss_conf_neg = loss_conf_neg + _l_conf_neg
+            if self.cfg.IS_VISUAL:
+                flog.debug('conf neg 损失 %s', _l_conf)
+                flog.debug('box 损失 %s', torch.mean(w * (1 - ious)))
+                flog.debug('conf pos 损失 %s', _l_conf)
+                flog.debug('cls 损失 %s', _l_cls_pos)
+                flog.debug('-------------------')
+                f_show_3box4pil(img_pil, g_boxes=g_boxes_ltrb,
+                                boxes1=p_box_ltrb[match_index_pos, :],
+                                boxes2=xywh2ltrb(self.anc_obj.ancs[match_index_pos, :]),
+                                grids=self.anc_obj.feature_sizes[-1],  # 网格
+                                )
 
-        l_conf_p = loss_conf_pos / batch
-        l_conf_n = loss_conf_neg / batch
-        l_box_p = loss_box_pos / batch
-        l_cls_p = loss_cls_pos / batch
-        loss_total = l_conf_p + l_conf_n + l_box_p + l_cls_p
+            loss_cls_pos = loss_cls_pos + _l_cls_pos
+            loss_box_pos = loss_box_pos + _l_box_pos  # 上面已平均
+            loss_conf = loss_conf + _l_conf
+
+        l_box_p = loss_box_pos / batch * self.cfg.LOSS_WEIGHT[0]
+        l_conf = loss_conf / batch * self.cfg.LOSS_WEIGHT[1]
+        l_cls_p = loss_cls_pos / batch * self.cfg.LOSS_WEIGHT[2]
+        loss_total = l_conf + l_box_p + l_cls_p
 
         log_dict = {}
         log_dict['loss_total'] = loss_total.item()
-        log_dict['l_conf_p'] = l_conf_p.item()
-        log_dict['l_conf_n'] = l_conf_n.item()
+        log_dict['l_conf'] = l_conf.item()
         log_dict['l_box_p'] = l_box_p.item()
         log_dict['l_cls_p'] = l_cls_p.item()
 

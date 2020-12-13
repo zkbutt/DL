@@ -76,6 +76,14 @@ def conv_bn1X1(inp, oup, stride, leaky=0):
 '''-----------------模型层区-----------------------'''
 
 
+class NoneLayer(nn.Module):
+    def __init__(self):
+        super(NoneLayer, self).__init__()
+
+    def forward(self, x):
+        return x
+
+
 class BasicBlock(nn.Module):
     '''
     CBAM

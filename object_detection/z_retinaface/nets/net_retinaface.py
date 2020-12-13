@@ -3,6 +3,67 @@ import torch.nn as nn
 
 from f_pytorch.tools_model.fmodels.model_fpns import FPN
 from f_pytorch.tools_model.fmodels.model_modules import SSH
+from f_tools.GLOBAL_LOG import flog
+from f_tools.f_predictfun import label_nms
+from f_tools.fits.f_lossfun import LossRetinaface
+from f_tools.fits.f_match import pos_match_retinaface
+from f_tools.fun_od.f_anc import FAnchors
+import numpy as np
+
+from f_tools.fun_od.f_boxes import fix_bbox, fix_keypoints, xywh2ltrb
+
+
+class PredictRetinaface(nn.Module):
+    def __init__(self, anchors, device, threshold_conf=0.5, threshold_nms=0.3, cfg=None):
+        super(PredictRetinaface, self).__init__()
+        self.cfg = cfg
+        self.device = device
+        self.anchors = anchors[None]  # (1,xx,4)
+        self.threshold_nms = threshold_nms
+        self.threshold_conf = threshold_conf
+
+    def forward(self, p_tuple):
+        '''
+        批量处理 conf + nms
+        :param p_tuple:
+            p_loc: torch.Size([7, 16800, 4])
+            p_conf: torch.Size([7, 16800, 1])
+            p_landms: torch.Size([7, 16800, 10])
+        :return:
+            ids_batch2 [nn]
+            p_boxes_ltrb2 [nn,4]
+            p_labels2 [nn]
+            p_scores2 [nn]
+        '''
+        p_loc, p_conf, p_landms = p_tuple
+        p_scores = torch.sigmoid(p_conf)
+        mask = p_scores >= self.threshold_conf
+        if not torch.any(mask):  # 如果没有一个对象
+            flog.error('该批次没有找到目标')
+            return [None] * 4
+
+        # p_boxes_xywh -> p_boxes_ltrb
+        p_boxes = fix_bbox(self.anchors, p_loc)
+        # xywh2ltrb(p_boxes, safe=False)
+        p_keypoints = fix_keypoints(self.anchors, p_landms)
+
+        '''第一阶段'''
+        ids_batch1, _, _ = torch.where(mask)
+        # 删除一维
+        mask_box = mask.squeeze(-1)
+        p_boxes_ltrb1 = xywh2ltrb(p_boxes[mask_box])
+        p_scores1 = p_scores[mask]
+        p_labels1 = torch.ones_like(p_scores1)
+
+        # 分类 nms
+        ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2 = label_nms(ids_batch1,
+                                                                    p_boxes_ltrb1,
+                                                                    p_labels1,
+                                                                    p_scores1,
+                                                                    self.device,
+                                                                    self.threshold_nms)
+
+        return ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2
 
 
 class ClassHead(nn.Module):
@@ -41,7 +102,8 @@ class LandmarkHead(nn.Module):
 
 
 class RetinaFace(nn.Module):
-    def __init__(self, backbone, num_classes, anchor_num, in_channels_fpn, ssh_channel=256, use_keypoint=False):
+    def __init__(self, backbone, num_classes, anchor_num, in_channels_fpn, ssh_channel=256, is_use_keypoint=False,
+                 cfg=None, device=None):
         '''
 
         :param backbone:   这个的三层输出 in_channels_fpn
@@ -66,11 +128,30 @@ class RetinaFace(nn.Module):
                                              inchannels=ssh_channel,
                                              anchor_num=anchor_num)
 
-        self.use_keypoint = use_keypoint
-        if use_keypoint:
+        self.use_keypoint = is_use_keypoint
+        if is_use_keypoint:
             self.LandmarkHead = self._make_landmark_head(fpn_num=len(in_channels_fpn),
                                                          inchannels=ssh_channel,
                                                          anchor_num=anchor_num)
+
+        anc_obj = FAnchors(cfg.IMAGE_SIZE, cfg.ANC_SCALE, cfg.FEATURE_MAP_STEPS,
+                           anchors_clip=cfg.ANCHORS_CLIP, is_xymid=True, is_real_size=False,
+                           device=device)
+
+        if is_use_keypoint:
+            losser = LossRetinaface(anc_obj.ancs, cfg.LOSS_WEIGHT, cfg.NEG_RATIO, cfg)
+        else:
+            losser = LossRetinaface(anc_obj.ancs, cfg.LOSS_WEIGHT, cfg.NEG_RATIO, cfg)
+        self.losser = losser
+
+        self.cfg = cfg
+        self.anc_obj = anc_obj
+        self.device = device
+
+        self.preder = PredictRetinaface(anc_obj.ancs, device,
+                                        cfg.THRESHOLD_PREDICT_CONF,
+                                        cfg.THRESHOLD_PREDICT_NMS,
+                                        cfg)
 
     def _make_class_head(self, fpn_num, inchannels, anchor_num, num_classes):
         classhead = nn.ModuleList()
@@ -90,14 +171,46 @@ class RetinaFace(nn.Module):
             landmarkhead.append(LandmarkHead(inchannels, anchor_num))
         return landmarkhead
 
-    def forward(self, inputs):
+    def data_packaging(self, outs, targets):
         '''
 
-        :param inputs: tensor(batch,c,h,w)
+        :param outs:
+        :param targets:
+        :return:
+        '''
+        p_bboxs_xywh = outs[0]  # (batch,16800,4)  xywh  xywh
+        p_labels = outs[1]  # (batch,16800,10)
+        p_keypoints = outs[2]  # (batch,16800,2)
+        num_batch = p_bboxs_xywh.shape[0]
+        num_ancs = p_bboxs_xywh.shape[1]
+        gbboxs_ltrb = torch.Tensor(*p_bboxs_xywh.shape).to(self.device)  # torch.Size([batch, 16800, 4])
+        glabels = torch.Tensor(num_batch, num_ancs).to(self.device)  # 计算损失只会存在一维 无论多少类 标签只有一类
+        gkeypoints = torch.Tensor(*p_keypoints.shape).to(self.device)  # 相当于empty
+        for index in range(num_batch):
+            g_bboxs = targets[index]['boxes']  # torch.Size([batch, 4])
+            g_labels = targets[index]['labels']  # torch.Size([batch])
+            g_keypoints = targets[index]['keypoints']  # torch.Size([batch, 10])
+            match_bboxs, match_keypoints, match_labels = pos_match_retinaface(
+                self.anc_obj.ancs, g_bboxs=g_bboxs,
+                g_labels=g_labels,
+                g_keypoints=g_keypoints,
+                threshold_pos=self.cfg.THRESHOLD_PREDICT_CONF,
+                threshold_neg=self.cfg.THRESHOLD_PREDICT_NMS
+            )
+            glabels[index] = match_labels
+            gbboxs_ltrb[index] = match_bboxs
+            gkeypoints[index] = match_keypoints
+
+        return gbboxs_ltrb, glabels, gkeypoints
+
+    def forward(self, x, targets=None):
+        '''
+
+        :param x: tensor(batch,c,h,w)
         :return:
 
         '''
-        out = self.backbone(inputs)  # 输出字典 {1:层1输出,2:层2输出,3:层2输出}
+        out = self.backbone(x)  # 输出字典 {1:层1输出,2:层2输出,3:层2输出}
 
         # FPN 输出 3个特图的统一维度(超参) tuple(tensor(层1),tensor(层2),tensor(层3))
         fpn = self.fpn(out)
@@ -119,8 +232,21 @@ class RetinaFace(nn.Module):
         else:
             ldm_regressions = None
         # if torchvision._is_tracing():  #预测模式 训练时是不会满足的 训练和预测进行不同的处理
-        output = (bbox_regressions, classifications, ldm_regressions)
-        return output
+
+        # 模型输出在这里
+        outs = (bbox_regressions, classifications, ldm_regressions)
+
+        if self.training:
+            # 过渡处理
+            g_targets = self.data_packaging(outs, targets)
+            if targets is None:
+                raise ValueError("In training mode, targets should be passed")
+            loss_total, log_dict = self.losser(outs, g_targets, x)
+            return loss_total, log_dict
+        else:
+            # with torch.no_grad(): # 这个没用
+            ids_batch, p_boxes_ltrb, p_labels, p_scores = self.preder(outs)
+            return ids_batch, p_boxes_ltrb, p_labels, p_scores
 
 
 if __name__ == '__main__':

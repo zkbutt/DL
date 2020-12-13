@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw
 from tqdm import tqdm
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
 from f_tools.pic.enhance.f_mosaic import f_mosaic_pics_ts
 
 
@@ -598,6 +599,139 @@ def load_data4widerface(path_data_root, img_size_in, batch_size, mode='train', i
     # 数据查看
     # iter(data_loader).__next__()
     return data_loader
+
+
+def fun4dataloader(batch_datas):
+    # 数据组装
+    _t = batch_datas[0][0]
+    # images = torch.empty((len(batch_datas), *_t.shape), device=_t.device)
+    images = torch.empty((len(batch_datas), *_t.shape)).to(_t)
+    targets = []
+    for i, (img, taget) in enumerate(batch_datas):
+        images[i] = img
+        targets.append(taget)
+    return images, targets
+
+
+def load_od4voc(cfg, data_transform, is_mgpu):
+    dataset_train, dataset_val = [None] * 2
+    if cfg.IS_TRAIN:
+        dataset_train = CocoDataset(
+            path_coco_target=cfg.PATH_COCO_TARGET_TRAIN,
+            path_img=cfg.PATH_IMG_TRAIN,
+            # mode='keypoints',
+            mode='bbox',
+            data_type='train2017',
+            transform=data_transform['train'],
+            is_mosaic=cfg.IS_MOSAIC,
+            is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
+            is_mosaic_fill=cfg.IS_MOSAIC_FILL,
+            is_debug=cfg.DEBUG,
+            cfg=cfg
+        )
+    if cfg.IS_COCO_EVAL:
+        dataset_val = CocoDataset(
+            path_coco_target=cfg.PATH_COCO_TARGET_EVAL,
+            path_img=cfg.PATH_IMG_EVAL,
+            # mode='keypoints',
+            mode='bbox',
+            data_type='val2017',
+            transform=data_transform['val'],
+            is_mosaic=False,  # 必须为 False 否则ID出错
+            is_debug=cfg.DEBUG,
+            cfg=cfg
+        )
+
+    _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu)
+    return _res
+
+
+def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
+    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = [None] * 5
+    if cfg.IS_TRAIN:
+        # __d = dataset_train[0]  # 调试
+        if is_mgpu:  # DataLoader 不一样
+            # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
+            train_sampler = torch.utils.data.distributed.DistributedSampler(dataset_train,
+                                                                            shuffle=True,
+                                                                            seed=20201114,
+                                                                            )
+            # 按定义为每一个 BATCH_SIZE 生成一批的索引
+            train_batch_sampler = torch.utils.data.BatchSampler(train_sampler, cfg.BATCH_SIZE, drop_last=True)
+
+            loader_train = torch.utils.data.DataLoader(
+                dataset_train,
+                # batch_size=cfg.BATCH_SIZE,
+                batch_sampler=train_batch_sampler,  # 按样本定义加载
+                num_workers=cfg.DATA_NUM_WORKERS,
+                # shuffle=True,
+                pin_memory=True,  # 不使用虚拟内存 GPU要报错
+                # drop_last=True,  # 除于batch_size余下的数据
+                collate_fn=fun4dataloader,
+            )
+        else:
+            loader_train = torch.utils.data.DataLoader(
+                dataset_train,
+                batch_size=cfg.BATCH_SIZE,
+                num_workers=cfg.DATA_NUM_WORKERS,
+                # shuffle=True,
+                pin_memory=True,  # 不使用虚拟内存 GPU要报错
+                # drop_last=True,  # 除于batch_size余下的数据
+                collate_fn=fun4dataloader,
+            )
+
+    if cfg.IS_FMAP_EVAL:
+        class_to_idx = {'face': 1}
+        dataset_val = MapDataSet(path_imgs=cfg.PATH_EVAL_IMGS,
+                                 path_eval_info=cfg.PATH_EVAL_INFO,
+                                 class_to_idx=class_to_idx,
+                                 transforms=data_transform['val'],
+                                 is_debug=cfg.DEBUG)
+        loader_val_fmap = torch.utils.data.DataLoader(
+            dataset_val,
+            batch_size=cfg.BATCH_SIZE,
+            num_workers=cfg.DATA_NUM_WORKERS,
+            # shuffle=True,
+            pin_memory=True,  # 不使用虚拟内存 GPU要报错
+            # drop_last=True,  # 除于batch_size余下的数据
+            collate_fn=fun4dataloader,
+        )
+    if cfg.IS_COCO_EVAL:
+
+        if is_mgpu:
+            # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
+            eval_sampler = torch.utils.data.distributed.DistributedSampler(dataset_val,
+                                                                           shuffle=True,
+                                                                           seed=20201114,
+                                                                           )
+            # 按定义为每一个 BATCH_SIZE 生成一批的索引
+            eval_batch_sampler = torch.utils.data.BatchSampler(eval_sampler,
+                                                               int(cfg.BATCH_SIZE * 1.5),
+                                                               drop_last=False,  # 不要扔掉否则验证不齐
+                                                               )
+
+            loader_val_coco = torch.utils.data.DataLoader(
+                dataset_val,
+                # batch_size=cfg.BATCH_SIZE,
+                batch_sampler=eval_batch_sampler,  # 按样本定义加载
+                num_workers=cfg.DATA_NUM_WORKERS,
+                # shuffle=True,
+                pin_memory=True,  # 不使用虚拟内存 GPU要报错
+                # drop_last=True,  # 除于batch_size余下的数据
+                collate_fn=fun4dataloader,
+            )
+        else:
+            loader_val_coco = torch.utils.data.DataLoader(
+                dataset_val,
+                batch_size=int(cfg.BATCH_SIZE * 1.5),
+                num_workers=cfg.DATA_NUM_WORKERS,
+                # shuffle=True,
+                pin_memory=True,  # 不使用虚拟内存 GPU要报错
+                # drop_last=True,  # 除于batch_size余下的数据
+                collate_fn=fun4dataloader,
+            )
+
+    return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 
 
 if __name__ == '__main__':

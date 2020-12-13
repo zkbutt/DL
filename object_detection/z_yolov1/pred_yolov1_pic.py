@@ -7,7 +7,9 @@ from PIL import Image
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import get_path_root
+from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic
 from f_tools.pic.f_show import f_plot_od4pil, f_show_od4pil
+# 这里要删除
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
 from object_detection.z_yolov1.process_fun import init_model, cre_data_transform
 
@@ -29,22 +31,13 @@ if __name__ == '__main__':
     model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=None)
     model.eval()
 
-    path_img = os.path.join(get_path_root(), '_test_pic')
-    files = os.listdir(path_img)
-    for file in files:
-        '''---------------数据加载及处理--------------'''
-        img_pil = Image.open(os.path.join(path_img, file)).convert('RGB')
-        w, h = img_pil.size
-        # 用于恢复bbox及ke
-        szie_scale4bbox = torch.Tensor([w, h] * 2)
-        # szie_scale4landmarks = torch.Tensor([w, h] * 5)
-        data_transform = cre_data_transform(cfg)
-        img_ts = data_transform['val'](img_pil)[0][None]
+    path_img = cfg.PATH_DATA_ROOT + '/test/JPEGImages'
+    # path_img = os.path.join(get_path_root(), '_test_pic')
+    file_names = os.listdir(path_img)
+    data_transform = cre_data_transform(cfg)
 
-        '''---------------预测开始--------------'''
-        ids_batch, p_boxes_ltrb, p_labels, p_scores = model(img_ts)
-        if p_boxes_ltrb is not None:
-            p_boxes = p_boxes_ltrb * szie_scale4bbox
-            img_pil = f_plot_od4pil(img_pil, p_boxes, p_scores, p_labels, labels_lsit)
-            f_show_od4pil(img_pil, p_boxes, p_scores, p_labels, labels_lsit)
+    for name in file_names:
+        '''---------------数据加载及处理--------------'''
+        file_img = os.path.join(path_img, name)
+        f_prod_pic(file_img, model, labels_lsit, data_transform)
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

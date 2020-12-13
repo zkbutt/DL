@@ -16,7 +16,8 @@ from f_tools.pic.f_show import show_bbox4pil
 class CocoDataset(Dataset):
 
     def __init__(self, path_coco_target, path_img, mode, data_type, transform=None,
-                 is_mosaic=False, is_debug=False, cfg=None, s_ids_cats=None):
+                 is_mosaic=False, is_mosaic_keep_wh=False, is_mosaic_fill=False,
+                 is_debug=False, cfg=None, s_ids_cats=None):
         '''
 
         :param path_coco_target: 标注目录
@@ -28,7 +29,7 @@ class CocoDataset(Dataset):
         :param is_mosaic: 训练时可用
         :param is_debug: 减少加载量
         :param cfg: 使用 is_mosaic 或其它
-        :param s_ids_cats: 选择特有的类型
+        :param s_ids_cats: 选择特有的类型 list[类号]
         '''
         # path_save_img = os.path.join(dataset.path_root, 'images', dataset.data_type)
         self.path_coco_target, self.data_type = path_coco_target, data_type
@@ -68,6 +69,8 @@ class CocoDataset(Dataset):
         self.is_mosaic = is_mosaic
         self.cfg = cfg
         self.path_img = path_img
+        self.is_mosaic_keep_wh = is_mosaic_keep_wh
+        self.is_mosaic_fill = is_mosaic_fill
         if not os.path.exists(path_img):
             raise Exception('coco path_img 路径不存在', path_img)
 
@@ -106,7 +109,10 @@ class CocoDataset(Dataset):
             boxs.append(target["boxes"])
             labels.append(target["labels"])
         img_pil_mosaic, boxes_mosaic, labels = f_mosaic_pics_ts(imgs, boxs, labels,
-                                                                self.cfg.IMAGE_SIZE, is_keep_wh=False)
+                                                                self.cfg.IMAGE_SIZE,
+                                                                is_mosaic_keep_wh=self.is_mosaic_keep_wh,
+                                                                is_mosaic_fill=self.is_mosaic_fill,
+                                                                )
         target = {}
         target["boxes"] = boxes_mosaic  # 输出左上右下
         target["labels"] = labels
@@ -247,7 +253,7 @@ class CocoDataset(Dataset):
             self.classes_ids[c['name']] = len(self.classes_ids) + 1  # 这个是新索引 {'Parade': 0}
 
         # ids_classes: {new_index:  names}
-        self.ids_classes = {} # index 1 开始
+        self.ids_classes = {}  # index 1 开始
         for k, v in self.classes_ids.items():
             self.ids_classes[v] = k
 

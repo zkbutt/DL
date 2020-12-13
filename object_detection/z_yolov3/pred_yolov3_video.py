@@ -12,12 +12,13 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.device.f_device import init_video
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_vodeo
 from f_tools.pic.f_show import f_plot_od4pil
-from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
-from object_detection.z_yolov1.process_fun import init_model, cre_data_transform
+from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
+from object_detection.z_yolov3.process_fun import init_model, cre_data_transform
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
     cfg = CFG
+    # cfg.THRESHOLD_CONF_NEG = 0.2
     json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_voc_proj.json'), 'r', encoding='utf-8')
     ids_classes = json.load(json_file, encoding='utf-8')  # json key是字符
     labels_lsit = list(ids_classes.values())  # index 从 1开始 前面随便加一个空

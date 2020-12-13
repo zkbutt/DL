@@ -55,7 +55,7 @@ if __name__ == '__main__':
     # '''---------------数据加载及处理--------------'''
     loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = data_loader(model.cfg, is_mgpu=False)
 
-    flog.debug('---训练开始---epoch %s', start_epoch + 1)
+    # flog.debug('---训练开始---epoch %s', start_epoch + 1)
     # 有些参数可通过模型来携带  model.nc = nc
     train_eval(start_epoch=start_epoch, model=model, optimizer=optimizer, lr_scheduler=lr_scheduler,
                loader_train=loader_train, loader_val_fmap=loader_val_fmap, loader_val_coco=loader_val_coco,

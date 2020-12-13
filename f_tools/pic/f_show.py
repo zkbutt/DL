@@ -12,8 +12,12 @@ from f_tools.GLOBAL_LOG import flog
 # 126种颜色
 
 STANDARD_COLORS = [
-    'AliceBlue', 'Chartreuse', 'Aqua', 'Aquamarine', 'Azure', 'Beige', 'Bisque',
-    'BlanchedAlmond', 'BlueViolet', 'BurlyWood', 'CadetBlue', 'AntiqueWhite',
+    'AliceBlue',  # 白色
+    'Chartreuse',  # 绿色
+    'Aqua',
+    'Aquamarine', 'Azure', 'Beige', 'Bisque',
+    'BlanchedAlmond', 'BlueViolet', 'BurlyWood',  # 橙色
+    'CadetBlue', 'AntiqueWhite',
     'Chocolate', 'Coral', 'CornflowerBlue', 'Cornsilk', 'Crimson', 'Cyan',
     'DarkCyan', 'DarkGoldenRod', 'DarkGrey', 'DarkKhaki', 'DarkOrange',
     'DarkOrchid', 'DarkSalmon', 'DarkSeaGreen', 'DarkTurquoise', 'DarkViolet',
@@ -24,12 +28,14 @@ STANDARD_COLORS = [
     'LightCoral', 'LightCyan', 'LightGoldenRodYellow', 'LightGray', 'LightGrey',
     'LightGreen', 'LightPink', 'LightSalmon', 'LightSeaGreen', 'LightSkyBlue',
     'LightSlateGray', 'LightSlateGrey', 'LightSteelBlue', 'LightYellow', 'Lime',
-    'LimeGreen', 'Linen', 'Magenta', 'MediumAquaMarine', 'MediumOrchid',
+    'LimeGreen', 'Linen',  # 白色
+    'Magenta', 'MediumAquaMarine', 'MediumOrchid',
     'MediumPurple', 'MediumSeaGreen', 'MediumSlateBlue', 'MediumSpringGreen',
     'MediumTurquoise', 'MediumVioletRed', 'MintCream', 'MistyRose', 'Moccasin',
     'NavajoWhite', 'OldLace', 'Olive', 'OliveDrab', 'Orange', 'OrangeRed',
     'Orchid', 'PaleGoldenRod', 'PaleGreen', 'PaleTurquoise', 'PaleVioletRed',
-    'PapayaWhip', 'PeachPuff', 'Peru', 'Pink', 'Plum', 'PowderBlue', 'Purple',
+    'PapayaWhip', 'PeachPuff', 'Peru', 'Pink',  # 粉红
+    'Plum', 'PowderBlue', 'Purple',
     'Red', 'RosyBrown', 'RoyalBlue', 'SaddleBrown', 'Green', 'SandyBrown',
     'SeaGreen', 'SeaShell', 'Sienna', 'Silver', 'SkyBlue', 'SlateBlue',
     'SlateGray', 'SlateGrey', 'Snow', 'SpringGreen', 'SteelBlue', 'GreenYellow',
@@ -120,7 +126,7 @@ def show_bbox4ts(img_ts, boxs, labels=None):
 
 def show_anc4pil(img_pil, anc, size=(1, 1)):
     '''
-
+    这个不安全
     :param img_pil:
     :param anc:  n,4
     :param size:
@@ -345,7 +351,7 @@ def f_plot_od4pil(img_pil, boxes_ltrb, scores, labels, id_to_class=None, font_si
             show_text = _s_text.format(id_to_class[label], conf)
         else:
             show_text = _s_text.format(label, conf)
-        # flog.debug(show_text)
+        flog.debug(show_text)
         text_width, text_height = font.getsize(show_text)
         margin = np.ceil(0.05 * text_height)
         # 超出屏幕判断
@@ -374,7 +380,8 @@ def f_show_od4pil(img_pil, boxes_ltrb, scores, labels, id_to_class=None, font_si
     '''
     需扩展按conf排序  或conf过滤的功能
     :param img_pil: 一张 pil
-    :param boxes_confs: np(9, 5)  前4 bbox  后1 conf 已按实尺寸的框
+    :param boxes_ltrb:
+    :param scores: [1. 1. 1. 1. 1. 1. 1. 1.] np
     :param labels: list(int)
     :param id_to_class: dict{id,name}
     :return:
@@ -419,20 +426,33 @@ def f_show_iou4plt(box1, box2):
     plt.show()
 
 
-def _draw_box4pil(draw, boxes, color=None, width=4):
+def _draw_box_circle4pil(draw, gboxes, color=None, width=4, is_draw_circle=False):
+    '''
+
+    :param draw:
+    :param gboxes:
+    :param color: 有颜色画圆心
+    :param width:
+    :param is_draw_circle:
+    :return:
+    '''
     from f_tools.fun_od.f_boxes import ltrb2xywh
-    boxes_ltrb = ltrb2xywh(boxes)
-    if color is not None:
+    boxes_ltrb = ltrb2xywh(gboxes)
+    if is_draw_circle:
         for c in boxes_ltrb:
+            if color is None:
+                _color = STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)]
+            else:
+                _color = color
             # draw.point(c[:2].numpy().tolist(), fill = color)
             x, y = c[:2]
             r = 4
             # 空心
             # draw.arc((x - r, y - r, x + r, y + r), 0, 360, fill=color)
             # 实心
-            draw.chord((x - r, y - r, x + r, y + r), 0, 360, fill=color)
+            draw.chord((x - r, y - r, x + r, y + r), 0, 360, fill=_color)
 
-    for c in boxes:
+    for c in gboxes:
         if isinstance(c, np.ndarray):
             l, t, r, b = c.astype(np.int)
         elif isinstance(c, torch.Tensor):
@@ -447,9 +467,9 @@ def _draw_box4pil(draw, boxes, color=None, width=4):
     return draw
 
 
-def f_show_iou4pil(img_pil, g_boxes=None, boxes2=None, grids=None, is_safe=True):
+def f_show_3box4pil(img_pil, g_boxes=None, boxes1=None, boxes2=None, boxes3=None, grids=None, is_safe=True):
     '''
-
+    默认安全
     :param img_pil:
     :param g_boxes: ltrb 归一化尺寸
     :param boxes2:归一化尺寸
@@ -462,21 +482,30 @@ def f_show_iou4pil(img_pil, g_boxes=None, boxes2=None, grids=None, is_safe=True)
     draw = ImageDraw.Draw(pil_copy)
     whwh = np.array(img_pil.size).repeat(2, axis=0)  # 单体复制
 
+    if grids is not None:
+        _draw_grid4pil(draw, img_pil.size, grids)
     if g_boxes is not None:
-        _box1 = g_boxes.clone()
+        _gbox = g_boxes.clone()
+        _gbox = _gbox * whwh
+        _draw_box_circle4pil(draw, _gbox, color='Yellow', is_draw_circle=True)  # 黄色
+    if boxes1 is not None:
+        _box1 = boxes1.clone().detach()
         _box1 = _box1 * whwh
-        _draw_box4pil(draw, _box1, color='Yellow')
+        _draw_box_circle4pil(draw, _box1, color='Chartreuse', width=2, is_draw_circle=True)  # 绿色
     if boxes2 is not None:
         _box2 = boxes2.clone()
         _box2 = _box2 * whwh
-        _draw_box4pil(draw, _box2, width=2)
-    if grids is not None:
-        _draw_grid4pil(draw, img_pil.size, grids)
+        _draw_box_circle4pil(draw, _box2, color='BurlyWood', width=2, is_draw_circle=True)  # 橙色
+    if boxes3 is not None:
+        _box3 = boxes3.clone()
+        _box3 = _box3 * whwh
+        _draw_box_circle4pil(draw, _box3, color='Aqua', width=2, is_draw_circle=True)  #
     pil_copy.show()
 
 
 def _draw_grid4pil(draw, size, grids=(7, 7)):
-    colors_ = STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)]
+    # colors_ = STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)]
+    colors_ = 'Pink'
     w, h = size
     xys = np.array([w, h]) / grids
     off_x = np.arange(1, grids[0])
