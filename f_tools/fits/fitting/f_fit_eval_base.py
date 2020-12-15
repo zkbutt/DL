@@ -21,7 +21,9 @@ import torch.distributed as dist
 
 from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
+from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
 from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil
+from f_tools.pic.f_size_handler import resize_np_keep
 
 
 def is_mgpu():
@@ -448,6 +450,7 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
     cfg = model.cfg
     res = {}
     for batch_data in tqdm(data_loader, desc='当前第 %s 次' % epoch):
+        # torch.Size([5, 3, 416, 416])
         img_ts4, p_yolos = fun_datas_l2(batch_data, device, cfg)
         # 处理size 和 ids 用于coco
         images, targets = batch_data
@@ -537,12 +540,16 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
         tb_writer.add_scalar('mAP Recall @[IoU=0.50:0.95]', result_info[6], epoch)
 
 
-def f_prod_pic(file_img, model, labels_lsit, data_transform):
+def f_prod_pic(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg=None):
     img_pil = Image.open(file_img).convert('RGB')
-    w, h = img_pil.size
+    size_input = img_pil.size
+    if is_keeep:
+        max1 = max(size_input)
+        size_input = [max1, max1]
+
     # 用于恢复bbox及ke
-    szie_scale4bbox = torch.Tensor([w, h] * 2)
-    # szie_scale4landmarks = torch.Tensor([w, h] * 5)
+    szie_scale4bbox = torch.Tensor(size_input * 2)
+    # szie_scale4landmarks = torch.Tensor(size_input * 5)
     img_ts = data_transform['val'](img_pil)[0][None]
 
     '''---------------预测开始--------------'''
@@ -550,11 +557,14 @@ def f_prod_pic(file_img, model, labels_lsit, data_transform):
     if p_boxes_ltrb is not None:
         flog.debug('一共有 %s 个目标', len(ids_batch))
         p_boxes = p_boxes_ltrb * szie_scale4bbox
+
+        # img_pil = f_plot_od4pil(img_pil, p_boxes, p_scores, p_labels, labels_lsit)
         img_pil = f_plot_od4pil(img_pil, p_boxes, p_scores, p_labels, labels_lsit)
-        f_show_od4pil(img_pil, p_boxes, p_scores, p_labels, labels_lsit)
+        img_pil.show()
+        # f_show_od4pil(img_pil, p_boxes, p_scores, p_labels, labels_lsit)
 
 
-def f_prod_vodeo(cap, data_transform, model, labels_lsit):
+def f_prod_vodeo(cap, data_transform, model, labels_lsit,is_keeep=False):
     fps = 0.0
     count = 0
 
@@ -564,10 +574,13 @@ def f_prod_vodeo(cap, data_transform, model, labels_lsit):
         ref, img_np = cap.read()  # 读取某一帧 ref是否成功
         img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)  # 格式转变，BGRtoRGB
         img_pil = Image.fromarray(img_np, mode="RGB")
+        size_input = img_pil.size
+        if is_keeep:
+            max1 = max(size_input)
+            size_input = [max1, max1]
 
-        w, h = img_pil.size
-        szie_scale4bbox = torch.Tensor([w, h] * 2)
-        szie_scale4landmarks = torch.Tensor([w, h] * 5)
+        szie_scale4bbox = torch.Tensor(size_input * 2)
+        szie_scale4landmarks = torch.Tensor(size_input * 5)
         img_ts = data_transform['val'](img_pil)[0][None]
 
         '''---------------预测开始--------------'''

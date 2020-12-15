@@ -1,5 +1,6 @@
 import json
 import os
+import random
 
 import torch
 import numpy as np
@@ -19,6 +20,7 @@ if __name__ == '__main__':
     '''
     '''------------------系统配置---------------------'''
     cfg = CFG
+
     device = torch.device('cpu')
     flog.info('模型当前设备 %s', device)
     json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_voc_proj.json'), 'r', encoding='utf-8')
@@ -34,6 +36,8 @@ if __name__ == '__main__':
     path_img = cfg.PATH_DATA_ROOT + '/test/JPEGImages'
     # path_img = os.path.join(get_path_root(), '_test_pic')
     file_names = os.listdir(path_img)
+    random.seed(20201215)
+    random.shuffle(file_names)  # 随机打乱
     data_transform = cre_data_transform(cfg)
 
     for name in file_names:

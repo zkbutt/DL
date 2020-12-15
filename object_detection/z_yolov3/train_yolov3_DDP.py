@@ -5,6 +5,7 @@ import sys
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
+from f_tools.fits.f_fit_fun import custom_set
 from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
 from object_detection.z_yolov3.process_fun import init_model, data_loader, train_eval
 from f_tools.fits.f_gpu.f_gpu_api import mgpu_init
@@ -17,10 +18,9 @@ from f_tools.GLOBAL_LOG import flog
 
 '''
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py
-pycharm用这个 --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/z_yolov3/train_yolov3_DDP.py
+pycharm用这个 --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_yolov3/train_yolov3_DDP.py
 linux用这个   
-python -m torch.distributed.launch --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/z_yolov3/train_yolov3_DDP.py
-
+python -m torch.distributed.launch --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_yolov3/train_yolov3_DDP.py
 
 双GPU B128 416 F1 P400 time: 7.5721  data: 0.0006  0:08:31 (7.7556 s / it) mem: 6241 mv2 # 锁定
 双GPU B128 416 F1 P400 time: 7.5721  data: 0.0006  0:08:31 (7.7556 s / it) mem: 6241 mv2 # 锁定 IS_MOSAIC
@@ -29,20 +29,6 @@ python -m torch.distributed.launch --nproc_per_node=2 /home/win10_sys/tmp/DL/obj
 双GPU B40  416 F1 P400 time: 2.4378  0:02:16 (2.5708 s / it) mem: 6076 mv2 # MOSAIC
 双GPU B36  416 F1 P400 time: 2.1986  0:08:53 (2.2531 s / it) mem: 6076 mv2 
 
-
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.054
- Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.155
- Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.023
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.001
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.025
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.070
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.076
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.098
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.098
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.010
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.058
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.116
-
 '''
 
 if __name__ == '__main__':
@@ -50,6 +36,9 @@ if __name__ == '__main__':
         raise EnvironmentError("未发现GPU")
 
     cfg = CFG
+
+    custom_set(cfg)
+
     cfg.DATA_NUM_WORKERS = 6
     torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
     if cfg.DEBUG or cfg.IS_FMAP_EVAL:

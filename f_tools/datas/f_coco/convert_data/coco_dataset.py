@@ -140,9 +140,9 @@ class CocoDataset(Dataset):
 
         '''---------------cocoAPI测试 查看图片在归一化前------------------'''
         if self.cfg is not None and self.cfg.IS_VISUAL_PRETREATMENT:
-            show_bbox4pil(img_pil, target['boxes'])
+            show_bbox4pil(img_pil, target['boxes']) # 显示原图
             # is_mosaic 这个用不起
-            f_show_coco_pics(self.coco, path_img, ids_img=[index])
+            f_show_coco_pics(self.coco, self.path_img, ids_img=[index])
 
         if target['boxes'].shape[0] == 0:
             # flog.debug('重新加载 %s', index)

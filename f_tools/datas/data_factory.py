@@ -706,7 +706,7 @@ def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
                                                                            )
             # 按定义为每一个 BATCH_SIZE 生成一批的索引
             eval_batch_sampler = torch.utils.data.BatchSampler(eval_sampler,
-                                                               int(cfg.BATCH_SIZE * 1.5),
+                                                               int(cfg.BATCH_SIZE),
                                                                drop_last=False,  # 不要扔掉否则验证不齐
                                                                )
 
@@ -723,7 +723,7 @@ def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
         else:
             loader_val_coco = torch.utils.data.DataLoader(
                 dataset_val,
-                batch_size=int(cfg.BATCH_SIZE * 1.5),
+                batch_size=int(cfg.BATCH_SIZE),
                 num_workers=cfg.DATA_NUM_WORKERS,
                 # shuffle=True,
                 pin_memory=True,  # 不使用虚拟内存 GPU要报错

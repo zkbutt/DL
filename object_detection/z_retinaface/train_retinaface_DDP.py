@@ -19,8 +19,8 @@ import numpy as np
 
 '''
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py
---nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/z_retinaface/train_retinaface_DDP.py
-python -m torch.distributed.launch --nproc_per_node=2 /home/win10_sys/tmp/DL/object_detection/z_retinaface/train_retinaface_DDP.py
+--nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_retinaface/train_retinaface_DDP.py
+python -m torch.distributed.launch --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_retinaface/train_retinaface_DDP.py
 
 单GPU B48 640 F1 P400 time: 1.6707  0:07:39 (1.7069 s / it) mem: 3754 d121 # 锁定
 双GPU B48 640 F1 P400 time: 1.8350  0:04:18 (1.9258 s / it) mem: 3769 d121 # 锁定
@@ -37,18 +37,19 @@ python -m torch.distributed.launch --nproc_per_node=2 /home/win10_sys/tmp/DL/obj
 训练 id缺失: 9227 3808 279 7512
 验证 id缺失: 29  1828 2501 3086
 
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.212
- Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.375
+train_retinaface_mobilenet_v2-88_2.6454436779022217.pth
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.214
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.384
  Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.217
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.103
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.443
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.554
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.107
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.452
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.559
  Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.051
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.169
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.233
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.117
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.488
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.610
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.170
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.236
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.120
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.498
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.614
 
 '''
 

@@ -1,4 +1,3 @@
-
 import math
 import os
 
@@ -22,19 +21,11 @@ def init_od():
     cv2.setNumThreads(0)
 
 
-def base_set(cfg):
-    host_name = socket.gethostname()
-    flog.info('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
-    # import getpass
-    # # 获取当前系统用户名
-    # user_name = getpass.getuser()
-    # # 获取当前系统用户目录
-    # user_home = os.path.expanduser('~')
-    if host_name == 'Feadre-NB' and cfg.PATH_HOST != 'M:':
-        raise Exception('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
-    if host_name == 'e2680v2' and cfg.PATH_HOST == 'M:':
-        raise Exception('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
+def custom_set(cfg):
+    flog.info('当前主机: %s 及主数据路径: %s ' % (cfg.host_name, cfg.PATH_HOST))
 
+
+def base_set(cfg):
     cfg.DATA_NUM_WORKERS = min([os.cpu_count(), cfg.DATA_NUM_WORKERS])
 
     # 检查保存权重文件夹是否存在，不存在则创建

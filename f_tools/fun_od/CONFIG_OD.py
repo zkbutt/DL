@@ -10,7 +10,7 @@ class CFG:
     BATCH_SIZE = 40  # batch过小需要设置连续前传
     FORWARD_COUNT = 4  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
     PRINT_FREQ = int(400 / BATCH_SIZE)  # 400张图打印
-    END_EPOCH = 150
+    END_EPOCH = 100
 
     IS_TRAIN = False
     IS_MOSAIC = False
@@ -27,7 +27,7 @@ class CFG:
     THRESHOLD_PREDICT_NMS = 0.3  # 用于预测的阀值
 
     # 调参区
-    LOSS_WEIGHT = [4., 2., 1., 1.]  # l_box_p,l_conf_p,l_cls_p,l_conf_n
+    LOSS_WEIGHT = [2., 2., 1., 1.]  # l_box_p,l_conf_p,l_cls_p,l_conf_n
     FOCALLOSS_ALPHA = 0.75
     FOCALLOSS_GAMMA = 2
     LR = 1e-3
@@ -47,14 +47,12 @@ class CFG:
         # raise Exception('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
     elif host_name == 'e2680v2':
         PATH_HOST = ''
-    # PATH_HOST = 'M:'  # 416
-    # PATH_HOST = '/home/bak3t/bak299g'  # 需要尾部加/
 
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
 
     '''可视化'''
-    IS_VISUAL = False
+    IS_VISUAL = True
     IS_VISUAL_PRETREATMENT = False  # 图片预处理
 
     '''样本及预处理'''
@@ -76,8 +74,7 @@ class CFG:
     '''模型权重'''
     PATH_SAVE_WEIGHT = PATH_HOST + '/AI/weights/feadre'
     SAVE_FILE_NAME = 'train_yolov3_'  # 预置一个 实际无用 根据文件名确定
-    # FILE_FIT_WEIGHT = PATH_SAVE_WEIGHT + '/train_yolov3_mobilenet_v2-100_1.4242053031921387.pth'
-    FILE_FIT_WEIGHT = PATH_SAVE_WEIGHT + '/train_yolov3_mobilenet_v2-109_1.5378272533416748.pth'
+    FILE_FIT_WEIGHT = PATH_SAVE_WEIGHT + '/train_yolov3_mobilenet_v2-92_1.3773611783981323.pth'
 
     '''Loss参数'''
     # IGNORE_THRESH = 0.225

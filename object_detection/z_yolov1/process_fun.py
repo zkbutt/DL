@@ -5,12 +5,11 @@ from torchvision import models
 from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2
 from f_pytorch.tools_model.model_look import f_look_model
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_factory import MapDataSet
-from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
+from f_tools.datas.data_factory import MapDataSet, load_od4voc
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init
 from f_tools.fits.f_match import fmatch4yolo1
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4,  f_evaluate4coco2, is_mgpu
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2, is_mgpu
 from f_tools.pic.enhance.f_data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
     Normalization4TS, Resize
 from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1
@@ -37,7 +36,7 @@ def cre_data_transform(cfg):
     else:
         data_transform = {
             "train": Compose([
-                # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+                # ResizeKeep(cfg.IMAGE_SIZE),  # 这个有边界需要修正
                 Resize(cfg.IMAGE_SIZE),
                 ColorJitter(),
                 ToTensor(),
@@ -116,8 +115,8 @@ def init_model(cfg, device, id_gpu=None):
     # optimizer = optim.Adam(pg, lr0, weight_decay=5e-4)
     # 两次不上升，降低一半
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=1, verbose=True)
-    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
-    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
+    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
+    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg
     return model, optimizer, lr_scheduler, start_epoch
@@ -126,112 +125,10 @@ def init_model(cfg, device, id_gpu=None):
 def data_loader(cfg, is_mgpu=False):
     data_transform = cre_data_transform(cfg)
 
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = [None] * 5
+    _res = load_od4voc(cfg, data_transform, is_mgpu)
+    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = _res
+
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
-    if cfg.IS_TRAIN:
-        dataset_train = CocoDataset(
-            path_coco_target=cfg.PATH_COCO_TARGET_EVAL,
-            path_img=cfg.PATH_IMG_EVAL,
-            # mode='keypoints',
-            mode='bbox',
-            data_type='train2017',
-            transform=data_transform['train'],
-            is_mosaic=cfg.IS_MOSAIC,
-            is_debug=cfg.DEBUG,
-            cfg=cfg
-        )
-        # __d = dataset_train[0]  # 调试
-        if is_mgpu:  # DataLoader 不一样
-            # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
-            train_sampler = torch.utils.data.distributed.DistributedSampler(dataset_train,
-                                                                            shuffle=True,
-                                                                            seed=20201114,
-                                                                            )
-            # 按定义为每一个 BATCH_SIZE 生成一批的索引
-            train_batch_sampler = torch.utils.data.BatchSampler(train_sampler, cfg.BATCH_SIZE, drop_last=True)
-
-            loader_train = torch.utils.data.DataLoader(
-                dataset_train,
-                # batch_size=cfg.BATCH_SIZE,
-                batch_sampler=train_batch_sampler,  # 按样本定义加载
-                num_workers=cfg.DATA_NUM_WORKERS,
-                # shuffle=True,
-                pin_memory=True,  # 不使用虚拟内存 GPU要报错
-                # drop_last=True,  # 除于batch_size余下的数据
-                collate_fn=_collate_fn,
-            )
-        else:
-            loader_train = torch.utils.data.DataLoader(
-                dataset_train,
-                batch_size=cfg.BATCH_SIZE,
-                num_workers=cfg.DATA_NUM_WORKERS,
-                # shuffle=True,
-                pin_memory=True,  # 不使用虚拟内存 GPU要报错
-                # drop_last=True,  # 除于batch_size余下的数据
-                collate_fn=_collate_fn,
-            )
-
-    if cfg.IS_FMAP_EVAL:
-        class_to_idx = {'face': 1}
-        dataset_val = MapDataSet(path_imgs=cfg.PATH_EVAL_IMGS,
-                                 path_eval_info=cfg.PATH_EVAL_INFO,
-                                 class_to_idx=class_to_idx,
-                                 transforms=data_transform['val'],
-                                 is_debug=cfg.DEBUG)
-        loader_val_fmap = torch.utils.data.DataLoader(
-            dataset_val,
-            batch_size=cfg.BATCH_SIZE,
-            num_workers=cfg.DATA_NUM_WORKERS,
-            # shuffle=True,
-            pin_memory=True,  # 不使用虚拟内存 GPU要报错
-            # drop_last=True,  # 除于batch_size余下的数据
-            collate_fn=_collate_fn,
-        )
-    elif cfg.IS_COCO_EVAL:
-        dataset_val = CocoDataset(
-            path_coco_target=cfg.PATH_COCO_TARGET_EVAL,
-            path_img=cfg.PATH_IMG_EVAL,
-            # mode='keypoints',
-            mode='bbox',
-            data_type='val2017',
-            transform=data_transform['val'],
-            is_mosaic=False,  # 必须为 False 否则ID出错
-            is_debug=cfg.DEBUG,
-            cfg=cfg
-        )
-
-        if is_mgpu:
-            # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
-            eval_sampler = torch.utils.data.distributed.DistributedSampler(dataset_val,
-                                                                           shuffle=True,
-                                                                           seed=20201114,
-                                                                           )
-            # 按定义为每一个 BATCH_SIZE 生成一批的索引
-            eval_batch_sampler = torch.utils.data.BatchSampler(eval_sampler,
-                                                               int(cfg.BATCH_SIZE * 1.5),
-                                                               drop_last=False,  # 不要扔掉否则验证不齐
-                                                               )
-
-            loader_val_coco = torch.utils.data.DataLoader(
-                dataset_val,
-                # batch_size=cfg.BATCH_SIZE,
-                batch_sampler=eval_batch_sampler,  # 按样本定义加载
-                num_workers=cfg.DATA_NUM_WORKERS,
-                # shuffle=True,
-                pin_memory=True,  # 不使用虚拟内存 GPU要报错
-                # drop_last=True,  # 除于batch_size余下的数据
-                collate_fn=_collate_fn,
-            )
-        else:
-            loader_val_coco = torch.utils.data.DataLoader(
-                dataset_val,
-                batch_size=int(cfg.BATCH_SIZE * 1.5),
-                num_workers=cfg.DATA_NUM_WORKERS,
-                # shuffle=True,
-                pin_memory=True,  # 不使用虚拟内存 GPU要报错
-                # drop_last=True,  # 除于batch_size余下的数据
-                collate_fn=_collate_fn,
-            )
     # iter(data_loader).__next__()
     return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 

@@ -11,6 +11,8 @@ from f_tools.fun_od.f_boxes import xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoin
 from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
 from f_tools.pic.f_show import show_bbox4ts, f_show_3box4pil, show_anc4pil
 
+torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
+
 
 def x_bce(i, o):
     '''
@@ -23,20 +25,48 @@ def x_bce(i, o):
 
 
 def t_focal_loss():
-    # 正例差距小 0.1054 0.0003
-    pconf, gconf = torch.tensor(0.9), torch.tensor(1.)
-    # 负例差距小 0.1054 0.0008
-    pconf, gconf = torch.tensor(0.1), torch.tensor(0.)
-    # 负例差距大 2.3026 1.3988 这个是重点
-    pconf, gconf = torch.tensor(0.9), torch.tensor(0.)
-    # 正例差距大 2.3026 0.4663
+    # # 正例差距小 0.1054 0.0003
+    # pconf, gconf = torch.tensor(0.9), torch.tensor(1.)
+    # # 负例差距小 0.1054 0.0008
+    # pconf, gconf = torch.tensor(0.1), torch.tensor(0.)
+    # # 负例差距大 2.3026 1.3988 这个是重点
+    # pconf, gconf = torch.tensor(0.9), torch.tensor(0.)
+    # # 正例差距大 2.3026 0.4663
     # pconf, gconf = torch.tensor(0.1), torch.tensor(1.)
+    '''
+    alpha 越大 负债损失越小
+    gamma 越大 中间损失越小
+    :return:
+    '''
+    # 交叉熵是一样的
+    # tensor([100.00000,   2.30258,   1.60944,   1.20397,   0.91629,   0.69315,   0.51083,   0.35667,   0.22314,   0.10536,   0.00000])
+    # 反例 ： tensor([   75.00000,     1.39882,     0.77253,     0.44246,     0.24740,     0.12997,     0.06130,     0.02408,     0.00669,     0.00079,     0.00000])
+    # 正例 ： tensor([   25.00000,     0.46627,     0.25751,     0.14749,     0.08247,     0.04332,     0.02043,     0.00803,     0.00223,     0.00026,    -0.00000])
+    alpha, gamma = 0.25, 2.  # alpha 0.5以下 负例主导,越小负例影响大
+    # tensor([   50.00000,     0.93255,     0.51502,     0.29497,     0.16493,     0.08664,     0.04087,     0.01605,     0.00446,     0.00053,     0.00000])
+    # tensor([   50.00000,     0.93255,     0.51502,     0.29497,     0.16493,     0.08664,     0.04087,     0.01605,     0.00446,     0.00053,    -0.00000])
+    alpha, gamma = 0.5, 2.  # alpha 是正负样本主导比例
+    alpha, gamma = 0.5, 0.1  # gamma 0.5倍 一半时与交叉熵相同 恢复线性
+    alpha, gamma = 0.75, 0.9  # 正例主导 正例3倍
+    alpha, gamma = 0.75, 2  # 上了 0.5 就减损失
+
+    pconf = torch.arange(1.0, -0.01, -0.1)
+    gconf = torch.zeros_like(pconf)
 
     loss_none = F.binary_cross_entropy(pconf, gconf, reduction='none')
-    print(loss_none.sum())
-    alpha = 0.25
-    gamma = 2.
-    fun_loss = FocalLoss_v2(is_oned=True)
+    # print(loss_none)
+
+    fun_loss = FocalLoss_v2(alpha=alpha, gamma=gamma, is_oned=True, reduction='none')
+    loss = fun_loss(pconf, gconf)
+    print(loss)
+
+    pconf = torch.arange(0, 1.01, 0.1)
+    gconf = torch.ones_like(pconf)
+
+    loss_none = F.binary_cross_entropy(pconf, gconf, reduction='none')
+    # print(loss_none)
+
+    fun_loss = FocalLoss_v2(alpha=alpha, gamma=gamma, is_oned=True, reduction='none')
     loss = fun_loss(pconf, gconf)
     print(loss)
 
@@ -279,7 +309,7 @@ class LossYOLOv3(nn.Module):
         super(LossYOLOv3, self).__init__()
         self.cfg = cfg
         self.anc_obj = anc_obj
-        self.focal_loss = FocalLoss_v2()
+        self.focal_loss = FocalLoss_v2(alpha=cfg.FOCALLOSS_ALPHA, gamma=cfg.FOCALLOSS_GAMMA, )
 
     def forward(self, p_yolo_ts, targets, imgs_ts=None):
         ''' 只支持相同的anc数
@@ -299,17 +329,21 @@ class LossYOLOv3(nn.Module):
         # 层尺寸   tensor([[52., 52.], [26., 26.], [13., 13.]])
         # feature_sizes = np.array(self.anc_obj.feature_sizes)
         feature_sizes = torch.tensor(self.anc_obj.feature_sizes, dtype=torch.float32, device=device)
+        # tensor([8112, 2028,  507], dtype=torch.int32)
         nums_feature_offset = feature_sizes.prod(dim=1) * torch.tensor(self.cfg.NUMS_ANC, device=device)  # 2704 676 169
 
         # 2704 676 169 -> tensor([8112, 2028,  507])
         nums_ceng = (feature_sizes.prod(axis=1) * 3).type(torch.int)
-        # fszie torch.Size([10647, 2]) 数组索引 只能用np
+        # 转为np 用数组索引 tensor([[52., 52.], [26., 26.],[13., 13.]]) -> torch.Size([10647, 2]) 数组索引 只能用np
         fsize_p_anc = np.repeat(feature_sizes.cpu(), nums_ceng.cpu(), axis=0)
-        fsize_p_anc = fsize_p_anc.clone().detach().to(device)  # 安全
+        fsize_p_anc = fsize_p_anc.clone().detach().to(device)  # cpu->gpu 安全
 
         # 匹配完成的数据
         _num_total = sum(nums_feature_offset)  # 10647
         _dim = 4 + 1 + self.cfg.NUM_CLASSES  # 25
+        nums_feature_offset[2] = nums_feature_offset[0] + nums_feature_offset[1]
+        nums_feature_offset[1] = nums_feature_offset[0]
+        nums_feature_offset[0] = 0
 
         loss_cls_pos = 0
         loss_box_pos = 0  # 只计算匹配的
@@ -343,9 +377,9 @@ class LossYOLOv3(nn.Module):
             # 每一个bbox对应的9个anc tensor([[52., 52.], [26., 26.], [13., 13.]])
             # sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True) torch复制
             # feature_sizes = torch.tensor(feature_sizes.copy(), dtype=torch.float32).to(device)
-            # 单复制+整体复制 与多个box匹配 只支持每层相同的anc数(索引不支持数组) [[52., 52.],[52., 52.],[52., 52.], ...[26., 26.]..., [13., 13.]...]
+            # 与多个box匹配 只支持每层相同的anc数(索引不支持数组) [[52., 52.],[52., 52.],[52., 52.], ...[26., 26.]..., [13., 13.]...]
             num_boxes = g_boxes_xywh.shape[0]
-            # 这里 fsize_p n*9个
+            # 这里 fsize_p n*9个 单体 + 整体
             fsize_p_n9 = feature_sizes.repeat_interleave(self.cfg.NUMS_ANC[0], dim=0).repeat(num_boxes, 1)
             # XY对就 col rows
             colrow_index = get_boxes_colrow_index(g_boxes_xywh_p[:, :2], fsize_p_n9)
@@ -362,8 +396,8 @@ class LossYOLOv3(nn.Module):
             if self.cfg.IS_VISUAL:
                 # 显示 boxes 中心点 黄色, 及计算出来的匹配 anc 的位置 3个层的中心点是不一样的 显示的大框 在网格左上角
                 # ancs_ltrb = xywh2ltrb(ancs_xywh)
-                # f_show_3box4pil(img_pil, g_boxes=g_boxes_ltrb,
-                #                 # boxes1=ancs_ltrb[:3, :],
+                # f_show_3box4pil(img_pil, g_boxes=g_boxes_ltrb,  # 黄色
+                #                 boxes1=ancs_ltrb[:3, :],
                 #                 boxes2=ancs_ltrb[3:6, :],
                 #                 boxes3=ancs_ltrb[6:, :],
                 #                 grids=self.anc_obj.feature_sizes[-1])
@@ -372,22 +406,24 @@ class LossYOLOv3(nn.Module):
             '''批量找出每一个box对应的anc index'''
             # 主动构建偏移 使每个框的匹配过程独立 tensor([0, 1, 2, 3, 4, 5, 6, 7], device='cuda:0')
             ids = torch.arange(num_boxes).to(device)  # 9个anc 0,1,2 只支持每层相同的anc数
+            # (n,4) + (n,1)---(n,4) = (n,4)  扩展
             g_boxes_ltrb_offset = g_boxes_ltrb + ids[:, None]  # boxes加上偏移 1,2,3
             # 单体复制 对应anc数 1,2,3 -> 000000000 111111111 222222222
             ids_offset = ids.repeat_interleave(num_anc)
+            # 与box 匹配的 anc
             ancs_ltrb = xywh2ltrb(ancs_xywh)  # 转ltrb 用于计划iou
             # 两边都加了同样的偏移
-            iou = calc_iou4ts(g_boxes_ltrb_offset, ancs_ltrb + ids_offset[:, None], is_ciou=True)  # 这里都等于0
+            ancs_ltrb_offset = ancs_ltrb + ids_offset[:, None]
+            iou = calc_iou4ts(g_boxes_ltrb_offset, ancs_ltrb_offset, is_ciou=True)  # 这里都等于0
             # iou_sort = torch.argsort(-iou, dim=1) % num_anc  # 9个
             # iou_sort = torch.argsort(-iou, dim=1) % num_anc  # 求余数
             _, max_indexs = iou.max(dim=1)  # box对应anc的 index
             max_indexs = max_indexs % num_anc  # index 偏移值的修正
 
+            '''---- 整体修复box  anc左上角+偏移  ---'''
             # 找出与pbox  与gbox 最大的index
             p_offxy = torch.sigmoid(p_yolo_ts[i, :, :2])  # xy 需要归一化修复
             p_wh = p_yolo_ts[i, :, 2:4]
-
-            '''---- 修复box  anc左上角+偏移  ---'''
             # torch.Size([10647, 2])
             p_box_xy = p_offxy / fsize_p_anc + self.anc_obj.ancs[:, :2]  # xy修复
             # wh通过 e 的预测次方 是anc的倍数
@@ -419,15 +455,13 @@ class LossYOLOv3(nn.Module):
             # 计算最大 anc 索引对应在哪个特图层
             match_feature_index = torch.true_divide(max_indexs, num_feature).type(torch.int64)  #
             # tensor([8112., 2028.,  507.]) ->[0., 8112,  2028.+8112.]
-            nums_feature_offset[2] = nums_feature_offset[0] + nums_feature_offset[1]
-            nums_feature_offset[1] = nums_feature_offset[0]
-            nums_feature_offset[0] = 0
             num_feature_offset = nums_feature_offset[match_feature_index]
             colrow_num = colrow_index[torch.arange(num_boxes, device=device) * num_anc + max_indexs]
-            _row_index = colrow_num[:, 1]  # [4]
-            _col_index = colrow_num[:, 0]  # [4]
+            _row_index = colrow_num[:, 1]  # [1,2]
+            _col_index = colrow_num[:, 0]  # [3,2]
+            # 特图层的行列偏移
             offset_colrow = _row_index * feature_sizes[match_feature_index][:, 0] + _col_index
-            # 获取anc数
+            # 对应物图层的获取anc数
             _nums_anc = torch.tensor(self.cfg.NUMS_ANC, device=device)[match_feature_index]
             offset_total = num_feature_offset + offset_colrow * _nums_anc
             match_index_pos = (offset_total + max_indexs % num_feature).type(torch.int64)
@@ -448,7 +482,9 @@ class LossYOLOv3(nn.Module):
             _l_conf += (self.focal_loss(pconf, gconf) / num_boxes)
 
             '''----- 正例box 损失 -----'''
-            ious = bbox_iou4one(g_boxes_ltrb, p_box_ltrb[match_index_pos, :])
+            ious = bbox_iou4one(g_boxes_ltrb, p_box_ltrb[match_index_pos, :], is_ciou=True)
+            # ious = bbox_iou4one(g_boxes_ltrb, p_box_ltrb[match_index_pos, :], is_giou=True)
+            # ious = bbox_iou4one(g_boxes_ltrb, p_box_ltrb[match_index_pos, :], is_diou=True)
             w = 2 - g_boxes_xywh[:, 2] * g_boxes_xywh[:, 3]  # 增加小目标的损失权重
             _l_box_pos += torch.mean(w * (1 - ious))  # 每个框的损失
             # _l_box_pos += torch.sum(w * (1 - ious)) / num_boxes  # 每个框的损失
@@ -792,8 +828,12 @@ if __name__ == '__main__':
 
     np.random.seed(20201031)
 
+    # pconf = torch.arange(1.0, -0.01, -0.1)
+    # print(pconf)
+
+    t_focal_loss()
+
     # t_多值交叉熵()
     # f_二值交叉熵2()
     # f_二值交叉熵1()
-    t_focal_loss()
     # t_LossYOLO()

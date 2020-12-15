@@ -1,5 +1,5 @@
 class CFG:
-    DEBUG = True
+    DEBUG = False
     IS_FORCE_SAVE = False
 
     IS_USE_KEYPOINT = True
@@ -27,8 +27,8 @@ class CFG:
     LOSS_WEIGHT = [1, 1, 1]  # 损失系数 用于  loss_bboxs loss_labels  loss_keypoints
     NEG_RATIO = 3  # 负样本倍数
     LR0 = 1e-3 / 10 / 2
-    FOCALLOSS_ALPHA = 0.25
-    FOCALLOSS_GAMMA = 2.
+    FOCALLOSS_ALPHA = 0.75
+    FOCALLOSS_GAMMA = 2
 
     IS_MIXTURE_FIX = True  # 半精度训练
     PATH_HOST = 'M:'
@@ -54,7 +54,7 @@ class CFG:
     PATH_COCO_TARGET_EVAL = PATH_DATA_ROOT + '/coco/annotations'
     PATH_IMG_EVAL = PATH_DATA_ROOT + '/coco/images/val2017'
 
-    IMAGE_SIZE = (640, 640)  # wh 预处理 统一尺寸
+    IMAGE_SIZE = [640, 640]  # wh 预处理 统一尺寸
     # GRID = 7  # 输出网格
     NUM_CLASSES = 1  # 模型分类数 人脸只有1 0 影响类别输出   -----这个要根据样本改----
     # NUM_BBOX = 1

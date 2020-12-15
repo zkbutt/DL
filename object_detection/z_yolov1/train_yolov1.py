@@ -14,7 +14,7 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_fit_fun import init_od, base_set
 
 '''
-linux用这个   python /home/win10_sys/tmp/DL/object_detection/z_yolov1/train_yolov1.py
+linux用这个   python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/train_yolov1.py
 '''
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''

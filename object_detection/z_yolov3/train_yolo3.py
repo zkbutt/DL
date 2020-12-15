@@ -2,21 +2,22 @@ import math
 import os
 import sys
 
+from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
+
 '''用户命令行启动'''
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 from object_detection.z_yolov3.process_fun import init_model, train_eval, data_loader
 
-from f_tools.fits.f_fit_fun import init_od, base_set
-from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
+from f_tools.fits.f_fit_fun import init_od, base_set, custom_set
 
 from f_tools.GLOBAL_LOG import flog
 
 '''
 多尺度训练 multi-scale
  0:15:02
-python /home/win10_sys/tmp/DL/object_detection/f_yolov3/train_yolo3.py
+python /AI/temp/tmp_pycharm/DL/object_detection/f_yolov3/train_yolo3.py
 '''
 
 if __name__ == '__main__':
@@ -24,6 +25,7 @@ if __name__ == '__main__':
     # -----------通用系统配置----------------
     init_od()
     device, cfg = base_set(CFG)
+    custom_set(cfg)
 
     if cfg.IS_MOSAIC:
         cfg.IMAGE_SIZE = [512, 512]
@@ -35,10 +37,10 @@ if __name__ == '__main__':
         # assert math.fmod(cfg.IMAGE_SIZE[1], down_sample) == 0, "尺寸 %s must be a %s 的倍数" % (cfg.IMAGE_SIZE, small_conf)
 
         '''-----多尺度训练-----'''
-        if CFG.IS_MULTI_SCALE:
+        if cfg.IS_MULTI_SCALE:
             # 动态输入尺寸选定 根据预设尺寸  0.667~1.5 之间 满足32的倍数
-            imgsz_min = cfg.IMAGE_SIZE[0] // CFG.MULTI_SCALE_VAL[1]
-            imgsz_max = cfg.IMAGE_SIZE[0] // CFG.MULTI_SCALE_VAL[0]
+            imgsz_min = cfg.IMAGE_SIZE[0] // cfg.MULTI_SCALE_VAL[1]
+            imgsz_max = cfg.IMAGE_SIZE[0] // cfg.MULTI_SCALE_VAL[0]
             # 将给定的最大，最小输入尺寸向下调整到32的整数倍
             grid_min, grid_max = imgsz_min // down_sample, imgsz_max // down_sample
             imgsz_min, imgsz_max = int(grid_min * down_sample), int(grid_max * down_sample)

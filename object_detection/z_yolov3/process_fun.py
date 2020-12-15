@@ -19,38 +19,33 @@ def cre_data_transform(cfg):
     if cfg.IS_MOSAIC:
         data_transform = {
             "train": Compose([
-                # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+                # ResizeKeep(cfg.IMAGE_SIZE),
                 # Resize(cfg.IMAGE_SIZE),
                 ColorJitter(),
                 ToTensor(),
                 RandomHorizontalFlip4TS(0.5),
-                Normalization4TS(),
-            ], cfg),
-            "val": Compose([
-                # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
-                Resize(cfg.IMAGE_SIZE),
-                ToTensor(),
                 Normalization4TS(),
             ], cfg)
         }
     else:
         data_transform = {
             "train": Compose([
-                ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+                ResizeKeep(cfg.IMAGE_SIZE),
                 # Resize(cfg.IMAGE_SIZE),
                 ColorJitter(),
                 ToTensor(),
                 RandomHorizontalFlip4TS(0.5),
                 Normalization4TS(),
             ], cfg),
-            "val": Compose([
-                ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
-                # Resize(cfg.IMAGE_SIZE),
-                ToTensor(),
-                Normalization4TS(),
-            ], cfg)
         }
 
+    data_transform['val'] = Compose([
+        ResizeKeep(cfg.IMAGE_SIZE),
+        # Resize(cfg.IMAGE_SIZE),
+        ColorJitter(),
+        ToTensor(),
+        Normalization4TS(),
+    ], cfg)
     return data_transform
 
 

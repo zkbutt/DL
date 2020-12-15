@@ -41,6 +41,7 @@ class PredictYolov3(nn.Module):
         # 确认一阶段有没有目标
         torch.sigmoid_(p_yolo_ts4[:, :, 4:])  # 处理conf 和 label
         # torch.Size([7, 10647, 25]) -> torch.Size([7, 10647])
+        flog.info('conf 最大 %s', p_yolo_ts4[:, :, 4].max())
         mask_box = p_yolo_ts4[:, :, 4] > self.threshold_conf
         if not torch.any(mask_box):  # 如果没有一个对象
             flog.error('该批次没有找到目标')
@@ -206,7 +207,7 @@ class YoloV3SPP(nn.Module):
         _out = torch.cat([_out, backbone_out1], 1)  # 叠加
         out1, _ = _branch(self.last_layer1, _out)  # torch.Size([batch, 75, 52, 52])
 
-        # 自定义数据重装函数 torch.Size([1, 10647, 25])
+        # 自定义数据重装函数 torch.Size([1, 10647, 25])  堆52 堆26 堆13
         outs = self.data_packaging([out1, out2, out3], self.nums_anc)
         '''这里输出每层每格的对应三个anc'''
         # outs[:, :, :2] = self.sigmoid_out(outs[:, :, :2])  # xy归一

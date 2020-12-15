@@ -14,7 +14,7 @@ def resize_np_keep(img_np, new_size, mode='lt', is_fill=True, fill_color=(114, 1
     :param mode: center lt
     :param fill_priority: 大边优先
     :return:
-        img, old_size list(h,w)
+        img, old_size list(h,w) 最后进行反向
         (top, bottom, left, right) # 填充宽度
     '''
     assert isinstance(img_np, np.ndarray)
@@ -48,7 +48,7 @@ def resize_np_keep(img_np, new_size, mode='lt', is_fill=True, fill_color=(114, 1
             bottom = _pad_h
 
         img_np = cv2.copyMakeBorder(img_np, top, bottom, left, right, cv2.BORDER_CONSTANT, None, fill_color)
-    return img_np, ratio, old_size, (left, top, right, bottom)
+    return img_np, ratio, old_size[::-1], (left, top, right, bottom)
 
 
 def resize_img_tensor(image, new_size):

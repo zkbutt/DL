@@ -15,26 +15,27 @@ from f_tools.pic.f_size_handler import resize_np_keep
 def _show(img_ts, target, cfg, name):
     flog.debug('%s 后', name)
     img_pil = transforms.ToPILImage('RGB')(img_ts)
-    if 'keypoints' in target:
-        concatenate = np.concatenate([target['boxes'], target['keypoints']], axis=1)
-        concatenate[:, ::2] = concatenate[:, ::2] * cfg.IMAGE_SIZE[0]
-        concatenate[:, 1::2] = concatenate[:, 1::2] * cfg.IMAGE_SIZE[1]
-        show_bbox_keypoints4pil(
-            img_pil,
-            concatenate[:, :4],
-            concatenate[:, 4:14],
-            target['labels'])
-    else:
-        boxes = target['boxes']
-        if isinstance(boxes, np.ndarray):
-            bboxs_ = np.copy(target['boxes'])
-        elif isinstance(boxes, torch.Tensor):
-            bboxs_ = torch.clone(target['boxes'])
+    if target is not None:
+        if 'keypoints' in target:
+            concatenate = np.concatenate([target['boxes'], target['keypoints']], axis=1)
+            concatenate[:, ::2] = concatenate[:, ::2] * cfg.IMAGE_SIZE[0]
+            concatenate[:, 1::2] = concatenate[:, 1::2] * cfg.IMAGE_SIZE[1]
+            show_bbox_keypoints4pil(
+                img_pil,
+                concatenate[:, :4],
+                concatenate[:, 4:14],
+                target['labels'])
         else:
-            raise Exception('类型错误', type(boxes))
-        bboxs_[:, ::2] = bboxs_[:, ::2] * cfg.IMAGE_SIZE[0]
-        bboxs_[:, 1::2] = bboxs_[:, 1::2] * cfg.IMAGE_SIZE[1]
-        show_bbox4pil(img_pil, bboxs_, target['labels'])
+            boxes = target['boxes']
+            if isinstance(boxes, np.ndarray):
+                bboxs_ = np.copy(target['boxes'])
+            elif isinstance(boxes, torch.Tensor):
+                bboxs_ = torch.clone(target['boxes'])
+            else:
+                raise Exception('类型错误', type(boxes))
+            bboxs_[:, ::2] = bboxs_[:, ::2] * cfg.IMAGE_SIZE[0]
+            bboxs_[:, 1::2] = bboxs_[:, 1::2] * cfg.IMAGE_SIZE[1]
+            show_bbox4pil(img_pil, bboxs_, target['labels'])
 
 
 class BasePretreatment:
@@ -72,7 +73,8 @@ class ResizeKeep:
         :return:
         '''
         img_np = np.array(img_pil)
-        img_np, ratio, old_size, _ = resize_np_keep(img_np, self.newsize)
+        # old_size 是 hw
+        img_np, ratio, old_size, (left, top, right, bottom) = resize_np_keep(img_np, self.newsize)
         img_pil = Image.fromarray(img_np, mode="RGB")
 
         if target:
@@ -370,9 +372,10 @@ def f_recover_normalization4ts(img_ts):
     :param img_ts: c,h,w
     :return:
     '''
+    device = img_ts.device
     img_ts_show = img_ts.permute(1, 2, 0)
-    mean = torch.tensor([0.485, 0.456, 0.406])
-    std = torch.tensor([0.229, 0.224, 0.225])
+    mean = torch.tensor([0.485, 0.456, 0.406], device=device)
+    std = torch.tensor([0.229, 0.224, 0.225], device=device)
     img_ts_show = img_ts_show * std + mean
     img_ts_show = img_ts_show.permute(2, 0, 1)
     return img_ts_show

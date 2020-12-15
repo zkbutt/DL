@@ -472,7 +472,9 @@ def f_show_3box4pil(img_pil, g_boxes=None, boxes1=None, boxes2=None, boxes3=None
     默认安全
     :param img_pil:
     :param g_boxes: ltrb 归一化尺寸
-    :param boxes2:归一化尺寸
+    :param boxes1: 预测
+    :param boxes2: 归一化尺寸
+    :param boxes3: 修复
     :return:
     '''
     if is_safe:
