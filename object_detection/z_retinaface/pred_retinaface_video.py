@@ -10,7 +10,7 @@ from PIL import Image
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.device.f_device import init_video
-from f_tools.fits.fitting.f_fit_eval_base import f_prod_vodeo
+from f_tools.fits.fitting.f_fit_eval_base import f_prod_vodeo, f_prod_vodeo4keypoints
 from f_tools.pic.f_show import f_plot_od4pil
 from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
 from object_detection.z_retinaface.process_fun import init_model, cre_data_transform
@@ -39,6 +39,6 @@ if __name__ == '__main__':
     data_transform = cre_data_transform(cfg)
 
     # 使用视频预测
-    f_prod_vodeo(cap, data_transform, model, labels_lsit)
+    f_prod_vodeo4keypoints(cap, data_transform, model, labels_lsit)
 
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

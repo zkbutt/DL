@@ -7,9 +7,10 @@ from f_pytorch.tools_model.model_look import f_look_model
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet, load_od4voc
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
+from f_tools.datas.f_map.map_go import f_do_fmap
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2, f_evaluate4fmap
 from f_tools.pic.enhance.f_data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
     Normalization4TS, Resize, ResizeKeep
 from object_detection.z_yolov3.nets.net_yolov3 import YoloV3SPP
@@ -19,33 +20,37 @@ def cre_data_transform(cfg):
     if cfg.IS_MOSAIC:
         data_transform = {
             "train": Compose([
-                # ResizeKeep(cfg.IMAGE_SIZE),
-                # Resize(cfg.IMAGE_SIZE),
-                ColorJitter(),
-                ToTensor(),
-                RandomHorizontalFlip4TS(0.5),
-                Normalization4TS(),
-            ], cfg)
-        }
-    else:
-        data_transform = {
-            "train": Compose([
-                ResizeKeep(cfg.IMAGE_SIZE),
+                # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
                 # Resize(cfg.IMAGE_SIZE),
                 ColorJitter(),
                 ToTensor(),
                 RandomHorizontalFlip4TS(0.5),
                 Normalization4TS(),
             ], cfg),
+            "val": Compose([
+                ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+                # Resize(cfg.IMAGE_SIZE),
+                ToTensor(),
+                Normalization4TS(),
+            ], cfg)
         }
-
-    data_transform['val'] = Compose([
-        ResizeKeep(cfg.IMAGE_SIZE),
-        # Resize(cfg.IMAGE_SIZE),
-        ColorJitter(),
-        ToTensor(),
-        Normalization4TS(),
-    ], cfg)
+    else:
+        data_transform = {
+            "train": Compose([
+                ResizeKeep(cfg.IMAGE_SIZE),  # 这个有边界需要修正
+                # Resize(cfg.IMAGE_SIZE),
+                ColorJitter(),
+                ToTensor(),
+                RandomHorizontalFlip4TS(0.5),
+                Normalization4TS(),
+            ], cfg),
+            "val": Compose([
+                ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+                # Resize(cfg.IMAGE_SIZE),
+                ToTensor(),
+                Normalization4TS(),
+            ], cfg)
+        }
     return data_transform
 
 
@@ -90,18 +95,19 @@ def init_model(cfg, device, id_gpu=None):
     optimizer = optim.Adam(pg, lr0)
     # optimizer = optim.Adam(pg, lr0, weight_decay=5e-4)
     # 两次不上升，降低一半
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.75, patience=1, verbose=True)
-    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
-    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
+    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=3, verbose=True)
+    lr_scheduler = None
+    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
+    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg
     return model, optimizer, lr_scheduler, start_epoch
 
 
-def data_loader(cfg, is_mgpu=False):
+def data_loader(cfg, is_mgpu=False, ids2classes=None):
     data_transform = cre_data_transform(cfg)
 
-    _res = load_od4voc(cfg, data_transform, is_mgpu)
+    _res = load_od4voc(cfg, data_transform, is_mgpu, ids2classes)
     loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = _res
 
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
@@ -133,8 +139,9 @@ def train_eval(start_epoch, model, optimizer, lr_scheduler=None,
                 device=device,
             )
 
-            if lr_scheduler is not None:
-                lr_scheduler.step(log_dict['loss_total'])  # 更新学习
+            # if lr_scheduler is not None:
+            #     flog.warning('更新 lr_scheduler %s', log_dict['loss_total'])
+            #     lr_scheduler.step(log_dict['loss_total'])  # 更新学习
 
         if model.cfg.IS_COCO_EVAL:
             flog.info('COCO 验证开始 %s', epoch + 1)
@@ -152,21 +159,17 @@ def train_eval(start_epoch, model, optimizer, lr_scheduler=None,
                 mode=mode,
                 device=device,
                 eval_sampler=eval_sampler,
+                is_keeep=cfg.IS_KEEP_SCALE
             )
-            # return
-        # if model.cfg.IS_FMAP_EVAL:
-        #     flog.info('FMAP 验证开始 %s', epoch + 1)
-        #     res_eval = []
-        #     f_evaluate4fmap(
-        #         data_loader=loader_val_fmap,
-        #         predict_handler=predict_handler,
-        #         epoch=epoch,
-        #         res_eval=res_eval)
-        #     path_dt_info = loader_val_fmap.dataset.path_dt_info
-        #     path_gt_info = loader_val_fmap.dataset.path_gt_info
-        #     path_imgs = loader_val_fmap.dataset.path_imgs
-        #     f_do_fmap(path_gt=path_gt_info, path_dt=path_dt_info, path_img=path_imgs,
-        #               confidence=cfg.THRESHOLD_PREDICT_CONF,
-        #               iou_map=[], ignore_classes=[], console_pinter=True,
-        #               plot_res=False, animation=False)
-        #     return
+
+        if model.cfg.IS_FMAP_EVAL:
+            flog.info('FMAP 验证开始 %s', epoch + 1)
+            model.eval()
+            f_evaluate4fmap(
+                model=model,
+                data_loader=loader_val_fmap,
+                is_keeep=cfg.IS_KEEP_SCALE,
+                cfg=cfg,
+            )
+
+            return

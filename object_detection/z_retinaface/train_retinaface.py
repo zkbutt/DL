@@ -14,6 +14,7 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_fit_fun import init_od, base_set
 
 '''
+IOU大于0.5的为正  小于0.3的为负 负例倒序取3倍
 '''
 
 if __name__ == '__main__':

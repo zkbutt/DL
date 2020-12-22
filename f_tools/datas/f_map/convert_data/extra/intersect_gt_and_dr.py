@@ -2,6 +2,8 @@ import shutil
 import sys
 import os
 import glob
+
+from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.f_map.CONFIG_MAP import CFG
 
 ## This script ensures same number of files in ground-truth and detection-results folder.
@@ -30,11 +32,13 @@ def backup(src_folder, backup_files, backup_folder):
 
 
 def f_recover_gt(gt_path):
+    # flog.debug('f_recover_gt 运行中 %s', gt_path)
     path_gt_bak = os.path.join(gt_path, BACKUP_FOLDER)
     if os.path.exists(path_gt_bak):
         os.chdir(path_gt_bak)
         files_gt_bak = glob.glob('*.txt')  # 获取文件名
-        for file in files_gt_bak:
+        from tqdm import tqdm
+        for file in tqdm(files_gt_bak,desc='f_recover_gt 运行中'):
             if os.path.exists(os.path.join(gt_path, file)):
                 continue
             shutil.move(file, gt_path)
@@ -82,11 +86,11 @@ if __name__ == '__main__':
     # parent_path = os.path.abspath(os.path.join(parent_path, os.pardir))
     # GT_PATH = os.path.join(parent_path, 'input', 'ground-truth')
     # DR_PATH = os.path.join(parent_path, 'input', 'detection-results')
-    gt_path = CFG.PATH_GT
-    DR_PATH = CFG.PATH_DT
+    path_gt = CFG.PATH_GT
+    path_dt = CFG.PATH_DT
     IMG_PATH = CFG.PATH_IMG
     # recover = True
 
-    f_recover_gt()
+    f_recover_gt(path_gt)  # 恢复
 
-    f_fix_txt(gt_path, DR_PATH)
+    f_fix_txt(path_gt, path_dt)  # 修复

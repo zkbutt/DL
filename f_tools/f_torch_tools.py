@@ -91,6 +91,6 @@ def save_weight(path_save, model, name, loss=None, optimizer=None, lr_scheduler=
             'optimizer': optimizer.state_dict() if optimizer else None,
             'lr_scheduler': lr_scheduler.state_dict() if lr_scheduler else None,
             'epoch': epoch}
-        file_weight = os.path.join(path_save, (name + '-{}_{}.pth').format(epoch + 1, loss))
+        file_weight = os.path.join(path_save, (name + '-{}_{}.pth').format(epoch + 1, round(loss, 3)))
         torch.save(sava_dict, file_weight)
         flog.info('保存成功 %s', file_weight)

@@ -4,8 +4,7 @@ import math
 
 import cv2
 import numpy as np
-from networkx.drawing.tests.test_pylab import plt
-
+import matplotlib.pyplot as plt
 
 
 def log_average_miss_rate(prec, rec, num_images):

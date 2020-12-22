@@ -21,7 +21,8 @@ if __name__ == '__main__':
     '''
     '''------------------系统配置---------------------'''
     cfg = CFG
-    # cfg.THRESHOLD_PREDICT_CONF = 0.2
+    cfg.IMAGE_SIZE = [640, 640]
+    # cfg.THRESHOLD_PREDICT_CONF = 0.4
     device = torch.device('cpu')
     flog.info('模型当前设备 %s', device)
     json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_voc_proj.json'), 'r', encoding='utf-8')
@@ -45,5 +46,5 @@ if __name__ == '__main__':
         '''---------------数据加载及处理--------------'''
         file_img = os.path.join(path_img, name)
         # 这里需要修复
-        f_prod_pic(file_img, model, labels_lsit, data_transform, is_keeep=True, cfg=cfg)
+        f_prod_pic(file_img, model, labels_lsit, data_transform, is_keeep=cfg.IS_KEEP_SCALE, cfg=cfg)
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

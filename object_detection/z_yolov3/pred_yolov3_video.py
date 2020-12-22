@@ -38,6 +38,6 @@ if __name__ == '__main__':
     data_transform = cre_data_transform(cfg)
 
     # 使用视频预测
-    f_prod_vodeo(cap, data_transform, model, labels_lsit, is_keeep=True)
+    f_prod_vodeo(cap, data_transform, model, labels_lsit, is_keeep=cfg.IS_KEEP_SCALE)
 
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

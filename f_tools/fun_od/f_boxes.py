@@ -183,15 +183,31 @@ def fix_bbox(anc, p_loc, variances=(0.1, 0.2)):
     return _t
 
 
-def fix_boxes4yolo3(boxes, anc):
+def fix_boxes4yolo3(p_yolo_boxes, anc, fsize_p_anc):
     '''
-
-    :param boxes: torch.Size([10647, 4])
-    :param anc: torch.Size([10647, 4])
+    支持三维 anc fsize_p_anc 是二维
+    :param p_yolo_boxes: torch.Size([25200, 4])
+    :param anc: torch.Size([25200, 4])
+    :param fsize_p_anc:  torch.Size([25200, 2])
     :return:
     '''
-    boxes
-    return boxes
+    dim = len(p_yolo_boxes.shape)
+    p_yolo_boxes_s = p_yolo_boxes.sigmoid()
+
+    if dim == 2:
+        p_offxy = p_yolo_boxes_s[:, :2] / fsize_p_anc  # xy 需要归一化修复
+        # p_box_xy = p_offxy * 2. - 0.5 + anc[:, :2]  # xy修复
+        p_wh = p_yolo_boxes_s[:, 2:4]
+    elif dim == 3:
+        p_offxy = p_yolo_boxes_s[:, :, :2] / fsize_p_anc  # xy 需要归一化修复
+        p_wh = p_yolo_boxes_s[:, :, 2:4]
+
+    else:
+        raise Exception('维度错误', p_yolo_boxes.shape)
+    p_box_xy = p_offxy + anc[:, :2]
+    p_box_wh = p_wh.exp() * anc[:, 2:]  # wh修复
+    p_box_xywh = torch.cat([p_box_xy, p_box_wh], dim=-1)
+    return p_box_xywh
 
 
 def fix_keypoints(anc, p_keypoints, variances=(0.1, 0.2)):
@@ -373,110 +389,6 @@ def calc_iou_wh4ts(wh1, wh2):
     union_area = (w1 * h1 + 1e-16) + w2 * h2 - inter_area
     return inter_area / union_area
 
-
-# @torch.no_grad()
-# def pos_match(ancs, bboxs, criteria):
-#     '''
-#     正样本选取策略
-#         1. 每一个bboxs框 尽量有一个anc与之对应
-#         2. 每一个anc iou大于大于阀值的保留
-#     :param ancs:  xywh
-#     :param bboxs: 标签框 (xx,4)
-#     :param criteria: 小于等于0.35的反例
-#     :return:
-#         label_neg_mask: 返回反例的布尔索引
-#         anc_bbox_ind : 通过 g_bbox[anc_bbox_ind]  可选出标签 与anc对应 其它为0
-#     '''
-#     # (bboxs个,anc个)
-#     # print(bboxs.shape[0])
-#     iou = calc_iou4ts(bboxs, xywh2ltrb(ancs))
-#     # (1,anc个值)降维  每一个anc对应的bboxs  最大的iou和index
-#     anc_bbox_iou, anc_bbox_ind = iou.max(dim=0)  # 存的是 bboxs的index
-#
-#     # (bbox个,1)降维  每一个bbox对应的anc  最大的iou和index
-#     bbox_anc_iou, bbox_anc_ind = iou.max(dim=1)  # 存的是 anc的index
-#
-#     # 强制保留 将每一个bbox对应的最大的anc索引 的anc_bbox_iou值强设为2 大于阀值即可
-#     anc_bbox_iou.index_fill_(0, bbox_anc_ind, 2)  # dim index val
-#
-#     # 确保保留的 anc 的 gt  index 不会出错 exp:一个anc对应多个bboxs, bbox只有这一个anc时
-#     _ids = torch.arange(0, bbox_anc_ind.size(0), dtype=torch.int64).to(anc_bbox_ind)
-#     anc_bbox_ind[bbox_anc_ind[_ids]] = _ids
-#     # for j in range(bbox_anc_ind.size(0)): # 与上句等价
-#     #     anc_bbox_ind[bbox_anc_ind[j]] = j
-#
-#     # ----------正例的index 和 正例对应的bbox索引----------
-#     # masks = anc_bbox_iou > criteria  # anc 的正例index
-#     # masks = anc_bbox_ind[masks]  # anc对应最大bboxs的索引 进行iou过滤筛选 形成正例对应的bbox的索引
-#
-#     # 这里改成反倒置0
-#     label_neg_mask = anc_bbox_iou <= criteria  # anc 的正例index
-#
-#     return label_neg_mask, anc_bbox_ind
-
-# def pos_match4yolo(ancs, bboxs, criteria):
-#     '''
-#     正例与GT最大的 负例<0.5 >0.5忽略
-#     :param ancs: xywh
-#     :param bboxs: ltrb
-#     :param criteria: 0.5
-#     :return:
-#
-#     '''
-#     threshold = 99
-#     # (bboxs个,anc个)
-#     gn = bboxs.shape[0]
-#     num_anc = ancs.shape[0]
-#     iou = calc_iou4ts(bboxs, xywh2ltrb(ancs), is_ciou=True)
-#
-#     maxs_iou_index = torch.argsort(-iou, dim=1)
-#     anc_bbox_ind = torch.argsort(-iou, dim=0)
-#     pos_ancs_index = []  # [n]
-#     pos_bboxs_index = []  # [n]
-#     for i in range(gn):
-#         for j in range(num_anc):
-#             # 已匹配好anc选第二大的
-#             if maxs_iou_index[i][j] not in pos_ancs_index:
-#                 iou[i, j] = threshold  # 强制最大 大于阀值即可
-#                 pos_ancs_index.append(maxs_iou_index[i][j])
-#                 pos_bboxs_index.append(anc_bbox_ind[i][j])
-#                 break
-#
-#     # 反倒 torch.Size([1, 10647])
-#     mask_neg = iou <= criteria  # anc 的正例index
-#     # torch.Size([1, 10647])
-#     mask_ignore = (iou >= criteria) == (iou < threshold)
-#
-#     return pos_ancs_index, pos_bboxs_index, mask_neg, mask_ignore
-
-# def _ff_pos_match4yolo(ancs, bboxs, criteria):
-#     '''
-#     3个anc 一个GT
-#     :param ancs:  ltrb
-#     :param bboxs: 标签框 (xx,4)
-#     :param criteria: 小于等于0.35的反例
-#     :return:
-#         返回 1~3个anc的索引 0,1,2
-#     '''
-#     # (bboxs个,anc个)
-#     iou = calc_iou4ts(bboxs, ancs)
-#
-#     '''实现强制保留一个'''
-#     # (1,anc个值)  每一个anc对应的bboxs  最大的iou和index
-#     iou_max_gt_anc, anc_ind = iou.max(dim=0)  # 存的是 bboxs的index
-#     # (bbox个,1) 每一个bbox对应的anc  最大的iou和index
-#     iou_max_anc_gt, gt_ind = iou.max(dim=1)  # 存的是 anc的index
-#     # 强制保留 将每一个bbox对应的最大的anc索引 的anc_bbox_iou值强设为2 大于阀值即可
-#     iou_max_gt_anc.index_fill_(0, gt_ind, 2)  # dim index val
-#
-#     # gt_ind.size(0) = GT的个数  确保保留的 anc 的 gt  index 不会出错 exp:一个anc对应多个bboxs, bbox只有这一个anc时
-#     _ids = torch.arange(0, gt_ind.size(0), dtype=torch.int64).to(anc_ind)
-#     _gt = gt_ind[_ids]
-#     anc_ind[_gt] = _ids
-#
-#     mask_pos = iou_max_gt_anc.view(-1) > criteria  # anc 的正例index
-#
-#     return mask_pos
 
 def resize_boxes4np(boxes, original_size, new_size):
     '''

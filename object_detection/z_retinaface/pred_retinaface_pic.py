@@ -4,7 +4,7 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic
+from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic, f_prod_pic4keypoints
 from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
 from object_detection.z_retinaface.process_fun import init_model, cre_data_transform
 
@@ -34,5 +34,5 @@ if __name__ == '__main__':
     for name in file_names:
         '''---------------数据加载及处理--------------'''
         file_img = os.path.join(path_img, name)
-        f_prod_pic(file_img, model, labels_lsit, data_transform)
+        f_prod_pic4keypoints(file_img, model, labels_lsit, data_transform)
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

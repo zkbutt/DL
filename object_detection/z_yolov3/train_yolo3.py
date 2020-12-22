@@ -1,34 +1,32 @@
-import math
 import os
 import sys
-
-from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
 
 '''用户命令行启动'''
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
+import json
+import math
 from object_detection.z_yolov3.process_fun import init_model, train_eval, data_loader
-
+import torch
+from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_recover_gt
+from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
 from f_tools.fits.f_fit_fun import init_od, base_set, custom_set
 
 from f_tools.GLOBAL_LOG import flog
 
 '''
-多尺度训练 multi-scale
- 0:15:02
-python /AI/temp/tmp_pycharm/DL/object_detection/f_yolov3/train_yolo3.py
+
+
+python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov3/train_yolo3.py
 '''
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
     # -----------通用系统配置----------------
     init_od()
-    device, cfg = base_set(CFG)
+    device, cfg, ids2classes = base_set(CFG)
     custom_set(cfg)
-
-    if cfg.IS_MOSAIC:
-        cfg.IMAGE_SIZE = [512, 512]
 
     if hasattr(cfg, 'FEATURE_MAP_STEPS'):
         # 预设尺寸必须是下采样倍数的整数倍 输入一般是正方形
@@ -54,8 +52,12 @@ if __name__ == '__main__':
     '''------------------模型定义---------------------'''
     model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=None)
 
-    # '''---------------数据加载及处理--------------'''
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = data_loader(model.cfg, is_mgpu=False)
+    '''---------------数据加载及处理--------------'''
+
+    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = data_loader(
+        model.cfg,
+        is_mgpu=False,
+        ids2classes=ids2classes)
 
     # flog.debug('---训练开始---epoch %s', start_epoch + 1)
     # 有些参数可通过模型来携带  model.nc = nc

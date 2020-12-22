@@ -11,7 +11,7 @@ from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init
 from f_tools.fits.f_lossfun import LossRetinaface
 
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2, f_evaluate4fmap
 from f_tools.pic.enhance.f_data_pretreatment import RandomHorizontalFlip4TS, Normalization4TS, Compose, ColorJitter, \
     ToTensor, Resize
 from object_detection.z_retinaface.nets.net_retinaface import RetinaFace
@@ -185,7 +185,8 @@ def data_loader(cfg, is_mgpu=False):
         cfg=cfg
     )
     _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu)
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = _res
+    loader_train, loader_val_coco, train_sampler, eval_sampler = _res
+    loader_val_fmap = None
     return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 
 
@@ -233,20 +234,15 @@ def train_eval(start_epoch, model, optimizer, lr_scheduler=None,
                 device=device,
                 eval_sampler=eval_sampler,
             )
-            # return
-        # if model.cfg.IS_FMAP_EVAL:
-        #     flog.info('FMAP 验证开始 %s', epoch + 1)
-        #     res_eval = []
-        #     f_evaluate4fmap(
-        #         data_loader=loader_val_fmap,
-        #         predict_handler=predict_handler,
-        #         epoch=epoch,
-        #         res_eval=res_eval)
-        #     path_dt_info = loader_val_fmap.dataset.path_dt_info
-        #     path_gt_info = loader_val_fmap.dataset.path_gt_info
-        #     path_imgs = loader_val_fmap.dataset.path_imgs
-        #     f_do_fmap(path_gt=path_gt_info, path_dt=path_dt_info, path_img=path_imgs,
-        #               confidence=cfg.THRESHOLD_PREDICT_CONF,
-        #               iou_map=[], ignore_classes=[], console_pinter=True,
-        #               plot_res=False, animation=False)
-        #     return
+
+        if model.cfg.IS_FMAP_EVAL:
+            flog.info('FMAP 验证开始 %s', epoch + 1)
+            model.eval()
+            f_evaluate4fmap(
+                model=model,
+                data_loader=loader_val_fmap,
+                is_keeep=cfg.IS_KEEP_SCALE,
+                cfg=cfg,
+            )
+
+            return

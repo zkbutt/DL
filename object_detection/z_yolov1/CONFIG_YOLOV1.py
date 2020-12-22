@@ -1,3 +1,6 @@
+import socket
+
+
 class CFG:
     DEBUG = True
     IS_FORCE_SAVE = False
@@ -19,6 +22,16 @@ class CFG:
 
     PATH_HOST = 'M:'  # 416
     # PATH_HOST = ''  # 需要尾部加/
+
+    host_name = socket.gethostname()
+    if host_name == 'Feadre-NB':
+        PATH_HOST = 'M:'
+        # raise Exception('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
+    elif host_name == 'e2680v2':
+        PATH_HOST = ''
+    # PATH_HOST = 'M:'  # 416
+    # PATH_HOST = '/home/bak3t/bak299g'  # 需要尾部加/
+
     '''训练参数'''
     SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
 

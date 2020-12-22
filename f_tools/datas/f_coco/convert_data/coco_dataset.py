@@ -103,7 +103,7 @@ class CocoDataset(Dataset):
         imgs = []
         boxs = []
         labels = []
-        for i in range(idx, idx + 4):
+        for i in range(idx * 4, idx * 4 + 4):
             img_pil, target = self.open_img_tar(i)
             imgs.append(img_pil)  # list(img_pil)
             boxs.append(target["boxes"])
@@ -140,7 +140,7 @@ class CocoDataset(Dataset):
 
         '''---------------cocoAPI测试 查看图片在归一化前------------------'''
         if self.cfg is not None and self.cfg.IS_VISUAL_PRETREATMENT:
-            show_bbox4pil(img_pil, target['boxes']) # 显示原图
+            show_bbox4pil(img_pil, target['boxes'])  # 显示原图
             # is_mosaic 这个用不起
             f_show_coco_pics(self.coco, self.path_img, ids_img=[index])
 

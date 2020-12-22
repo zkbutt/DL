@@ -12,7 +12,7 @@ from f_tools.fits.f_lossfun import LossYOLOv3
 import numpy as np
 
 from f_tools.fun_od.f_anc import FAnchors
-from f_tools.fun_od.f_boxes import xywh2ltrb
+from f_tools.fun_od.f_boxes import xywh2ltrb, fix_boxes4yolo3
 from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
 from f_tools.pic.f_show import show_anc4pil
 
@@ -41,10 +41,10 @@ class PredictYolov3(nn.Module):
         # 确认一阶段有没有目标
         torch.sigmoid_(p_yolo_ts4[:, :, 4:])  # 处理conf 和 label
         # torch.Size([7, 10647, 25]) -> torch.Size([7, 10647])
-        flog.info('conf 最大 %s', p_yolo_ts4[:, :, 4].max())
+        # flog.info('conf 最大 %s', p_yolo_ts4[:, :, 4].max())
         mask_box = p_yolo_ts4[:, :, 4] > self.threshold_conf
         if not torch.any(mask_box):  # 如果没有一个对象
-            flog.error('该批次没有找到目标')
+            # flog.error('该批次没有找到目标')
             return [None] * 4
 
         device = p_yolo_ts4.device
@@ -68,9 +68,10 @@ class PredictYolov3(nn.Module):
         #     rowcol_index = torch.cat([rowcol_index, _rowcol_index], dim=0)
 
         '''全量 修复box '''
-        p_boxes_xy = p_yolo_ts4[:, :, :2] / fsize_p + self.anc_obj.ancs[:, :2]  # offxy -> xy
-        p_boxes_wh = p_yolo_ts4[:, :, 2:4].exp() * self.anc_obj.ancs[:, 2:]  # wh修复
-        p_boxes_xywh = torch.cat([p_boxes_xy, p_boxes_wh], dim=-1)
+        p_boxes_xywh = fix_boxes4yolo3(p_yolo_ts4[:, :, :4], self.anc_obj.ancs, fsize_p)
+        # p_boxes_xy = p_yolo_ts4[:, :, :2] / fsize_p + self.anc_obj.ancs[:, :2]  # offxy -> xy
+        # p_boxes_wh = p_yolo_ts4[:, :, 2:4].exp() * self.anc_obj.ancs[:, 2:]  # wh修复
+        # p_boxes_xywh = torch.cat([p_boxes_xy, p_boxes_wh], dim=-1)
 
         '''第一阶段'''
         ids_batch1, _ = torch.where(mask_box)
@@ -83,13 +84,14 @@ class PredictYolov3(nn.Module):
         _, p_labels1_index = p_labels1_one.max(dim=1)
         p_labels1 = p_labels1_index + 1
 
-        # if self.cfg.IS_VISUAL:
-        #     # 可视化1 原目标图 --- 初始化图片
-        #     img_ts = imgs_ts[0]
-        #     from torchvision.transforms import functional as transformsF
-        #     img_ts = f_recover_normalization4ts(img_ts)
-        #     img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
-        #     show_anc4pil(img_pil, p_boxes_ltrb1, size=img_pil.size)
+        if self.cfg.IS_VISUAL:
+            # 可视化1 原目标图 --- 初始化图片
+            flog.debug('conf后 %s', )
+            img_ts = imgs_ts[0]
+            from torchvision.transforms import functional as transformsF
+            img_ts = f_recover_normalization4ts(img_ts)
+            img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
+            show_anc4pil(img_pil, p_boxes_ltrb1, size=img_pil.size)
         #     # img_pil.save('./1.jpg')
 
         # 分类 nms

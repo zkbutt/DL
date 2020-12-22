@@ -66,3 +66,40 @@ def label_nms(ids_batch1, p_boxes_ltrb1, p_labels1, p_scores1, device, threshold
         p_boxes_ltrb2 = torch.cat([p_boxes_ltrb2, _p_boxes_ltrb[keep]])
         # print('12')
     return ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2
+
+
+def label_nms4keypoints(ids_batch1, p_boxes_ltrb1, p_keypoints1, p_labels1, p_scores1, device, threshold_nms):
+    '''
+    分类 nms
+    :param ids_batch1: [nn]
+    :param p_boxes_ltrb1: [nn,4] float32
+    :param p_labels1: [nn]
+    :param p_scores1: [nn]
+    :param device:
+    :param threshold_nms:
+    :return:
+    '''
+    p_labels_unique = p_labels1.unique()  # nn -> n
+    ids_batch2 = torch.tensor([], device=device)
+    p_scores2 = torch.tensor([], device=device)
+    p_labels2 = torch.tensor([], device=device)
+    p_boxes_ltrb2 = torch.empty((0, 4), dtype=torch.float, device=device)
+    p_keypoints2 = torch.empty((0, 10), dtype=torch.float, device=device)
+
+    for lu in p_labels_unique:  # 必须每类处理
+        # 过滤类别
+        _mask = p_labels1 == lu
+        _ids_batch = ids_batch1[_mask]
+        _p_scores = p_scores1[_mask]
+        _p_labels = p_labels1[_mask]
+        _p_boxes_ltrb = p_boxes_ltrb1[_mask]
+        _p_keypoints = p_keypoints1[_mask]
+        keep = batched_nms(_p_boxes_ltrb, _p_scores, _ids_batch, threshold_nms)
+        # 极大抑制
+        ids_batch2 = torch.cat([ids_batch2, _ids_batch[keep]])
+        p_scores2 = torch.cat([p_scores2, _p_scores[keep]])
+        p_labels2 = torch.cat([p_labels2, _p_labels[keep]])
+        p_boxes_ltrb2 = torch.cat([p_boxes_ltrb2, _p_boxes_ltrb[keep]])
+        p_keypoints2 = torch.cat([p_keypoints2, _p_keypoints[keep]])
+        # print('12')
+    return ids_batch2, p_boxes_ltrb2, p_keypoints2, p_labels2, p_scores2,

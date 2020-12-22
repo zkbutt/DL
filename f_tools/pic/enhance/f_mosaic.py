@@ -23,8 +23,8 @@ def f_mosaic_pics_ts(imgs, boxs, labels, out_size, is_visual=False, range=(0.4, 
     :param out_size: w,h
     :param is_visual: debug
     :param range: 中点随机范围
-    :param is_mosaic_keep_wh: 保持WH
-    :param is_mosaic_fill: 保持WH 时 是否自动剪切
+    :param is_mosaic_keep_wh: 保持WH 这个一起
+    :param is_mosaic_fill: 保持WH 时 是否自动剪切 这个一起
     :return:
        img_pil_mosaic: 一张图片
        boxes_ltrb_mosaic: box ltrb [n,4]
@@ -166,7 +166,7 @@ if __name__ == "__main__":
                                                                                 labels4, [550, 550],
                                                                                 is_visual=False,
                                                                                 is_mosaic_keep_wh=True,
-                                                                                is_mosaic_fill=False,
+                                                                                is_mosaic_fill=True,
                                                                                 )
             print(len(boxes_ltrb_mosaic), len(boxes_ltrb_mosaic) == len(labels_mosaic))
             f_show_od4pil(img_pil_mosaic, boxes_ltrb_mosaic,

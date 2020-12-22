@@ -54,6 +54,10 @@ def t_tqdm():
 
 
 def t_random(a, b):
+    torch.manual_seed(7) # cpu
+    torch.cuda.manual_seed(7) #gpu
+    np.random.seed(7) #numpy
+    random.seed(7) #random and transforms
     # 工具随机t_random使用
     import numpy as np
     np.random.rand() * (b - a) + a

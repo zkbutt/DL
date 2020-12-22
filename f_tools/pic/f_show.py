@@ -376,6 +376,68 @@ def f_plot_od4pil(img_pil, boxes_ltrb, scores, labels, id_to_class=None, font_si
     return img_pil
 
 
+def f_plot_od4pil_keypoints(img_pil, boxes_ltrb, keypoints,
+                            scores, labels, id_to_class=None, font_size=10, text_fill=True):
+    '''
+
+    :param img_pil:
+    :param labels:list(int)  torch.tensor
+    :param id_to_class: 支持dict + list ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle',]
+    :param font_size:
+    :param text_fill:
+    :return:
+    '''
+    if isinstance(labels, torch.Tensor):
+        labels = labels.type(torch.int).tolist()
+
+    boxes_confs = torch.cat([boxes_ltrb, scores[:, None]], dim=1)
+    try:
+        font = ImageFont.truetype('simhei.ttf', font_size, encoding='utf-8')  # 参数1：字体文件路径，参数2：字体大小
+    except IOError:
+        font = ImageFont.load_default()
+
+    # print(len(STANDARD_COLORS))
+    # color = random.randint(0, len(STANDARD_COLORS))
+    cw = 3
+    for box, k, conf, label in zip(boxes_confs[:, :4], keypoints, boxes_confs[:, 4], labels):
+        left, top, right, bottom = box
+        _s_text = '{}:{:.1%}'
+        if id_to_class:
+            show_text = _s_text.format(id_to_class[label], conf)
+        else:
+            show_text = _s_text.format(label, conf)
+        flog.debug(show_text)
+        text_width, text_height = font.getsize(show_text)
+        margin = np.ceil(0.05 * text_height)
+        # 超出屏幕判断
+        if top > text_height:
+            text_bottom = top
+        else:
+            text_bottom = bottom + text_height
+        color = STANDARD_COLORS[label]
+
+        draw = ImageDraw.Draw(img_pil)
+        draw.rectangle([left, top, right, bottom], outline=color, width=2)
+
+        # 画 keypoints
+        draw.chord((k[0] - cw, k[1] - cw, k[0] + cw, k[1] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        draw.chord((k[2] - cw, k[3] - cw, k[2] + cw, k[3] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        draw.chord((k[4] - cw, k[5] - cw, k[4] + cw, k[5] + cw), 0, 360, fill=(0, 0, 255), outline=(0, 255, 0))
+        draw.chord((k[6] - cw, k[7] - cw, k[6] + cw, k[7] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        draw.chord((k[8] - cw, k[9] - cw, k[8] + cw, k[9] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        if text_fill:
+            draw.rectangle([(left, text_bottom - text_height - 2 * margin),
+                            (left + text_width + 2 * margin, text_bottom)], fill=color)
+            draw.text((left + margin, text_bottom - text_height - margin),
+                      show_text, fill='black', font=font)
+        else:
+            draw.text((left + margin, text_bottom - text_height - margin),
+                      show_text, fill=color, font=font)
+        # font = ImageFont.truetype('simhei.ttf', 30, encoding='utf-8')
+        # draw.text((100, 100), '优秀, 哈哈', (0, 255, 255), font=font)
+    return img_pil
+
+
 def f_show_od4pil(img_pil, boxes_ltrb, scores, labels, id_to_class=None, font_size=10, text_fill=True):
     '''
     需扩展按conf排序  或conf过滤的功能

@@ -14,13 +14,18 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_fit_fun import init_od, base_set
 
 '''
+
 linux用这个   python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/train_yolov1.py
 '''
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
     # -----------通用系统配置----------------
     init_od()
-    device, cfg = base_set(CFG)
+    device, cfg, ids2classes = base_set(CFG)
+
+    if cfg.IS_MOSAIC:
+        cfg.IMAGE_SIZE = [640, 640]
+        cfg.BATCH_SIZE = 20
 
     '''------------------模型定义---------------------'''
     model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=None)

@@ -28,6 +28,21 @@ python -m torch.distributed.launch --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/ob
 
 双GPU B40  416 F1 P400 time: 2.4378  0:02:16 (2.5708 s / it) mem: 6076 mv2 # MOSAIC
 双GPU B36  416 F1 P400 time: 2.1986  0:08:53 (2.2531 s / it) mem: 6076 mv2 
+双GPU B16  640 F4 P400 time: 1.7682  0:04:00 (1.8049 s / it) mem: 5780 mv2 # MOSAIC
+ 
+train_yolov3_mobilenet_v2-70_3.059.pth
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.110
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.350
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.025
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.002
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.095
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.124
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.157
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.208
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.208
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.028
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.179
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.222
 
 '''
 
@@ -36,13 +51,17 @@ if __name__ == '__main__':
         raise EnvironmentError("未发现GPU")
 
     cfg = CFG
+    if cfg.IS_MOSAIC:
+        # cfg.IMAGE_SIZE = [640, 640]
+        # cfg.BATCH_SIZE = 16
+        pass
 
     custom_set(cfg)
 
     cfg.DATA_NUM_WORKERS = 6
     torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
-    if cfg.DEBUG or cfg.IS_FMAP_EVAL:
-        raise Exception('调试 和 IS_FMAP_EVAL 模式无法使用')
+    # if cfg.DEBUG or cfg.IS_FMAP_EVAL:
+    #     raise Exception('调试 和 IS_FMAP_EVAL 模式无法使用')
 
     args, device = mgpu_init()
 
@@ -56,8 +75,8 @@ if __name__ == '__main__':
             except Exception as e:
                 flog.error(' %s %s', CFG.PATH_SAVE_WEIGHT, e)
         # tensorboard --logdir=runs --host=192.168.0.199
-        # print('Start Tensorboard with "tensorboard --logdir=runs --host=192.168.0.199", view at http://localhost:6006/')
-        # tb_writer = SummaryWriter()
+        print('"tensorboard --logdir=runs --host=192.168.0.199", view at http://192.168.0.199:6006/')
+        tb_writer = SummaryWriter(cfg.PATH_PROJECT_ROOT + '/runs')
 
     '''------------------模型定义---------------------'''
     model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=args)

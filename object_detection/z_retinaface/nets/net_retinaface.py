@@ -4,7 +4,7 @@ import torch.nn as nn
 from f_pytorch.tools_model.fmodels.model_fpns import FPN
 from f_pytorch.tools_model.fmodels.model_modules import SSH
 from f_tools.GLOBAL_LOG import flog
-from f_tools.f_predictfun import label_nms
+from f_tools.f_predictfun import label_nms, label_nms4keypoints
 from f_tools.fits.f_lossfun import LossRetinaface
 from f_tools.fits.f_match import pos_match_retinaface
 from f_tools.fun_od.f_anc import FAnchors
@@ -52,18 +52,22 @@ class PredictRetinaface(nn.Module):
         # 删除一维
         mask_box = mask.squeeze(-1)
         p_boxes_ltrb1 = xywh2ltrb(p_boxes[mask_box])
+        p_keypoints1 = p_keypoints[mask_box]
         p_scores1 = p_scores[mask]
         p_labels1 = torch.ones_like(p_scores1)
 
         # 分类 nms
-        ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2 = label_nms(ids_batch1,
-                                                                    p_boxes_ltrb1,
-                                                                    p_labels1,
-                                                                    p_scores1,
-                                                                    self.device,
-                                                                    self.threshold_nms)
+        ids_batch2, p_boxes_ltrb2, p_keypoints2, p_labels2, p_scores2 = label_nms4keypoints(
+            ids_batch1,
+            p_boxes_ltrb1,
+            p_keypoints1,
+            p_labels1,
+            p_scores1,
+            self.device,
+            self.threshold_nms,
+        )
 
-        return ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2
+        return ids_batch2, p_boxes_ltrb2, p_keypoints2, p_labels2, p_scores2
 
 
 class ClassHead(nn.Module):
@@ -245,8 +249,8 @@ class RetinaFace(nn.Module):
             return loss_total, log_dict
         else:
             # with torch.no_grad(): # 这个没用
-            ids_batch, p_boxes_ltrb, p_labels, p_scores = self.preder(outs)
-            return ids_batch, p_boxes_ltrb, p_labels, p_scores
+            ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = self.preder(outs)
+            return ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores
 
 
 if __name__ == '__main__':

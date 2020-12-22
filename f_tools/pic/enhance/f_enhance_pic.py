@@ -6,6 +6,7 @@ from PIL import Image, ImageEnhance, ImageDraw
 from cv2 import cv2
 from keras_preprocessing.image import ImageDataGenerator, load_img, img_to_array
 import numpy as np
+from torchvision import transforms
 
 from f_tools.f_general import rand
 
@@ -413,6 +414,12 @@ if __name__ == '__main__':
 
     c_hsv_np(img_np)
     img_pil = Image.fromarray(img_np, mode="RGB")
-    img_pil.show()
+    # img_pil.show()
+
+    from torchvision.transforms import functional as F
+    tensor = F.pil_to_tensor(img_pil)
+    tensor = F.to_tensor(img_pil) #
+    print()
+
     # cv2.imshow("img", img_np)
     # cv2.waitKey(0)

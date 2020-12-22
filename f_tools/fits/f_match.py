@@ -3,6 +3,7 @@ import torch
 
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fun_od.f_boxes import ltrb2xywh, xy2offxy, xywh2ltrb, calc_iou4ts
+from object_detection.z_center.utils import gaussian_radius, draw_gaussian
 
 
 @torch.no_grad()
@@ -226,10 +227,12 @@ def pos_match_retinaface(ancs, g_bboxs, g_labels, g_keypoints, threshold_pos=0.5
     # 强制保留 将每一个bbox对应的最大的anc索引 的anc_bbox_iou值强设为2 大于阀值即可
     anc_max_iou.index_fill_(0, anc_index, 2)  # dim index val
 
-    # 大的
-    # _ids = torch.arange(0, anc_index.size(0), dtype=torch.int64).to(bbox_index) # [0,1]
-    # # 把anc的index全部取出来
-    # bbox_index[anc_index[_ids]] = _ids
+    # 一定层度上使gt均有对应的anc, 处理多个anc对一gt的问题, 若多个gt对一个anc仍不能解决(情况较少)会导致某GT学习不了...遍历每一个gt索引
+    gt_ids = torch.arange(0, anc_index.size(0), dtype=torch.int64).to(bbox_index)  # [0,1]
+    # gt对应最好的anc索引取出来
+    anc_ids = anc_index[gt_ids]
+    # 找到这些anc 写入gt
+    bbox_index[anc_ids] = gt_ids
 
     # ----------正例的index 和 正例对应的bbox索引----------
     mask_pos = anc_max_iou >= threshold_pos  # anc 的正例 index 不管
@@ -288,3 +291,53 @@ def fmatch4yolo1(boxes, labels, num_bbox, num_class, grid, device=None):
             p_yolo[row, col] = t
     # p_yolo = p_yolo.permute(2, 0, 1)
     return p_yolo
+
+
+def fmatch_OHEM(l_conf, match_index_pos, neg_ratio, num_neg, device, dim=-1):
+    '''
+    60% 难例作负样本
+    '''
+    l_conf_neg = l_conf.clone().detach()
+    l_conf_neg[match_index_pos] = torch.tensor(0.0, device=device)
+    _, lconf_idx = l_conf_neg.sort(dim=dim, descending=True)  # descending 倒序
+    # _, lconf_rank = lconf_idx.sort(dim=dim)
+    # num_neg = min([neg_ratio * len(match_index_pos), num_neg])  # len(l_conf)
+    num_neg = len(match_index_pos) * 1500
+    # num_neg = int(len(l_conf_neg) * 0.75)
+    match_index_neg = lconf_idx[:num_neg]  # 选出最大的n个的mask  Tensor [batch, 8732]
+    return match_index_neg
+
+
+def match4center(boxes_xywh, labels, fsize, target_center):
+    '''
+    这里处理一批的
+    :param boxes_xywh: 按输入尺寸归一化 torch device
+    :param labels: int torch  这个是从1开始的
+    :param fsize: 特图size torch float
+    :param target_center: torch.Size([128, 128, 24])
+    :return:
+    '''
+    # 转换到对应特图的尺寸
+    boxes_xywh_f = boxes_xywh * fsize.repeat(2)[None]
+    # 输入归一化 尺寸
+    xys = boxes_xywh_f[:, :2]
+    whs = boxes_xywh_f[:, 2:4]
+    # # 限定为特图格子偏移
+    xys_int = xys.type(torch.int32)
+    xys_offset = xys - xys_int
+
+    # 使用论文作半径
+    radiuses_wh = gaussian_radius(whs, min_overlap=0.7)
+    radiuses_wh.clamp_(min=0)
+    # [nn] -> [nn,1] -> [nn,2]
+    radiuses_wh = radiuses_wh.unsqueeze(-1).repeat(1, 2)
+
+    # 使用真实长宽作半径
+    # radiuses_wh = whs * 0.7
+
+    labels_ = labels - 1
+    # 根据中心点 和 半径生成 及labels 生成高斯图
+    for i in range(len(labels_)):
+        draw_gaussian(target_center[:, :, labels_[i]], xys_int[i], radiuses_wh[i])
+        target_center[xys_int[i][1], xys_int[i][0], 20:22] = xys_offset[i]  # 限定为特图格子偏移
+        target_center[xys_int[i][1], xys_int[i][0], 22:24] = boxes_xywh[i][2:4]  # 按输入归一化

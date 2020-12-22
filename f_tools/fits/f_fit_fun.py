@@ -1,3 +1,4 @@
+import json
 import math
 import os
 
@@ -8,6 +9,9 @@ import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
 import socket
+
+from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_recover_gt
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2, f_evaluate4fmap
 
 
 def init_od():
@@ -54,12 +58,17 @@ def base_set(cfg):
     else:
         torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
 
-    # if cfg.IS_MOSAIC:
-    # cfg.IMAGE_SIZE = [512, 512]
-    # cfg.ANC_SCALE = list(np.array(cfg.ANC_SCALE,dtype=np.float32) / 2)
-    # pass
+    if cfg.IS_MOSAIC:
+        # cfg.IMAGE_SIZE = [640, 640]
+        # cfg.BATCH_SIZE = 20
+        pass
 
-    # cfg.FILE_FIT_WEIGHT = None
+    ids2classes = None
+    if cfg.IS_FMAP_EVAL:
+        json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_voc.json'), 'r', encoding='utf-8')
+        ids2classes = json.load(json_file, encoding='utf-8')  # json key是字符
+        f_recover_gt(cfg.PATH_EVAL_INFO + '/gt_info')
+        device = torch.device("cpu")
 
     '''-----多尺度训练-----'''
     # if cfg.IS_MULTI_SCALE:
@@ -75,7 +84,68 @@ def base_set(cfg):
     #     # imgsz_train = imgsz_max  # initialize with max size
     #     # img_size = random.randrange(grid_min, grid_max + 1) * gs
     #     flog.info("输入画像的尺寸范围为[{}, {}] 可选尺寸为{}".format(imgsz_min, imgsz_max, sizes_in))
-    return device, cfg
+    return device, cfg, ids2classes
+
+
+def train_eval4od(start_epoch, model, optimizer,
+                  fdatas_l2, lr_scheduler=None,
+                  loader_train=None, loader_val_fmap=None, loader_val_coco=None,
+                  device=torch.device('cpu'), train_sampler=None, eval_sampler=None,
+                  tb_writer=None,
+                  ):
+    cfg = model.cfg
+
+    fun_datas_l2 = fdatas_l2
+    for epoch in range(start_epoch, cfg.END_EPOCH):
+
+        if cfg.IS_TRAIN:
+            model.train()
+            flog.info('训练开始 %s', epoch + 1)
+            log_dict = f_train_one_epoch4(
+                model=model,
+                fun_datas_l2=fun_datas_l2,
+                data_loader=loader_train,
+                optimizer=optimizer, epoch=epoch,
+                lr_scheduler=lr_scheduler,
+                train_sampler=train_sampler,
+                tb_writer=tb_writer,
+                device=device,
+            )
+
+            # if lr_scheduler is not None:
+            #     flog.warning('更新 lr_scheduler %s', log_dict['loss_total'])
+            #     lr_scheduler.step(log_dict['loss_total'])  # 更新学习
+
+        if model.cfg.IS_COCO_EVAL:
+            flog.info('COCO 验证开始 %s', epoch + 1)
+            model.eval()
+            # with torch.no_grad():
+            mode = 'bbox'
+            res_eval = []
+            f_evaluate4coco2(
+                model=model,
+                fun_datas_l2=fun_datas_l2,
+                data_loader=loader_val_coco,
+                epoch=epoch,
+                tb_writer=tb_writer,
+                res_eval=res_eval,
+                mode=mode,
+                device=device,
+                eval_sampler=eval_sampler,
+                is_keeep=cfg.IS_KEEP_SCALE
+            )
+
+        if model.cfg.IS_FMAP_EVAL:
+            flog.info('FMAP 验证开始 %s', epoch + 1)
+            model.eval()
+            f_evaluate4fmap(
+                model=model,
+                data_loader=loader_val_fmap,
+                is_keeep=cfg.IS_KEEP_SCALE,
+                cfg=cfg,
+            )
+
+            return
 
 
 if __name__ == '__main__':

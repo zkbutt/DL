@@ -408,13 +408,13 @@ class WiderfaceDataSet(Dataset):
 
 
 class MapDataSet(Dataset):
-    def __init__(self, path_imgs, path_eval_info, class_to_idx, transforms=None,
+    def __init__(self, path_imgs, path_eval_info, ids2classes, transforms=None,
                  is_debug=False, look=False, out='ts', ):
         '''
 
         :param path_imgs: 图片文件夹
         :param path_eval_info: GT info手动创建的
-        :param class_to_idx:
+        :param ids2classes:
         :param transforms:
         :param is_debug:
         :param look:
@@ -440,25 +440,30 @@ class MapDataSet(Dataset):
         self.transform_cpu = transforms
         self.path_imgs = path_imgs
         # self.path_gt_info = path_dt_info
-        self.class_to_idx = class_to_idx
-        self.idx_to_class = {}
-        for k, v in class_to_idx.items():
-            self.idx_to_class[v] = k
+        self.ids2classes = ids2classes
+        self.classes2ids = {}
+        for k, v in ids2classes.items():
+            self.classes2ids[v] = k
 
         self.names_gt_info = os.listdir(self.path_gt_info)
         self.targets = []
-        for name in tqdm(self.names_gt_info):
-            _labels = []
-            _bboxs = []
-            with open(os.path.join(self.path_gt_info, name)) as f:
-                lines = f.readlines()
-                for line in lines:
-                    line = line.rstrip()  # 去换行
-                    label, l, t, r, b = line.split(' ')
-                    _labels.append(class_to_idx[label])
-                    _bboxs.append([float(l), float(t), float(r), float(b)])
-            # 已提前加载全部的标签
-            self.targets.append({'labels': _labels, 'boxes': _bboxs})
+        # root 当前目录路径   dirs 当前路径下所有子目录   name 当前路径下所有非目录子文件
+        # for root, dirs, files in tqdm(os.walk(self.path_gt_info)):
+        for name in self.names_gt_info:
+            file = os.path.join(self.path_gt_info, name)
+            if os.path.isfile(file):  # 判断是否为文件夹
+                # os.makedirs('d:/assist/set') 是否目录
+                _labels = []
+                _bboxs = []
+                with open(file) as f:  # 获取目录文件
+                    lines = f.readlines()
+                    for line in lines:
+                        line = line.rstrip()  # 去换行
+                        label, l, t, r, b = line.split(' ')
+                        _labels.append(int(self.classes2ids[label]))  # label名
+                        _bboxs.append([float(l), float(t), float(r), float(b)])
+                # 已提前加载全部的标签
+                self.targets.append({'labels': _labels, 'boxes': _bboxs})
         # __d = 1
 
     def __len__(self):
@@ -613,7 +618,7 @@ def fun4dataloader(batch_datas):
     return images, targets
 
 
-def load_od4voc(cfg, data_transform, is_mgpu):
+def load_od4voc(cfg, data_transform, is_mgpu, ids2classes):
     dataset_train, dataset_val = [None] * 2
     if cfg.IS_TRAIN:
         dataset_train = CocoDataset(
@@ -642,19 +647,40 @@ def load_od4voc(cfg, data_transform, is_mgpu):
             cfg=cfg
         )
 
-    _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu)
-    return _res
+    loader_train, loader_val_coco, train_sampler, eval_sampler = init_dataloader(
+        cfg,
+        dataset_train, dataset_val,
+        is_mgpu)
+
+    loader_val_fmap = None
+    if cfg.IS_FMAP_EVAL:
+        dataset_val = MapDataSet(path_imgs=cfg.PATH_EVAL_IMGS,
+                                 path_eval_info=cfg.PATH_EVAL_INFO,
+                                 ids2classes=ids2classes,
+                                 transforms=data_transform['val'],
+                                 is_debug=cfg.DEBUG)
+        loader_val_fmap = torch.utils.data.DataLoader(
+            dataset_val,
+            batch_size=cfg.BATCH_SIZE,
+            num_workers=cfg.DATA_NUM_WORKERS,
+            # shuffle=True,
+            pin_memory=True,  # 不使用虚拟内存 GPU要报错
+            # drop_last=True,  # 除于batch_size余下的数据
+            collate_fn=fun4dataloader,
+        )
+
+    return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 
 
 def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = [None] * 5
+    loader_train, loader_val_coco, train_sampler, eval_sampler = [None] * 4
     if cfg.IS_TRAIN:
         # __d = dataset_train[0]  # 调试
         if is_mgpu:  # DataLoader 不一样
             # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
             train_sampler = torch.utils.data.distributed.DistributedSampler(dataset_train,
                                                                             shuffle=True,
-                                                                            seed=20201114,
+                                                                            # seed=20201114,
                                                                             )
             # 按定义为每一个 BATCH_SIZE 生成一批的索引
             train_batch_sampler = torch.utils.data.BatchSampler(train_sampler, cfg.BATCH_SIZE, drop_last=True)
@@ -680,22 +706,6 @@ def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
                 collate_fn=fun4dataloader,
             )
 
-    if cfg.IS_FMAP_EVAL:
-        class_to_idx = {'face': 1}
-        dataset_val = MapDataSet(path_imgs=cfg.PATH_EVAL_IMGS,
-                                 path_eval_info=cfg.PATH_EVAL_INFO,
-                                 class_to_idx=class_to_idx,
-                                 transforms=data_transform['val'],
-                                 is_debug=cfg.DEBUG)
-        loader_val_fmap = torch.utils.data.DataLoader(
-            dataset_val,
-            batch_size=cfg.BATCH_SIZE,
-            num_workers=cfg.DATA_NUM_WORKERS,
-            # shuffle=True,
-            pin_memory=True,  # 不使用虚拟内存 GPU要报错
-            # drop_last=True,  # 除于batch_size余下的数据
-            collate_fn=fun4dataloader,
-        )
     if cfg.IS_COCO_EVAL:
 
         if is_mgpu:
@@ -731,7 +741,7 @@ def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
                 collate_fn=fun4dataloader,
             )
 
-    return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
+    return loader_train, loader_val_coco, train_sampler, eval_sampler
 
 
 if __name__ == '__main__':

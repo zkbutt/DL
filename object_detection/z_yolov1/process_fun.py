@@ -9,7 +9,7 @@ from f_tools.datas.data_factory import MapDataSet, load_od4voc
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init
 from f_tools.fits.f_match import fmatch4yolo1
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2, is_mgpu
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2, is_mgpu, f_evaluate4fmap
 from f_tools.pic.enhance.f_data_pretreatment import Compose, ColorJitter, ToTensor, RandomHorizontalFlip4TS, \
     Normalization4TS, Resize
 from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1
@@ -26,12 +26,6 @@ def cre_data_transform(cfg):
                 RandomHorizontalFlip4TS(0.5),
                 Normalization4TS(),
             ], cfg),
-            "val": Compose([
-                # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
-                Resize(cfg.IMAGE_SIZE),
-                ToTensor(),
-                Normalization4TS(),
-            ], cfg)
         }
     else:
         data_transform = {
@@ -43,27 +37,15 @@ def cre_data_transform(cfg):
                 RandomHorizontalFlip4TS(0.5),
                 Normalization4TS(),
             ], cfg),
-            "val": Compose([
-                # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
-                Resize(cfg.IMAGE_SIZE),
-                ToTensor(),
-                Normalization4TS(),
-            ], cfg)
         }
+    data_transform["val"] = Compose([
+        # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+        Resize(cfg.IMAGE_SIZE),
+        ToTensor(),
+        Normalization4TS(),
+    ], cfg)
 
     return data_transform
-
-
-def _collate_fn(batch_datas):
-    # 数据组装
-    _t = batch_datas[0][0]
-    # images = torch.empty((len(batch_datas), *_t.shape), device=_t.device)
-    images = torch.empty((len(batch_datas), *_t.shape)).to(_t)
-    targets = []
-    for i, (img, taget) in enumerate(batch_datas):
-        images[i] = img
-        targets.append(taget)
-    return images, targets
 
 
 def fdatas_l2(batch_data, device, cfg=None):
@@ -122,10 +104,10 @@ def init_model(cfg, device, id_gpu=None):
     return model, optimizer, lr_scheduler, start_epoch
 
 
-def data_loader(cfg, is_mgpu=False):
+def data_loader(cfg, is_mgpu=False, ids2classes=None):
     data_transform = cre_data_transform(cfg)
 
-    _res = load_od4voc(cfg, data_transform, is_mgpu)
+    _res = load_od4voc(cfg, data_transform, is_mgpu, ids2classes)
     loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = _res
 
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
@@ -177,21 +159,13 @@ def train_eval(start_epoch, model, optimizer, lr_scheduler=None,
                 device=device,
                 eval_sampler=eval_sampler,
             )
-            # return
-        # if model.cfg.IS_FMAP_EVAL:
-        #     flog.info('FMAP 验证开始 %s', epoch + 1)
-        #     res_eval = []
-        #     f_evaluate4fmap(
-        #         data_loader=loader_val_fmap,
-        #         predict_handler=predict_handler,
-        #         epoch=epoch,
-        #         res_eval=res_eval)
-        #     path_dt_info = loader_val_fmap.dataset.path_dt_info
-        #     path_gt_info = loader_val_fmap.dataset.path_gt_info
-        #     path_imgs = loader_val_fmap.dataset.path_imgs
-        #     f_do_fmap(path_gt=path_gt_info, path_dt=path_dt_info, path_img=path_imgs,
-        #               confidence=cfg.THRESHOLD_PREDICT_CONF,
-        #               iou_map=[], ignore_classes=[], console_pinter=True,
-        #               plot_res=False, animation=False)
-        #     return
-        #
+        if model.cfg.IS_FMAP_EVAL:
+            flog.info('FMAP 验证开始 %s', epoch + 1)
+            model.eval()
+            f_evaluate4fmap(
+                model=model,
+                data_loader=loader_val_fmap,
+                is_keeep=cfg.IS_KEEP_SCALE,
+                cfg=cfg,
+            )
+            return

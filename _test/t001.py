@@ -64,3 +64,4 @@ if __name__ == '__main__':
     # iou_scores = torch.FloatTensor(nB, nA, nG, nG).fill_(0)
     # print(torch.zeros(nB, nA, nG, nG,dtype=torch.float).shape)
     # print(obj_mask.shape)
+    print(target.eq(1).float())
