@@ -308,13 +308,15 @@ def fmatch_OHEM(l_conf, match_index_pos, neg_ratio, num_neg, device, dim=-1):
     return match_index_neg
 
 
-def match4center(boxes_xywh, labels, fsize, target_center):
+def match4center(boxes_xywh, labels, fsize, target_center, num_keypoints=0, keypoints=None):
     '''
     这里处理一批的
     :param boxes_xywh: 按输入尺寸归一化 torch device
     :param labels: int torch  这个是从1开始的
     :param fsize: 特图size torch float
     :param target_center: torch.Size([128, 128, 24])
+    :param num_keypoints: >0 表示有关键点 1个关键点由两个点构成
+    :param keypoints: 关键点xy值
     :return:
     '''
     # 转换到对应特图的尺寸
@@ -324,7 +326,7 @@ def match4center(boxes_xywh, labels, fsize, target_center):
     whs = boxes_xywh_f[:, 2:4]
     # # 限定为特图格子偏移
     xys_int = xys.type(torch.int32)
-    xys_offset = xys - xys_int
+    xys_offset = xys - xys_int  # 这个是偏置在 0~1 之间
 
     # 使用论文作半径
     radiuses_wh = gaussian_radius(whs, min_overlap=0.7)
@@ -339,5 +341,11 @@ def match4center(boxes_xywh, labels, fsize, target_center):
     # 根据中心点 和 半径生成 及labels 生成高斯图
     for i in range(len(labels_)):
         draw_gaussian(target_center[:, :, labels_[i]], xys_int[i], radiuses_wh[i])
-        target_center[xys_int[i][1], xys_int[i][0], 20:22] = xys_offset[i]  # 限定为特图格子偏移
-        target_center[xys_int[i][1], xys_int[i][0], 22:24] = boxes_xywh[i][2:4]  # 按输入归一化
+        target_center[xys_int[i][1], xys_int[i][0], -4:-2] = xys_offset[i]  # 限定为特图格子偏移
+        # target_center[xys_int[i][1], xys_int[i][0], -2:] = boxes_xywh[i][2:4] * fsize  # 按输入归一化
+        target_center[xys_int[i][1], xys_int[i][0], -2:] = boxes_xywh[i][2:4]  # 按输入归一化
+        if num_keypoints > 0:
+            # 得 关键点到中心点的真实偏移
+            k = boxes_xywh[i, :2].repeat(num_keypoints) - keypoints[i]
+            target_center[xys_int[i][1], xys_int[i][0], -4 - num_keypoints * 2:-4] = k
+            pass

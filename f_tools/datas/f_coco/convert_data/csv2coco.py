@@ -307,12 +307,12 @@ if __name__ == '__main__':
     # mode = 'boxes'  # 'keypoints'  # 'boxes':
     # path_coco_save = r"M:\AI\datas\VOC2012"  # 这个是生成的根 目录必须存在
     # 训练集
-    path_classes_ids = 'M:\AI\datas\VOC2012\classes_ids_voc.json'
-    path_img = r'M:\AI\datas\VOC2012\trainval\JPEGImages'  # 真实图片路径
-    file_csv = "../_file/csv_labels_voc.csv"
-    type = 'train2017'  # train2017
+    path_classes_ids = r'M:\AI\datas\raccoon200\classes_ids_raccoon.json'
+    path_img = r'M:\AI\datas\raccoon200\VOCdevkit\JPEGImages'  # 真实图片路径
+    file_csv = "../_file/csv_labels_voc_val.txt.csv"
+    type = 'val2017'  # train2017
     mode = 'boxes'  # 'keypoints'  # 'boxes':
-    path_coco_save = r"M:\AI\datas\VOC2012"  # 这个是生成的根 目录必须存在
+    path_coco_save = r"M:\AI\datas\raccoon200"  # 这个是生成的根 目录必须存在
 
     with open(path_classes_ids, 'r', encoding='utf-8') as f:
         classes_ids = json.load(f)  # 文件转dict 或list

@@ -29,34 +29,48 @@ class LoosCenter(nn.Module):
         :return:
         '''
         cfg = self.cfg
-        pheatmap, pwh, pxy_offset = p_center
+        pheatmap, pwh, pxy_offset, pkeypoint_offset = p_center
         pheatmap = pheatmap.permute(0, 2, 3, 1)
-        pxy_offset = pxy_offset.permute(0, 2, 3, 1)
-        pwh = pwh.permute(0, 2, 3, 1)
 
-        gheatmap = g_center[:, :, :, :20]
-        gxy_offset = g_center[:, :, :, 20:22]
-        gwh = g_center[:, :, :, 22:24]
-
-        num_pos = gheatmap.eq(1).float().sum()
+        gheatmap = g_center[:, :, :, :cfg.NUM_CLASSES]
+        mask_pos = gheatmap.eq(1)
+        mask_pos = torch.any(mask_pos, dim=-1)  # 降维运算
+        g_center_pos = g_center[mask_pos]
+        gxy_offset = g_center_pos[:, -4:-2]
+        gwh = g_center_pos[:, -2:]
+        num_pos = mask_pos.sum()
         num_pos.clamp_(min=torch.finfo(torch.float).eps)
-        loss_conf = focal_loss4center(pheatmap, gheatmap, reduction='sum') / num_pos
-        loss_xy = F.l1_loss(pxy_offset, gxy_offset, reduction='sum') / num_pos
-        loss_wh = F.l1_loss(pwh, gwh, reduction='sum') / num_pos
 
-        loss_total = loss_conf * cfg.LOSS_WEIGHT[0] \
-                     + loss_xy * cfg.LOSS_WEIGHT[1] \
-                     + loss_wh * cfg.LOSS_WEIGHT[2]
+        pxy_offset_pos = pxy_offset.permute(0, 2, 3, 1)[mask_pos]
+        pwh_pos = pwh.permute(0, 2, 3, 1)[mask_pos]
+
+        if pkeypoint_offset is not None:
+            gkeypoint_offset = g_center_pos[:, :, :, cfg.NUM_CLASSES:-4]
+            pkeypoint_offset = pkeypoint_offset.permute(0, 2, 3, 1)[mask_pos]
+            loss_keypoint = F.l1_loss(pkeypoint_offset, gkeypoint_offset, reduction='sum') / num_pos \
+                            * cfg.LOSS_WEIGHT[3]
+        else:
+            loss_keypoint = 0
+
+        loss_conf = focal_loss4center(pheatmap, gheatmap, reduction='sum') / num_pos * cfg.LOSS_WEIGHT[0]
+        # loss_xy = focal_loss4center(pxy_offset, gxy_offset, reduction='sum') / num_pos
+        # loss_wh = focal_loss4center(pwh, gwh, reduction='sum') / num_pos
+        loss_xy = F.l1_loss(pxy_offset_pos, gxy_offset, reduction='sum') / num_pos * cfg.LOSS_WEIGHT[1]
+        loss_wh = F.l1_loss(pwh_pos, gwh, reduction='sum') / num_pos * cfg.LOSS_WEIGHT[2]
+
+        loss_total = loss_conf + loss_xy + loss_wh + loss_keypoint
         log_dict = {}
         log_dict['loss_total'] = loss_total.item()
         log_dict['l_conf'] = loss_conf.item()
         log_dict['l_xy'] = loss_xy.item()
         log_dict['l_wh'] = loss_wh.item()
+        if pkeypoint_offset is not None:
+            log_dict['l_kp'] = loss_keypoint.item()
         return loss_total, log_dict
 
 
 class PredictCenter(nn.Module):
-    def __init__(self, cfg, threshold_conf=0.5, threshold_nms=0.3, topk=100):
+    def __init__(self, cfg, threshold_conf=0.18, threshold_nms=0.3, topk=100):
         super(PredictCenter, self).__init__()
         self.cfg = cfg
         self.threshold_nms = threshold_nms
@@ -86,7 +100,7 @@ class PredictCenter(nn.Module):
         :param imgs_ts:
         :return:
         '''
-        pheatmap, pwh, pxy_offset = p_center
+        pheatmap, pwh, pxy_offset, pkeypoint_offset = p_center
         pheatmap_nms = self.pool_nms(pheatmap)  # 这个包含conf 和label
         # b,c,h,w -> b,h,w,c
         pheatmap_nms = pheatmap_nms.permute(0, 2, 3, 1)
@@ -141,38 +155,50 @@ class PredictCenter(nn.Module):
 
 
 class CenterHead(nn.Module):
-    def __init__(self, num_classes, channel=64, bn_momentum=0.1):
+    def __init__(self, num_classes, in_channels=64, out_channels=64, bn_momentum=0.1, num_keypoints=0):
         '''
 
         :param num_classes:
-        :param channel:
+        :param out_channels:
         :param bn_momentum:
         '''
         super(CenterHead, self).__init__()
         # 热力图预测部分
         self.cls_head = nn.Sequential(
-            nn.Conv2d(64, channel, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64, momentum=bn_momentum),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels, momentum=bn_momentum),
             nn.ReLU(inplace=True),
-            nn.Conv2d(channel, num_classes, kernel_size=1, stride=1, padding=0))
+            nn.Conv2d(out_channels, num_classes, kernel_size=1, stride=1, padding=0))
         # 宽高预测的部分
         self.wh_head = nn.Sequential(
-            nn.Conv2d(64, channel, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64, momentum=bn_momentum),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels, momentum=bn_momentum),
             nn.ReLU(inplace=True),
-            nn.Conv2d(channel, 2, kernel_size=1, stride=1, padding=0))
+            nn.Conv2d(out_channels, 2, kernel_size=1, stride=1, padding=0))
         # 中心点预测的部分
         self.reg_head = nn.Sequential(
-            nn.Conv2d(64, channel, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64, momentum=bn_momentum),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels, momentum=bn_momentum),
             nn.ReLU(inplace=True),
-            nn.Conv2d(channel, 2, kernel_size=1, stride=1, padding=0))
+            nn.Conv2d(out_channels, 2, kernel_size=1, stride=1, padding=0))
+        if num_keypoints > 0:
+            self.keypoint_head = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+                nn.BatchNorm2d(out_channels, momentum=bn_momentum),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, num_keypoints * 2, kernel_size=1, stride=1, padding=0))
 
     def forward(self, x):
         phm = self.cls_head(x).sigmoid()
         pwh = self.wh_head(x).sigmoid()
         pxy_offset = self.reg_head(x).sigmoid()
-        return phm, pwh, pxy_offset
+        # pwh = self.wh_head(x)
+        # pxy_offset = self.reg_head(x)
+        if hasattr(self, 'keypoint_head'):
+            pkeypoint_offset = self.keypoint_head(x).sigmoid()
+        else:
+            pkeypoint_offset = None
+        return phm, pwh, pxy_offset, pkeypoint_offset
 
 
 class CenterUpsample3Conv(nn.Module):
@@ -220,7 +246,7 @@ class CenterNet(nn.Module):
         self.backbone = backbone
         # [256, 512, 1024]
         self.upsample3conv = CenterUpsample3Conv(dim_in_backbone)
-        self.head = CenterHead(num_classes=num_classes)
+        self.head = CenterHead(num_classes=num_classes, num_keypoints=cfg.NUM_KEYPOINTS)
         self.pred = PredictCenter(cfg)
         self.loss = LoosCenter(cfg)
 

@@ -62,32 +62,32 @@ def t_focal_loss():
     gconf = torch.zeros_like(pconf)
     loss_show = F.binary_cross_entropy(pconf, gconf, reduction='none')
     # loss_show = F.binary_cross_entropy(pconf, gconf, reduction='sum')
-    print(loss_show)
+    print('bce_neg', loss_show)
 
     # bce_loss = nn.BCEWithLogitsLoss(reduction='none')
-    fun_loss = FocalLoss_v2(alpha=alpha, gamma=gamma, is_oned=True, reduction='none')
-    # fun_loss = FocalLoss_v2(alpha=alpha, gamma=gamma, is_oned=True, reduction='sum')
-    # loss_show = fun_loss(pconf, gconf)
+    # fun_loss = FocalLoss_v2(alpha=alpha, gamma=gamma, is_oned=True, reduction='none')
+    fun_loss = FocalLoss4Center(a=2, b=4., reduction='none')
+    loss_show = fun_loss(pconf, gconf)
     # print(loss_show)
-    print(loss_show)
-    print(focal_loss(pconf, gconf, threshold_pos=2, threshold_neg=5))
+    print('FocalLoss4Center_neg', loss_show)
+    print('focal_loss4center_neg', focal_loss4center(pconf, gconf, a=2, b=4))
 
     pconf = torch.arange(0, 1.01, 0.1)
     gconf = torch.ones_like(pconf)
 
     loss_show = F.binary_cross_entropy(pconf, gconf, reduction='none')
     # loss_show = F.binary_cross_entropy(pconf, gconf, reduction='sum')
-    print(loss_show)
-    print(focal_loss(pconf, gconf, threshold_pos=2, threshold_neg=5))
+    print('bce_pos', loss_show)
+    print('focal_loss4center_pos', focal_loss4center(pconf, gconf, a=2, b=4))
     # loss_show = fun_loss(pconf, gconf)
     # print(loss_show)
 
     # pconf = torch.rand((1))
     # print(pconf)
-    fun_loss = FocalLoss_v2(alpha=alpha, gamma=gamma, is_oned=True, reduction='none')
+    # fun_loss = FocalLoss_v2(alpha=alpha, gamma=gamma, is_oned=True, reduction='none')
     # fun_loss = FocalLoss_v2(alpha=alpha, gamma=gamma, is_oned=True, reduction='sum')
     loss_show = fun_loss(pconf, gconf)
-    print(loss_show)
+    print('FocalLoss4Center_pos', loss_show)
 
 
 def t_多值交叉熵():
@@ -163,27 +163,30 @@ def f_二值交叉熵1():
     g_cls_ts = torch.tensor(g_cls)
     print(bce_loss(p_cls_ts, g_cls_ts))
 
+    floss = FocalLoss4Center()
+    print(floss(p_cls_ts, g_cls_ts))
 
-def focal_loss4center(pred, target, reduction='none', threshold_pos=2, threshold_neg=2):
+
+def focal_loss4center(pconf, gconf, reduction='none', a=2, b=4):
     '''
 
-    :param pred:
-    :param target:
+    :param pconf:
+    :param gconf:
     :param reduction:
     :param threshold_pos: 这个是下拉阀值 越大拉得越低
         [   15.94238,     1.86509,     1.03004,     0.58995,     0.32986,     0.17329,     0.08173,     0.03210,     0.00893,     0.00105,    -0.00000]
     :param threshold_neg:
     :return:
     '''
-    pos_inds = target.eq(1).float()
-    neg_inds = target.lt(1).float()
-    neg_weights = torch.pow(1 - target, 4)
+    pos_inds = gconf.eq(1).float()
+    neg_inds = gconf.lt(1).float()
+    neg_weights = torch.pow(1 - gconf, b)
 
-    pred = pred.clamp(min=torch.finfo(torch.float).eps)
+    eps = torch.finfo(torch.float).eps
+    pconf = pconf.clamp(min=eps, max=1 - eps)
 
-    pos_loss = torch.log(pred) * torch.pow(1 - pred, threshold_pos) * pos_inds
-    neg_loss = torch.log(1 - pred + torch.finfo(torch.float).eps) * torch.pow(pred,
-                                                                              threshold_neg) * neg_weights * neg_inds
+    pos_loss = torch.log(pconf) * torch.pow(1 - pconf, a) * pos_inds
+    neg_loss = torch.log(1 - pconf) * torch.pow(pconf, a) * neg_weights * neg_inds
 
     loss = -(pos_loss + neg_loss)
 
@@ -193,6 +196,28 @@ def focal_loss4center(pred, target, reduction='none', threshold_pos=2, threshold
         return loss.sum()
     else:  # 'none'
         return loss
+
+
+class FocalLoss4Center(nn.Module):
+
+    def __init__(self, a=2, b=4., reduction='none'):
+        super(FocalLoss4Center, self).__init__()
+        self.a = a
+        self.b = b
+        self.reduction = reduction
+
+    def forward(self, pconf, gconf):
+        '''
+
+        :param pconf: Y^ 预测
+        :param gconf: Y
+        :return:
+        '''
+        eps = torch.finfo(torch.float).eps
+        pconf.clamp_(min=eps, max=1 - eps)
+        l_pos = gconf * torch.pow((1 - pconf), self.a) * torch.log(pconf)
+        l_neg = (1 - gconf) * torch.pow((1 - gconf), self.b) * torch.pow(pconf, self.a) * torch.log(1 - pconf)
+        return -(l_pos + l_neg)
 
 
 class FocalLoss_v2(nn.Module):
@@ -920,7 +945,13 @@ if __name__ == '__main__':
     # pconf = torch.arange(1.0, -0.01, -0.1)
     # print(pconf)
 
-    t_focal_loss()
+    # t_focal_loss()
+
+    py = torch.tensor(0.8)
+    gy = torch.tensor(0.8)
+    print(focal_loss4center(py, gy))
+    floss = FocalLoss4Center()
+    print(floss(py, gy))
 
     # t_多值交叉熵()
     # f_二值交叉熵2()

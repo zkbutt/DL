@@ -139,6 +139,9 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
         for k, v, in log_dict_avg.items():
             tb_writer.add_scalar('Loss/%s' % k, v, epoch + 1)
 
+    if epoch % 15 != 0:
+        return log_dict_avg
+
     # 每个epoch保存
     if not cfg.DEBUG or cfg.IS_FORCE_SAVE:
         flog.info('训练完成正在保存模型...')
@@ -216,10 +219,10 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
                     # ids_classes = data_loader.dataset.classes_ids
                     ids_classes = data_loader.dataset.ids_classes  # key是数字
                     flog.debug('nms后 原图 %s', )
-                    show_bbox4ts(_img_ts, _target['boxes'] * _size, _target['labels'])
+                    # show_bbox4ts(_img_ts, _target['boxes'] * _size, _target['labels'])
                     flog.debug('nms后 预测共有多少个目标: %s' % p_boxes_ltrb[mask].shape[0])
-                    # show_bbox4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_labels[mask])
-                    f_show_od4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_scores[mask], p_labels[mask], ids_classes)
+                    show_bbox4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_labels[mask])
+                    # f_show_od4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_scores[mask], p_labels[mask], ids_classes)
 
                 # coco需要 ltwh
                 boxes_ltwh = ltrb2ltwh(p_boxes_ltrb[mask] * size.repeat(2)[None])

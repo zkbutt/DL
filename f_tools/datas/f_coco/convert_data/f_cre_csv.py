@@ -166,7 +166,8 @@ def handler_widerface():
 
 def hadler_voc():
     # path_data_root = r'M:\AI\datas\VOC2012\test'
-    path_data_root = r'M:\AI\datas\VOC2012\trainval'
+    # path_data_root = r'M:\AI\datas\VOC2012\trainval'
+    path_data_root = r'M:\AI\datas\raccoon200\VOCdevkit'
     path_file_txt = 'train.txt'
 
     path_txt = os.path.join(path_data_root, path_file_txt)
@@ -175,6 +176,8 @@ def hadler_voc():
         # 读每一行加上路径和扩展名---完整路径
         xml_list = [os.path.join(path_xml, line.strip() + ".xml") for line in read.readlines()]
 
+    if len(xml_list) == 0:
+        raise Exception('未读到数据')
     '''读文件获取类型名称'''
     # try:
     #     # {"类别1": 1, "类别2":2}
@@ -220,7 +223,7 @@ def hadler_voc():
     # print(rets)
     # ['2007_000027.jpg', '174.0', '101.0', '349.0', '351.0', 'person']
     infos = rets
-    path_csv = '../_file/csv_labels_' + 'voc' + '.csv'
+    path_csv = '../_file/csv_labels_' + 'voc_' + path_file_txt.split()[0] + '.csv'
     with open(path_csv, "w") as csv_labels:
         for info in infos:
             s_ = ','.join(info) + '\n'  # ---类别---
