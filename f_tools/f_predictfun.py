@@ -93,13 +93,16 @@ def label_nms4keypoints(ids_batch1, p_boxes_ltrb1, p_keypoints1, p_labels1, p_sc
         _p_scores = p_scores1[_mask]
         _p_labels = p_labels1[_mask]
         _p_boxes_ltrb = p_boxes_ltrb1[_mask]
-        _p_keypoints = p_keypoints1[_mask]
         keep = batched_nms(_p_boxes_ltrb, _p_scores, _ids_batch, threshold_nms)
         # 极大抑制
         ids_batch2 = torch.cat([ids_batch2, _ids_batch[keep]])
         p_scores2 = torch.cat([p_scores2, _p_scores[keep]])
         p_labels2 = torch.cat([p_labels2, _p_labels[keep]])
         p_boxes_ltrb2 = torch.cat([p_boxes_ltrb2, _p_boxes_ltrb[keep]])
-        p_keypoints2 = torch.cat([p_keypoints2, _p_keypoints[keep]])
+        if p_keypoints1 is not None:
+            _p_keypoints = p_keypoints1[_mask]
+            p_keypoints2 = torch.cat([p_keypoints2, _p_keypoints[keep]])
+        else:
+            p_keypoints2 = None
         # print('12')
     return ids_batch2, p_boxes_ltrb2, p_keypoints2, p_labels2, p_scores2,

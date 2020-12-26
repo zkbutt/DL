@@ -51,9 +51,36 @@ class ModelOut4Densenet121(nn.Module):
 
 
 def objfun_amend_mobilenet_v2(self, x):
-    # 实例方法重写
+    # 重写流程
     x = self.features(x)
     return x
+
+
+def objfun_amend_resnet18(self, x):
+    # 重写流程
+    x = self.conv1(x)
+    x = self.bn1(x)
+    x = self.relu(x)
+    x = self.maxpool(x)
+
+    x = self.layer1(x)
+    x = self.layer2(x)
+    x = self.layer3(x)
+    x = self.layer4(x)
+
+    # x = self.avgpool(x)
+    # x = torch.flatten(x, 1)
+    # x = self.fc(x)
+    return x
+
+
+class FNoProcessing(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, inputs):
+        return inputs
 
 
 class ModelOuts4Mobilenet_v2(nn.Module):
@@ -81,6 +108,20 @@ class ModelOuts4Mobilenet_v2(nn.Module):
         # torch.Size([10, 192, 52, 52]))  torch.Size([10, 576, 26, 26]) torch.Size([10, 1280, 13, 13])
         return self.out_layout1, self.out_layout2, outs
         # return hook
+
+
+class ModelOut4Resnet18(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        del model.avgpool
+        del model.fc
+        self.model = model
+        self.model._forward_impl = types.MethodType(objfun_amend_resnet18, model)
+        self.dim_out = 512
+
+    def forward(self, inputs):
+        ous = self.model(inputs)
+        return ous
 
 
 class ModelOut4Mobilenet_v2(nn.Module):
@@ -151,10 +192,13 @@ if __name__ == '__main__':
     # f_look_model(model, input=(1, 3, 416, 416))
 
     # 这个分不出来
-    model = models.mobilenet_v2(pretrained=True)
+    # model = models.mobilenet_v2(pretrained=True)
     # f_look(model, input=(1, 3, 416, 416))
-    model = ModelOut4Mobilenet_v2(model)
-    dims_out = [192, 576, 1280]
+    # model = ModelOut4Mobilenet_v2(model)
+    # dims_out = [192, 576, 1280]
+    # f_look_model(model, input=(1, 3, 416, 416))
+
+    model = models.resnet18(pretrained=True)
     f_look_model(model, input=(1, 3, 416, 416))
 
     '''通过 只支持顶层 _utils.IntermediateLayerGetter(backbone, return_layers) 提取'''
@@ -176,8 +220,8 @@ if __name__ == '__main__':
     # model = models.resnet50(pretrained=True)
     # model = models.wide_resnet50_2(pretrained=True)
     # model = models.mnasnet0_5(pretrained=True)
-    model = models.mobilenet_v2(pretrained=True)
-    model = ModelOuts4Mobilenet_v2(model)
+    # model = models.mobilenet_v2(pretrained=True)
+    # model = ModelOuts4Mobilenet_v2(model)
     # save_weight('.', model, '123')
     # load_weight('./123-1_None.pth', model)
 

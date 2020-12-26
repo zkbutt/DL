@@ -52,6 +52,9 @@ class LoosCenter(nn.Module):
         else:
             loss_keypoint = 0
 
+        # print('pheatmap max:%s mean:%s median:%s' % (pheatmap.max().item(),
+        #                                                   pheatmap.mean().item(),
+        #                                                   pheatmap.median().item()))
         loss_conf = focal_loss4center(pheatmap, gheatmap, reduction='sum') / num_pos * cfg.LOSS_WEIGHT[0]
         # loss_xy = focal_loss4center(pxy_offset, gxy_offset, reduction='sum') / num_pos
         # loss_wh = focal_loss4center(pwh, gwh, reduction='sum') / num_pos
@@ -70,7 +73,7 @@ class LoosCenter(nn.Module):
 
 
 class PredictCenter(nn.Module):
-    def __init__(self, cfg, threshold_conf=0.18, threshold_nms=0.3, topk=100):
+    def __init__(self, cfg, threshold_conf=0.5, threshold_nms=0.3, topk=100):
         super(PredictCenter, self).__init__()
         self.cfg = cfg
         self.threshold_nms = threshold_nms
@@ -107,6 +110,10 @@ class PredictCenter(nn.Module):
 
         # torch.Size([5, 128, 128, 20]) -> [5, 128, 128]
         mask = pheatmap_nms > self.threshold_conf
+
+        # print('pheatmap max:%s mean:%s median:%s' % (pheatmap.max().item(),
+        #                                              pheatmap.mean().item(),
+        #                                              pheatmap.median().item()))
         mask = torch.any(mask, dim=-1)
         if not torch.any(mask):  # 如果没有一个对象
             # flog.error('该批次没有找到目标')
@@ -247,7 +254,7 @@ class CenterNet(nn.Module):
         # [256, 512, 1024]
         self.upsample3conv = CenterUpsample3Conv(dim_in_backbone)
         self.head = CenterHead(num_classes=num_classes, num_keypoints=cfg.NUM_KEYPOINTS)
-        self.pred = PredictCenter(cfg)
+        self.pred = PredictCenter(cfg, threshold_conf=cfg.THRESHOLD_PREDICT_CONF)
         self.loss = LoosCenter(cfg)
 
     def forward(self, x, targets=None):

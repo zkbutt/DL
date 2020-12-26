@@ -25,7 +25,6 @@ from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
 from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
 from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints
-from f_tools.pic.f_size_handler import resize_np_keep
 
 
 def is_mgpu():
@@ -139,7 +138,7 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
         for k, v, in log_dict_avg.items():
             tb_writer.add_scalar('Loss/%s' % k, v, epoch + 1)
 
-    if epoch % 15 != 0:
+    if epoch % cfg.NUM_SAVE != 0:
         return log_dict_avg
 
     # 每个epoch保存
@@ -192,10 +191,10 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
         #     torch.cuda.synchronize(device)  # 测试时间的
 
         # ids_batch 用于把一批的box label score 一起弄出来
-        if hasattr(cfg, 'IS_USE_KEYPOINT') and cfg.IS_USE_KEYPOINT:
+        if hasattr(cfg, 'NUM_KEYPOINTS') and cfg.NUM_KEYPOINTS > 0:
             ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
         else:
-            ids_batch, p_boxes_ltrb, p_labels, p_scores = model(img_ts4)
+            ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
 
         if p_labels is None:
             continue
@@ -219,7 +218,7 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
                     # ids_classes = data_loader.dataset.classes_ids
                     ids_classes = data_loader.dataset.ids_classes  # key是数字
                     flog.debug('nms后 原图 %s', )
-                    # show_bbox4ts(_img_ts, _target['boxes'] * _size, _target['labels'])
+                    show_bbox4ts(_img_ts, _target['boxes'] * _size, _target['labels'])
                     flog.debug('nms后 预测共有多少个目标: %s' % p_boxes_ltrb[mask].shape[0])
                     show_bbox4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_labels[mask])
                     # f_show_od4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_scores[mask], p_labels[mask], ids_classes)

@@ -35,9 +35,14 @@ class PredictRetinaface(nn.Module):
             p_labels2 [nn]
             p_scores2 [nn]
         '''
+        cfg = self.cfg
         p_loc, p_conf, p_landms = p_tuple
-        p_scores = torch.sigmoid(p_conf)
+        if cfg.NUM_CLASSES == 1:
+            p_scores = torch.sigmoid(p_conf)
+        else:
+            p_scores = torch.softmax(p_conf, dim=-1)
         mask = p_scores >= self.threshold_conf
+        mask = torch.any(mask, dim=-1)
         if not torch.any(mask):  # 如果没有一个对象
             flog.error('该批次没有找到目标')
             return [None] * 4
@@ -45,16 +50,21 @@ class PredictRetinaface(nn.Module):
         # p_boxes_xywh -> p_boxes_ltrb
         p_boxes = fix_bbox(self.anchors, p_loc)
         # xywh2ltrb(p_boxes, safe=False)
-        p_keypoints = fix_keypoints(self.anchors, p_landms)
 
         '''第一阶段'''
-        ids_batch1, _, _ = torch.where(mask)
+        ids_batch1, _ = torch.where(mask)
         # 删除一维
-        mask_box = mask.squeeze(-1)
-        p_boxes_ltrb1 = xywh2ltrb(p_boxes[mask_box])
-        p_keypoints1 = p_keypoints[mask_box]
-        p_scores1 = p_scores[mask]
-        p_labels1 = torch.ones_like(p_scores1)
+        # mask_box = mask.squeeze(-1)
+        p_boxes_ltrb1 = xywh2ltrb(p_boxes[mask])
+        if cfg.NUM_KEYPOINTS > 0:
+            p_keypoints = fix_keypoints(self.anchors, p_landms)
+            p_keypoints1 = p_keypoints[mask]
+        else:
+            p_keypoints1 = None
+        p_scores1, p_labels1 = p_scores[mask].max(dim=-1)
+        p_labels1 = p_labels1 + 1
+
+        # p_labels1 = torch.ones_like(p_scores1)
 
         # 分类 nms
         ids_batch2, p_boxes_ltrb2, p_keypoints2, p_labels2, p_scores2 = label_nms4keypoints(
@@ -66,7 +76,6 @@ class PredictRetinaface(nn.Module):
             self.device,
             self.threshold_nms,
         )
-
         return ids_batch2, p_boxes_ltrb2, p_keypoints2, p_labels2, p_scores2
 
 
@@ -106,8 +115,7 @@ class LandmarkHead(nn.Module):
 
 
 class RetinaFace(nn.Module):
-    def __init__(self, backbone, num_classes, anchor_num, in_channels_fpn, ssh_channel=256, is_use_keypoint=False,
-                 cfg=None, device=None):
+    def __init__(self, backbone, num_classes, anchor_num, in_channels_fpn, ssh_channel=256, cfg=None, device=None):
         '''
 
         :param backbone:   这个的三层输出 in_channels_fpn
@@ -132,8 +140,7 @@ class RetinaFace(nn.Module):
                                              inchannels=ssh_channel,
                                              anchor_num=anchor_num)
 
-        self.use_keypoint = is_use_keypoint
-        if is_use_keypoint:
+        if cfg.NUM_KEYPOINTS > 0:
             self.LandmarkHead = self._make_landmark_head(fpn_num=len(in_channels_fpn),
                                                          inchannels=ssh_channel,
                                                          anchor_num=anchor_num)
@@ -142,7 +149,7 @@ class RetinaFace(nn.Module):
                            anchors_clip=cfg.ANCHORS_CLIP, is_xymid=True, is_real_size=False,
                            device=device)
 
-        if is_use_keypoint:
+        if cfg.NUM_KEYPOINTS > 0:
             losser = LossRetinaface(anc_obj.ancs, cfg.LOSS_WEIGHT, cfg.NEG_RATIO, cfg)
         else:
             losser = LossRetinaface(anc_obj.ancs, cfg.LOSS_WEIGHT, cfg.NEG_RATIO, cfg)
@@ -182,18 +189,25 @@ class RetinaFace(nn.Module):
         :param targets:
         :return:
         '''
+        cfg = self.cfg
         p_bboxs_xywh = outs[0]  # (batch,16800,4)  xywh  xywh
         p_labels = outs[1]  # (batch,16800,10)
         p_keypoints = outs[2]  # (batch,16800,2)
         num_batch = p_bboxs_xywh.shape[0]
         num_ancs = p_bboxs_xywh.shape[1]
-        gbboxs_ltrb = torch.Tensor(*p_bboxs_xywh.shape).to(self.device)  # torch.Size([batch, 16800, 4])
-        glabels = torch.Tensor(num_batch, num_ancs).to(self.device)  # 计算损失只会存在一维 无论多少类 标签只有一类
-        gkeypoints = torch.Tensor(*p_keypoints.shape).to(self.device)  # 相当于empty
+        gbboxs_ltrb = torch.zeros_like(p_bboxs_xywh, device=self.device)
+        glabels = torch.empty((num_batch, num_ancs), device=self.device)  # 这里只存label值 1位
+        if cfg.NUM_KEYPOINTS > 0:
+            gkeypoints = torch.zeros_like(p_keypoints, device=self.device)
+        else:
+            gkeypoints = None
         for index in range(num_batch):
             g_bboxs = targets[index]['boxes']  # torch.Size([batch, 4])
             g_labels = targets[index]['labels']  # torch.Size([batch])
-            g_keypoints = targets[index]['keypoints']  # torch.Size([batch, 10])
+            if gkeypoints is not None:
+                g_keypoints = targets[index]['keypoints']  # torch.Size([batch, 10])
+            else:
+                g_keypoints = None
             match_bboxs, match_keypoints, match_labels = pos_match_retinaface(
                 self.anc_obj.ancs, g_bboxs=g_bboxs,
                 g_labels=g_labels,
@@ -203,8 +217,8 @@ class RetinaFace(nn.Module):
             )
             glabels[index] = match_labels
             gbboxs_ltrb[index] = match_bboxs
-            gkeypoints[index] = match_keypoints
-
+            if gkeypoints is not None:
+                gkeypoints[index] = match_keypoints
         return gbboxs_ltrb, glabels, gkeypoints
 
     def forward(self, x, targets=None):
@@ -214,6 +228,7 @@ class RetinaFace(nn.Module):
         :return:
 
         '''
+        cfg = self.cfg
         out = self.backbone(x)  # 输出字典 {1:层1输出,2:层2输出,3:层2输出}
 
         # FPN 输出 3个特图的统一维度(超参) tuple(tensor(层1),tensor(层2),tensor(层3))
@@ -231,7 +246,7 @@ class RetinaFace(nn.Module):
         classifications = torch.cat([self.ClassHead[i](feature) for i, feature in enumerate(features)], dim=1)
         # torch.Size([batch, 16800, 10])
 
-        if self.use_keypoint:
+        if hasattr(self, 'LandmarkHead'):
             ldm_regressions = torch.cat([self.LandmarkHead[i](feature) for i, feature in enumerate(features)], dim=1)
         else:
             ldm_regressions = None

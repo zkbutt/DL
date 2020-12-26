@@ -92,15 +92,18 @@ def t_focal_loss():
 
 def t_多值交叉熵():
     # 2维
-    input = torch.randn(2, 5, requires_grad=True)  # (batch,类别值)
-    # 多分类标签 [3,5) size=(2)
-    target = torch.randint(3, 5, (2,), dtype=torch.int64)  # (batch)  值是3~4
-    loss = F.cross_entropy(input, target, reduction='none')  # 二维需要拉平
-    print(loss)
+    # input = torch.randn(2, 5, requires_grad=True)  # (batch,类别值)
+    # # 多分类标签 [3,5) size=(2)
+    # target = torch.randint(3, 5, (2,), dtype=torch.int64)  # (batch)  值是3~4
+    # loss = F.cross_entropy(input, target, reduction='none')  # 二维需要拉平
+    # print(loss)
+
     # 多维
     input = torch.randn(2, 7, 5, requires_grad=True)  # (batch,类别值,框)
+    print(input.shape)
     # # 多分类标签 [3,5) size=(2,5)
     target = torch.randint(3, 5, (2, 5,), dtype=torch.int64)  # (batch,框)
+    print(target.shape)
     loss = F.cross_entropy(input, target, reduction='none')  # 二维需要拉平
     print(loss)
     # loss.backward()
@@ -292,6 +295,7 @@ class LossRetinaface(nn.Module):
         :param g_keypoints:
         :return:
         '''
+        cfg = self.cfg
         p_bboxs_xywh, p_labels, p_keypoints = outs
         g_bboxs_ltrb, g_labels, g_keypoints = g_targets
         # 正样本标签布尔索引 [batch, 16800] 同维运算
@@ -323,12 +327,14 @@ class LossRetinaface(nn.Module):
         loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)
 
         '''-----------keypoints 损失处理-----------'''
-        d_keypoints = diff_keypoints(self.anc, g_keypoints)
-        loss_keypoints = self.location_loss(p_keypoints, d_keypoints).sum(dim=-1)
-        # 全0的不计算损失 与正例的布尔索引取交集
-        _mask = (mask_pos) * torch.all(g_keypoints > 0, dim=2)  # and一下 将全0的剔除
-        loss_keypoints = (_mask.float() * loss_keypoints).sum(dim=1)
-
+        if g_keypoints is not None:
+            d_keypoints = diff_keypoints(self.anc, g_keypoints)
+            loss_keypoints = self.location_loss(p_keypoints, d_keypoints).sum(dim=-1)
+            # 全0的不计算损失 与正例的布尔索引取交集
+            _mask = (mask_pos) * torch.all(g_keypoints > 0, dim=2)  # and一下 将全0的剔除
+            loss_keypoints = (_mask.float() * loss_keypoints).sum(dim=1)
+        else:
+            loss_keypoints = 0
         '''-----------labels 损失处理 难例挖掘-----------'''
         # 三维需 移到中间才能计算 (batch,16800,2) -> (batch,2,16800)
         # batch = p_labels.shape[0]
@@ -339,7 +345,12 @@ class LossRetinaface(nn.Module):
         # # F.cross_entropy
         #
         # (batch,2,16800)^[batch, 16800] ->[batch, 16800] 得同维每一个元素的损失
-        loss_labels = self.confidence_loss(p_labels, g_labels.long())
+        if cfg.NUM_CLASSES == 1:
+            loss_labels = F.binary_cross_entropy_with_logits(p_labels.squeeze(-1), g_labels, reduction='none')
+            # loss_labels = loss_labels.permute(0, 2, 1)
+        else:
+            p_labels = torch.softmax(p_labels, dim=-1)
+            loss_labels = self.confidence_loss(p_labels.permute(0, 2, 1), g_labels.long())
         # 分类损失 - 负样本选取  选损失最大的
         labels_neg = loss_labels.clone()
         labels_neg[mask_pos] = torch.tensor(0.0).to(loss_labels)  # 正样本先置0 使其独立 排除正样本,选最大的
@@ -353,7 +364,7 @@ class LossRetinaface(nn.Module):
         mask_neg = labels_rank < neg_num  # 选出最大的n个的mask  Tensor [batch, 8732]
         # 正例索引 + 反例索引 得1 0 索引用于乘积筛选
         mask_z = mask_pos.float() + mask_neg.float()
-        loss_labels = (loss_labels * (mask_z)).sum(dim=1)
+        loss_labels = (loss_labels * mask_z).sum(dim=1)
 
         '''-----------损失合并处理-----------'''
         # 没有正样本的图像不计算分类损失  pos_num是每一张图片的正例个数 eg. [15, 3, 5, 0] -> [1.0, 1.0, 1.0, 0.0]
@@ -947,13 +958,13 @@ if __name__ == '__main__':
 
     # t_focal_loss()
 
-    py = torch.tensor(0.8)
-    gy = torch.tensor(0.8)
-    print(focal_loss4center(py, gy))
-    floss = FocalLoss4Center()
-    print(floss(py, gy))
+    # py = torch.tensor(0.8)
+    # gy = torch.tensor(0.8)
+    # print(focal_loss4center(py, gy))
+    # floss = FocalLoss4Center()
+    # print(floss(py, gy))
 
-    # t_多值交叉熵()
+    t_多值交叉熵()
     # f_二值交叉熵2()
     # f_二值交叉熵1()
     # t_LossYOLO()

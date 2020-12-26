@@ -208,8 +208,8 @@ def pos_match_retinaface(ancs, g_bboxs, g_labels, g_keypoints, threshold_pos=0.5
     '''
 
     :param ancs:
-    :param g_bboxs:
-    :param g_labels:
+    :param g_bboxs:[n,4]
+    :param g_labels: [n]
     :param g_keypoints:
     :param threshold_pos:
     :param threshold_neg:
@@ -240,11 +240,15 @@ def pos_match_retinaface(ancs, g_bboxs, g_labels, g_keypoints, threshold_pos=0.5
     mash_ignore = torch.logical_and(anc_max_iou < threshold_pos, anc_max_iou > threshold_neg)
 
     match_bboxs = g_bboxs[bbox_index]
-    match_keypoints = g_keypoints[bbox_index]
-    match_labels = g_labels[bbox_index]
-    match_labels[mask_neg] = 0.
-    match_labels[mash_ignore] = -1.0
-
+    if g_keypoints is not None:
+        match_keypoints = g_keypoints[bbox_index]
+    else:
+        match_keypoints = None
+    match_labels = g_labels[bbox_index]  # 正例>1
+    match_labels[mask_neg] = 0.  # 反倒
+    # match_labels[mash_ignore] = -1.0  # 忽略
+    # match_bboxs torch.Size([16800, 4])
+    # match_labels 16800
     return match_bboxs, match_keypoints, match_labels
 
 

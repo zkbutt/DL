@@ -8,7 +8,8 @@ sys.path.append(os.path.split(rootPath)[0])
 from f_tools.fits.f_fit_fun import custom_set, train_eval4od
 from f_tools.fits.f_gpu.f_gpu_api import mgpu_init
 from object_detection.z_center.CONFIG_CENTER import CFG
-from object_detection.z_center.process_fun import init_model, data_loader4voc, data_loader4widerface
+from object_detection.z_center.process_fun import init_model, data_loader4voc, data_loader4widerface, \
+    data_loader4raccoon200
 from object_detection.z_center.train_center import fdatas_l2
 from torch.utils.tensorboard import SummaryWriter
 
@@ -52,8 +53,13 @@ if __name__ == '__main__':
     # loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = data_loader4voc(
     #     model.cfg, is_mgpu=True, ids2classes=None, )
 
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = data_loader4widerface(
-        model.cfg, is_mgpu=True, )
+    # loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = data_loader4widerface(
+    #     model.cfg, is_mgpu=True, )
+
+    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = data_loader4raccoon200(
+        model.cfg,
+        is_mgpu=True,
+    )
 
     '''---------------主进程任务启动--------------'''
     tb_writer = None

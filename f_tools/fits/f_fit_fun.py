@@ -30,15 +30,6 @@ def custom_set(cfg):
 
 
 def base_set(cfg):
-    cfg.DATA_NUM_WORKERS = min([os.cpu_count(), cfg.DATA_NUM_WORKERS])
-
-    # 检查保存权重文件夹是否存在，不存在则创建
-    if not os.path.exists(cfg.PATH_SAVE_WEIGHT):
-        try:
-            os.makedirs(cfg.PATH_SAVE_WEIGHT)
-        except Exception as e:
-            flog.error(' %s %s', cfg.PATH_SAVE_WEIGHT, e)
-
     # cfg.SAVE_FILE_NAME = os.path.basename(__file__)
     if torch.cuda.is_available():
         device = torch.device('cuda:%s' % 0)
@@ -58,18 +49,6 @@ def base_set(cfg):
     else:
         torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
 
-    if cfg.IS_MOSAIC:
-        # cfg.IMAGE_SIZE = [640, 640]
-        # cfg.BATCH_SIZE = 20
-        pass
-
-    ids2classes = None
-    if cfg.IS_FMAP_EVAL:
-        json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_voc.json'), 'r', encoding='utf-8')
-        ids2classes = json.load(json_file, encoding='utf-8')  # json key是字符
-        f_recover_gt(cfg.PATH_EVAL_INFO + '/gt_info')
-        device = torch.device("cpu")
-
     '''-----多尺度训练-----'''
     # if cfg.IS_MULTI_SCALE:
     #     # 动态输入尺寸选定 根据预设尺寸  0.667~1.5 之间 满足32的倍数
@@ -84,7 +63,9 @@ def base_set(cfg):
     #     # imgsz_train = imgsz_max  # initialize with max size
     #     # img_size = random.randrange(grid_min, grid_max + 1) * gs
     #     flog.info("输入画像的尺寸范围为[{}, {}] 可选尺寸为{}".format(imgsz_min, imgsz_max, sizes_in))
-    return device, cfg, ids2classes
+
+
+    return device, cfg
 
 
 def train_eval4od(start_epoch, model, optimizer,

@@ -2,7 +2,7 @@ import torch
 from torch import optim
 from torchvision import models
 
-from f_pytorch.tools_model.f_layer_get import ModelOuts4Mobilenet_v2, ModelOut4Mobilenet_v2
+from f_pytorch.tools_model.f_layer_get import ModelOuts4Mobilenet_v2, ModelOut4Mobilenet_v2, ModelOut4Resnet18
 from f_pytorch.tools_model.model_look import f_look_model
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet, load_od4voc, init_dataloader
@@ -50,9 +50,12 @@ def cre_data_transform(cfg):
 
 
 def init_model(cfg, device, id_gpu=None):
-    model = models.mobilenet_v2(pretrained=True)
-    model = ModelOut4Mobilenet_v2(model)
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'm2'
+    # model = models.mobilenet_v2(pretrained=True)
+    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'm2'
+    model = models.resnet18(pretrained=True)
+    model = ModelOut4Resnet18(model)
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'r18'
+
 
     model = CenterNet(cfg=cfg, backbone=model, num_classes=cfg.NUM_CLASSES, dim_in_backbone=model.dim_out)
     # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))
@@ -108,6 +111,7 @@ def data_loader4widerface(cfg, is_mgpu=False):
     cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/coco/images/val2017'
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_widerface'
     cfg.PATH_TENSORBOARD = 'runs_widerface'
+    cfg.cfg.DATA_NUM_WORKERS = 5
 
     data_transform = cre_data_transform(cfg)
 
@@ -160,8 +164,8 @@ def data_loader4raccoon200(cfg, is_mgpu=False):
 
     mode = 'bbox'  # bbox segm keypoints caption
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
-    file_json = cfg.PATH_HOST + r'\AI\datas\raccoon200\coco\annotations\instances_train2017.json'
-    path_img = cfg.PATH_HOST + r'\AI\datas\raccoon200\VOCdevkit\JPEGImages'
+    file_json = cfg.PATH_HOST + r'/AI/datas/raccoon200/coco/annotations/instances_train2017.json'
+    path_img = cfg.PATH_HOST + r'/AI/datas/raccoon200/VOCdevkit/JPEGImages'
     dataset_train = CustomCocoDataset(
         file_json=file_json,
         path_img=path_img,
@@ -174,12 +178,12 @@ def data_loader4raccoon200(cfg, is_mgpu=False):
         cfg=cfg
     )
 
-    file_json = cfg.PATH_HOST + r'\AI\datas\raccoon200\coco\annotations\instances_val2017.json'
+    file_json = cfg.PATH_HOST + r'/AI/datas/raccoon200/coco/annotations/instances_val2017.json'
     dataset_val = CustomCocoDataset(
         file_json=file_json,
         path_img=path_img,
         mode=mode,
-        transform=data_transform['train'],
+        transform=data_transform['val'],
         is_mosaic=cfg.IS_MOSAIC,
         is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
         is_mosaic_fill=cfg.IS_MOSAIC_FILL,
