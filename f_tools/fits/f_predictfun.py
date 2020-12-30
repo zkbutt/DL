@@ -11,26 +11,49 @@ def nms(boxes, scores, iou_threshold):
     return torch.ops.torchvision.nms(boxes, scores, iou_threshold)
 
 
-def batched_nms(boxes, scores, idxs, iou_threshold):
+def batched_nms_auto(boxes_ltrb, scores, threshold_iou=0.7):
     '''
-
-    :param boxes: 拉平所有类别的box重复的 n*20类,4
-    :param scores: torch.Size([16766])
-    :param idxs:  真实类别index 通过手动创建匹配的 用于表示当前 nms的类别 用于统一偏移 技巧
-    :param iou_threshold:float 0.5
+    负例通过 loss 进行 nms
+    :param boxes_ltrb: (batch,anc,4)
+    :param scores: (batch,anc)
+    :param threshold_iou:float 0.5
     :return:
     '''
-    if boxes.numel() == 0:
-        return torch.empty((0,), dtype=torch.int64, device=boxes.device)
+    device = boxes_ltrb.device
+    num_batch, num_anc, _ = boxes_ltrb.shape
+    ids_offset = torch.arange(num_batch, device=device).repeat_interleave(num_anc, dim=0)
+    boxes_ltrb = boxes_ltrb.clone().detach().reshape(-1, 4)
+    scores = scores.clone().detach().reshape(-1)
+
+    # ids_offset
+    boxes_for_nms = boxes_ltrb + (ids_offset * 2).unsqueeze(-1)
+
+    # keep = batched_nms(boxes_ltrb, scores, ids_offset, threshold_iou)
+    keep = nms(boxes_for_nms, scores, threshold_iou)
+    ids_keep = ids_offset[keep]
+    return keep, ids_keep
+
+
+def batched_nms(boxes_ltrb, scores, idxs, threshold_iou):
+    '''
+
+    :param boxes_ltrb: 拉平所有类别的box重复的 n*20类,4
+    :param scores: torch.Size([16766])
+    :param idxs:  真实类别index 通过手动创建匹配的 用于表示当前 nms的类别 用于统一偏移 技巧
+    :param threshold_iou:float 0.5
+    :return:
+    '''
+    if boxes_ltrb.numel() == 0:  # 维度全乘
+        return torch.empty((0,), dtype=torch.int64, device=boxes_ltrb.device)
 
     # torchvision.ops.boxes.batched_nms(boxes, scores, lvl, nms_thresh)
     # 根据最大的一个值确定每一类的偏移
-    max_coordinate = boxes.max()  # 选出每个框的 坐标最大的一个值
+    max_coordinate = boxes_ltrb.max()  # 选出每个框的 坐标最大的一个值
     # idxs 的设备和 boxes 一致 , 真实类别index * (1+最大值) 则确保同类框向 左右平移 实现隔离
-    offsets = idxs.to(boxes) * (max_coordinate + 1)
+    offsets = idxs.to(boxes_ltrb) * (max_coordinate + 1)
     # boxes 加上对应层的偏移量后，保证不同类别之间boxes不会有重合的现象
-    boxes_for_nms = boxes + offsets[:, None]
-    keep = nms(boxes_for_nms, scores, iou_threshold)
+    boxes_for_nms = boxes_ltrb + offsets[:, None]
+    keep = nms(boxes_for_nms, scores, threshold_iou)
     return keep
 
 

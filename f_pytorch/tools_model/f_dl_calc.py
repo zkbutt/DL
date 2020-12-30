@@ -79,10 +79,6 @@ def compose(*funcs):
         raise ValueError('Composition of empty sequence not supported.')
 
 
-
-
-
-
 if __name__ == '__main__':
     # print(calc_oshape_tf(w=606, k=7, s=2))
     # print(calc_oshape_tf(w=300, k=2, s=2, p='same'))

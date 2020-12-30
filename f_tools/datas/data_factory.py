@@ -683,7 +683,7 @@ def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
                                                                             # seed=20201114,
                                                                             )
             # 按定义为每一个 BATCH_SIZE 生成一批的索引
-            train_batch_sampler = torch.utils.data.BatchSampler(train_sampler, cfg.BATCH_SIZE, drop_last=True)
+            train_batch_sampler = torch.utils.data.BatchSampler(train_sampler, cfg.BATCH_SIZE, drop_last=False)
 
             loader_train = torch.utils.data.DataLoader(
                 dataset_train,
@@ -707,7 +707,6 @@ def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
             )
 
     if cfg.IS_COCO_EVAL:
-
         if is_mgpu:
             # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
             eval_sampler = torch.utils.data.distributed.DistributedSampler(dataset_val,

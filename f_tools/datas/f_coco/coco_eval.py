@@ -33,6 +33,8 @@ class CocoEvaluator(object):
         :param predictions:不能为空
         :return:
         '''
+        if not predictions:
+            return
         img_ids = list(np.unique(list(predictions.keys())))
         self.img_ids.extend(img_ids)
 

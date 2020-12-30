@@ -3,7 +3,6 @@ from PIL import Image
 
 from f_tools.f_od_gen import f_get_rowcol_index
 from f_tools.fun_od.f_boxes import ltrb2xywh, xywh2ltrb
-from f_tools.pic.f_show import show_bbox4pil
 
 
 class FAnchors:
@@ -70,12 +69,12 @@ class FAnchors:
             ans_xywh = torch.cat([ancs_xy, ancs_wh], dim=-1)
             ret_ancs = torch.cat([ret_ancs, ans_xywh], dim=0)
         if self.anchors_clip:  # 对于xywh 来说这个参数 是没有用的
-            xywh2ltrb(ret_ancs, safe=False)
+            ret_ancs = xywh2ltrb(ret_ancs)
             ret_ancs.clamp_(min=0, max=1)  # 去除超边际的
-            ltrb2xywh(ret_ancs, safe=False)
+            ret_ancs = ltrb2xywh(ret_ancs)
         if self.is_real_size:
             ret_ancs = ret_ancs * torch.tensor(self.img_in_size)[None].repeat(1, 2)
-        __d = 1
+        # __d = 1
         if self.device is not None:
             ret_ancs = ret_ancs.to(self.device)
         return ret_ancs
@@ -104,8 +103,8 @@ if __name__ == '__main__':
         [[0.1, 0.1], [0.2, 0.2], ],
         [[0.4, 0.4], [0.8, 0.8], ],
     ]
-    anchors_xywh = FAnchors_v2(size, anc_scale, feature_map_steps,
-                          anchors_clip=False, is_xymid=True, is_real_size=True).cre_anchors()
+    anchors_xywh = FAnchors(size, anc_scale, feature_map_steps,
+                          anchors_clip=False, is_xymid=True, is_real_size=False).cre_anchors()
     # print(anchors)
     # anchors = FAnchors(size, anc_scale, feature_map_steps,
     #                    anchors_clip=True, is_xymid=False, is_real_size=True).cre_anchors()  # torch.Size([10647, 4])

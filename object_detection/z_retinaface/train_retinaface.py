@@ -1,13 +1,15 @@
 import os
 import sys
 
+from f_tools.fits.f_fun_lr import f_lr_cos
+
 '''用户命令行启动'''
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.f_fit_fun import init_od, base_set, train_eval4od
+from f_tools.fits.f_fit_fun import init_od, base_set, train_eval4od, fdatas_l2
 
 from torch import optim
 from torchvision import models
@@ -21,27 +23,6 @@ from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
 from torch.utils.tensorboard import SummaryWriter
 
 
-def fdatas_l2(batch_data, device, mode='keypoints'):
-    '''
-    cpu转gpu 输入模型前数据处理方法 定制
-    :param batch_data:
-    :param device:
-    :return:
-    '''
-    images, targets = batch_data
-    images = images.to(device)
-    for target in targets:
-        target['boxes'] = target['boxes'].to(device)
-        target['labels'] = target['labels'].to(device)
-        target['size'] = target['size'].to(device)
-        if mode == 'keypoints':
-            target['keypoints'] = target['keypoints'].to(device)
-
-        # for key, val in target.items():
-        #     target[key] = val.to(device)
-    return images, targets
-
-
 def init_model(cfg, device, id_gpu=None):
     # model = models.densenet121(pretrained=False)
     # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'densenet121'
@@ -52,6 +33,7 @@ def init_model(cfg, device, id_gpu=None):
     model = models.mobilenet_v2(pretrained=True)
     model = ModelOuts4Mobilenet_v2(model)
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_m2'
+    cfg.FEATURE_MAP_STEPS = [8, 16, 32]  # 特图的步距 下采倍数
 
     # model = models.mnasnet1_3(pretrained=True)
     # dims_out = [512, 1024, 1280]
@@ -84,13 +66,22 @@ def init_model(cfg, device, id_gpu=None):
     # 权重衰减(如L2惩罚)(默认: 0)
     optimizer = optim.Adam(pg, lr0, weight_decay=5e-4)
     # 两次不上升，降低一半
-    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.75, patience=1, verbose=True)
+    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.85, patience=1, verbose=True)
+    # lr_scheduler = f_lr_cos(optimizer, 0, cfg.END_EPOCH, lrf)
     lr_scheduler = None
-    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
     # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
+    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg
     return model, optimizer, lr_scheduler, start_epoch
+
+
+def train_set(cfg):
+    cfg.FILE_NAME_WEIGHT = 'train_retinaface_raccoon200_m2-1_4.381' + '.pth'
+    # cfg.FILE_NAME_WEIGHT = 'train_retinaface_raccoon200_m2-21_15.186' + '.pth'
+    # cfg.FILE_NAME_WEIGHT = 'train_retinaface_type3_m2-1_11.083' + '.pth'  # 初始化
+    # cfg.FILE_NAME_WEIGHT = '128' + '.pth'
+    pass
 
 
 '''
@@ -102,6 +93,7 @@ if __name__ == '__main__':
     # -----------通用系统配置----------------
     init_od()
     device, cfg = base_set(CFG)
+    train_set(cfg)
 
     '''---------------数据加载及处理--------------'''
     loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = cfg.FUN_LOADER_DATA(cfg,

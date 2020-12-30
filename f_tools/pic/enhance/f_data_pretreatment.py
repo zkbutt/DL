@@ -8,7 +8,7 @@ from torchvision.transforms import functional as F, transforms
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import VOCDataSet
 from f_tools.fun_od.f_boxes import calc_iou4ts
-from f_tools.pic.f_show import show_bbox_keypoints4pil, show_bbox4pil
+from f_tools.pic.f_show import show_bbox_keypoints4pil
 from f_tools.pic.f_size_handler import resize_np_keep
 
 

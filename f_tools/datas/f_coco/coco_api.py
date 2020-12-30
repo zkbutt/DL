@@ -111,6 +111,9 @@ def t_coco_json():
 
 
 if __name__ == '__main__':
+    '''
+    coco出来是 ltwh
+    '''
     pylab.rcParams['figure.figsize'] = (8.0, 10.0)
     coco, path_img = t_coco_json()
 

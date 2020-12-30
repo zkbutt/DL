@@ -204,11 +204,11 @@ def pos_match4yolo(ancs, bboxs, criteria):
     return pos_ancs_index, pos_bboxs_index, mask_neg, mask_ignore
 
 
-def pos_match_retinaface(ancs, g_bboxs, g_labels, g_keypoints, threshold_pos=0.5, threshold_neg=0.3):
+def pos_match_retinaface(ancs_ltrb, g_bboxs_ltrb, g_labels, g_keypoints, threshold_pos=0.5, threshold_neg=0.3):
     '''
 
-    :param ancs:
-    :param g_bboxs:[n,4]
+    :param ancs_ltrb:
+    :param g_bboxs_ltrb:[n,4] ltrb
     :param g_labels: [n]
     :param g_keypoints:
     :param threshold_pos:
@@ -217,7 +217,7 @@ def pos_match_retinaface(ancs, g_bboxs, g_labels, g_keypoints, threshold_pos=0.5
     '''
     # (bboxs个,anc个)
     # print(bboxs.shape[0])
-    iou = calc_iou4ts(g_bboxs, xywh2ltrb(ancs))
+    iou = calc_iou4ts(g_bboxs_ltrb, ancs_ltrb)
     # anc对应box最大的  anc个 bbox_index
     anc_max_iou, bbox_index = iou.max(dim=0)  # 存的是 bboxs的index
 
@@ -225,7 +225,7 @@ def pos_match_retinaface(ancs, g_bboxs, g_labels, g_keypoints, threshold_pos=0.5
     bbox_max_iou, anc_index = iou.max(dim=1)  # 存的是 anc的index
 
     # 强制保留 将每一个bbox对应的最大的anc索引 的anc_bbox_iou值强设为2 大于阀值即可
-    anc_max_iou.index_fill_(0, anc_index, 2)  # dim index val
+    anc_max_iou.index_fill_(0, anc_index, 1)  # 最大的为正例, 强制为conf 为1
 
     # 一定层度上使gt均有对应的anc, 处理多个anc对一gt的问题, 若多个gt对一个anc仍不能解决(情况较少)会导致某GT学习不了...遍历每一个gt索引
     gt_ids = torch.arange(0, anc_index.size(0), dtype=torch.int64).to(bbox_index)  # [0,1]
@@ -237,26 +237,24 @@ def pos_match_retinaface(ancs, g_bboxs, g_labels, g_keypoints, threshold_pos=0.5
     # ----------正例的index 和 正例对应的bbox索引----------
     mask_pos = anc_max_iou >= threshold_pos  # anc 的正例 index 不管
     mask_neg = anc_max_iou <= threshold_neg  # anc 的反例 index
-    mash_ignore = torch.logical_and(anc_max_iou < threshold_pos, anc_max_iou > threshold_neg)
+    mash_ignore = torch.logical_not(torch.logical_or(mask_pos, mask_neg))
 
-    match_bboxs = g_bboxs[bbox_index]
+    match_conf = anc_max_iou
+    match_labels = g_labels[bbox_index]
+    match_bboxs = g_bboxs_ltrb[bbox_index]
     if g_keypoints is not None:
         match_keypoints = g_keypoints[bbox_index]
     else:
         match_keypoints = None
-    match_labels = g_labels[bbox_index]  # 正例>1
-    match_labels[mask_neg] = 0.  # 反倒
-    # match_labels[mash_ignore] = -1.0  # 忽略
-    # match_bboxs torch.Size([16800, 4])
-    # match_labels 16800
-    return match_bboxs, match_keypoints, match_labels
+
+    return match_bboxs, match_keypoints, match_labels, match_conf, mask_pos, mask_neg, mash_ignore
 
 
-def fmatch4yolo1(boxes, labels, num_bbox, num_class, grid, device=None):
+def fmatch4yolo1(boxes_ltrb, labels, num_bbox, num_class, grid, device=None):
     '''
     一个网格匹配两个对象 只能预测一个类型
     输入一个图片的 target
-    :param boxes: ltrb
+    :param boxes_ltrb: ltrb
     :param labels:
     :param num_bbox:
     :param num_class:
@@ -266,12 +264,12 @@ def fmatch4yolo1(boxes, labels, num_bbox, num_class, grid, device=None):
     '''
     dim_out = num_bbox * (4 + 1) + num_class
     # dim_out = 4 * num_bbox + 1 + num_class
-    p_yolo = torch.zeros((grid, grid, dim_out), device=device)  # [7, 7, 11]
+    p_yolo_one = torch.zeros((grid, grid, dim_out), device=device)  # [7, 7, 11]
     # onehot 只有第一个类别 index 为0
     labels_onehot = labels2onehot4ts(labels - 1, num_class)
 
     # ltrb -> xywh
-    boxes_xywh = ltrb2xywh(boxes)
+    boxes_xywh = ltrb2xywh(boxes_ltrb)
     wh = boxes_xywh[:, 2:]
     cxcy = boxes_xywh[:, :2]
 
@@ -287,14 +285,15 @@ def fmatch4yolo1(boxes, labels, num_bbox, num_class, grid, device=None):
         offxywh = torch.cat([grid_xy[i], wh[i]], dim=0)
         # 正例的conf 和 onehot
         conf2 = torch.tensor([1] * 2, device=device, dtype=torch.int16)
+        # 组装正例 yolo_data
         t = torch.cat([offxywh.repeat(2), conf2, labels_onehot[i]], dim=0)
-        if p_yolo[row, col, 8] == 1:  # 该网格已有一个GT框了
+        if p_yolo_one[row, col, 8] == 1:  # 该网格已有一个GT框了
             # 改第一个框 ,  一个格子最多两个目标
-            p_yolo[row, col, :4] = offxywh
+            p_yolo_one[row, col, :4] = offxywh
         else:
-            p_yolo[row, col] = t
+            p_yolo_one[row, col] = t
     # p_yolo = p_yolo.permute(2, 0, 1)
-    return p_yolo
+    return p_yolo_one
 
 
 def fmatch_OHEM(l_conf, match_index_pos, neg_ratio, num_neg, device, dim=-1):

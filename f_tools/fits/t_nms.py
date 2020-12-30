@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from f_tools.fun_od.f_boxes import ltrb2ltwh, batched_nms, bbox_iou4np
-from f_tools.pic.f_show import STANDARD_COLORS
+from f_tools.pic.f_show import COLORS_ImageDraw
 
 colors = [
     'b', 'g', 'r', 'c', 'm', 'y', 'k',

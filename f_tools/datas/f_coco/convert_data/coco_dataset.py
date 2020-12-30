@@ -1,23 +1,26 @@
 import os
-
 import torch
+import numpy as np
+
+torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
+np.set_printoptions(linewidth=320, suppress=True,
+                    formatter={'float_kind': '{:11.5g}'.format})  # format short g, %precision=5
 from PIL import Image
 from pycocotools.coco import COCO
 from torch.utils.data import Dataset
-import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.f_coco.coco_api import f_show_coco_pics, f_open_cocoimg
 from f_tools.fun_od.f_boxes import ltwh2ltrb
 from f_tools.pic.enhance.f_mosaic import f_mosaic_pics_ts
-from f_tools.pic.f_show import show_bbox4pil
+from f_tools.pic.f_show import f_plt_box2
 
 
 class CocoDataset(Dataset):
 
     def __init__(self, path_coco_target, path_img, mode, data_type, transform=None,
                  is_mosaic=False, is_mosaic_keep_wh=False, is_mosaic_fill=False,
-                 is_debug=False, cfg=None, s_ids_cats=None):
+                 is_debug=False, cfg=None, s_ids_cats=None, nums_cat=()):
         '''
 
         :param path_coco_target: 标注目录
@@ -30,6 +33,7 @@ class CocoDataset(Dataset):
         :param is_debug: 减少加载量
         :param cfg: 使用 is_mosaic 或其它
         :param s_ids_cats: 选择特有的类型 list[类号]
+        :param nums_cat: 类型对应类型数
         '''
         # path_save_img = os.path.join(dataset.path_root, 'images', dataset.data_type)
         self.path_coco_target, self.data_type = path_coco_target, data_type
@@ -43,6 +47,7 @@ class CocoDataset(Dataset):
             raise Exception('mode 错误', self.mode)
 
         file_json = '{}/{}_{}.json'.format(path_coco_target, name_file, data_type)
+        flog.debug('加载file_json  %s', file_json)
         if not os.path.exists(file_json):
             raise Exception('coco标注文件不存在', file_json)
         self.coco = COCO(file_json)
@@ -51,11 +56,13 @@ class CocoDataset(Dataset):
         # f_show_coco_pics(self.coco, path_img, ids_img=[279])
 
         if s_ids_cats is not None:
-            flog.warning('指定coco类型 %s', coco.loadCats(s_ids_cats))
+            flog.warning('指定coco类型 %s', self.coco.loadCats(s_ids_cats))
             self.s_ids_cats = s_ids_cats
             ids_img = []
-            for idc in s_ids_cats:
-                ids_ = coco.getImgIds(catIds=idc)
+            for idc, num_cat in zip(s_ids_cats, nums_cat):
+                # 类型对应哪些文件 可能是一张图片多个类型
+                ids_ = self.coco.getImgIds(catIds=idc)[:num_cat]
+                # ids_ = self.coco.getImgIds(catIds=idc)[:1000]
                 ids_img += ids_
                 # print(ids_)  # 这个只支持单个元素
             self.ids_img = list(set(ids_img))  # 去重
@@ -266,11 +273,11 @@ class CustomCocoDataset(Dataset):
         self.mode = mode
         self.coco = COCO(file_json)
         if s_ids_cats is not None:
-            flog.warning('指定coco类型 %s', coco.loadCats(s_ids_cats))
+            flog.warning('指定coco类型 %s', coco_obj.loadCats(s_ids_cats))
             self.s_ids_cats = s_ids_cats
             ids_img = []
             for idc in s_ids_cats:
-                ids_ = coco.getImgIds(catIds=idc)
+                ids_ = coco_obj.getImgIds(catIds=idc)
                 ids_img += ids_
                 # print(ids_)  # 这个只支持单个元素
             self.ids_img = list(set(ids_img))  # 去重
@@ -292,7 +299,7 @@ class CustomCocoDataset(Dataset):
     def __len__(self):
         # flog.debug('__len__ %s', )
         if self.is_debug:
-            return 10
+            return 20
         if self.is_mosaic:
             return len(self.ids_img) // 4
         return len(self.ids_img)
@@ -340,9 +347,11 @@ class CustomCocoDataset(Dataset):
         :param index:
         :return: tensor or np.array 根据 out: 默认ts or other is np
             img: h,w,c
-            target: dict{
+            target:
+            coco原装是 ltwh
+            dict{
                 image_id: int,
-                bboxs: ts n4 ltrb
+                bboxs: ts n4 原装ltwh -> ltrb
                 labels: ts n,
                 keypoints: ts n,10
                 size: wh
@@ -412,7 +421,7 @@ class CustomCocoDataset(Dataset):
         for a in coco_anns:
             # skip the annotations with width or height < 1
             if a['bbox'][2] < 1 or a['bbox'][3] < 1:
-                # flog.warning('标记框有问题 %s', a)
+                flog.warning('标记框有问题 %s', a)
                 continue
 
             labels.append(self.ids_old_new[a['category_id']])
@@ -431,7 +440,7 @@ class CustomCocoDataset(Dataset):
                 keypoints = np.append(keypoints, k_[None,], axis=0)
 
         # ltwh --> ltrb
-        ltwh2ltrb(bboxs, safe=False)
+        bboxs = ltwh2ltrb(bboxs)
         if bboxs.shape[0] == 0:
             flog.error('这图标注 不存在 %s', coco_anns)
             # raise Exception('这图标注 不存在 %s', coco_anns)
@@ -473,54 +482,103 @@ class CustomCocoDataset(Dataset):
             self.ids_classes[v] = k
 
 
-def loadcoco(mode):
-    path_root = r'M:\AI\datas\VOC2012'  # 自已的数据集
+def load_voc(mode):
+    # path_root = r'M:/AI/datas/VOC2007'  # 自已的数据集
+    path_root = r'/AI/datas/VOC2007'  # 自已的数据集
     path_coco_target = os.path.join(path_root, 'coco/annotations')
-    path_img = os.path.join(path_root, 'trainval', 'JPEGImages')
-    data_type = 'train2017'  # train2017 val2017 自动匹配json文件名
-    dataset = CocoDataset(path_coco_target, path_img, mode, data_type)
+    path_img = os.path.join(path_root, 'train', 'JPEGImages')
+    data_type = 'train'  # train2017 val2017 自动匹配json文件名
+
+    # path_img = os.path.join(path_root, 'test', 'JPEGImages')
+    # data_type = 'val2017'  # train2017 val2017 自动匹配json文件名
+
+    # s_ids_cats = [7, 12, 15]  # 汽车 1284 ,dog 1341, 人person 9583
+    s_ids_cats = None
+    # dataset = CocoDataset(path_coco_target, path_img, mode, data_type, s_ids_cats=s_ids_cats)
+
+    file_json = path_coco_target + '/instances_type3_train.json'
+    dataset = CustomCocoDataset(
+        file_json=file_json,
+        path_img=path_img,
+        mode=mode,
+        transform=None,
+    )
+    return path_img, dataset
+
+
+def load_raccoon(mode):
+    file_json = r'M:/AI/datas/raccoon200/coco/annotations/instances_train2017.json'
+    path_img = r'M:/AI/datas/raccoon200/VOCdevkit/JPEGImages'
+    dataset = CustomCocoDataset(file_json, path_img, mode)
+
+    return path_img, dataset
+
+
+def load_cat(mode):
+    file_json = r'M:/AI/datas/VOC2012/coco/annotations/instances_cat3_train.json'
+    path_img = r'M:/AI/datas/VOC2012/trainval/JPEGImages'
+    # file_json = r'/AI/datas/VOC2012/coco/annotations/instances_cat3_train.json'
+    # path_img = r'/AI/datas/VOC2012/trainval/JPEGImages'
+    dataset = CustomCocoDataset(file_json, path_img, mode)
+
     return path_img, dataset
 
 
 if __name__ == '__main__':
+    '''
+    用于测试  coco出来是 ltwh
+    '''
     mode = 'bbox'  # bbox segm keypoints caption
-    # path_img, dataset = loadcoco(mode)
-    file_json = r'M:\AI\datas\raccoon200\annotations\pascal_train2020.json'
-    path_img = r'M:\AI\datas\raccoon200\images'
-    dataset = CustomCocoDataset(file_json, path_img, mode)
+    # path_img, dataset = load_voc(mode)
+    path_img, dataset = load_raccoon(mode)
+    # path_img, dataset = load_cat(mode)
+
+    print('len(dataset)', len(dataset))
     coco = dataset.coco
+    # 可视化代码
+    for data in dataset:
+        print(data)
+        img_pil, target = data
+        f_show_coco_pics(coco, path_img, ids_img=[target['image_id']])
+        f_plt_box2(img_pil, target['boxes'], is_recover_size=False)  # 显示原图
+    coco_obj = dataset.coco
 
     dataset_ = dataset[1]
     '''打开某一个图'''
-    img_id = coco.getImgIds()[0]
-    img_pil = f_open_cocoimg(path_img, coco, img_id=img_id)
+    img_id = coco_obj.getImgIds()[0]
+    img_pil = f_open_cocoimg(path_img, coco_obj, img_id=img_id)
     # img_pil.show()
 
     '''获取指定类别名的id'''
-    print(coco.loadCats(coco.getCatIds()))
-    print(coco.getCatIds())
+    ids_cat = coco_obj.getCatIds()
+    print(ids_cat)
+    infos_cat = coco_obj.loadCats(ids_cat)
+    for info_cat in infos_cat:
+        # {'id': 1, 'name': 'aeroplane'}
+        ids = coco_obj.getImgIds(catIds=info_cat['id'])
+        print('类型对应有多少个图片', info_cat['id'], info_cat['name'], len(ids))
+
     # ids_cat = coco.getCatIds(catNms=['aeroplane', 'bottle'])
     # ids_cat = coco.getCatIds(catIds=[1, 3])
-    ids_cat = coco.getCatIds(catIds=[1])
-    print(ids_cat)
+    # ids_cat = coco_obj.getCatIds(catIds=[1])
+    # print(ids_cat)
     # infos_cat = coco.loadCats(ids=[1, 5])
     # print(infos_cat)  # 详细类别信息 [{'id': 1, 'name': 'aeroplane'}, {'id': 2, 'name': 'bicycle'}]
     '''获取指定类别id的图片id'''
     ids_img = []
     for idc in ids_cat:
-        ids_ = coco.getImgIds(catIds=idc)
+        ids_ = coco_obj.getImgIds(catIds=idc)
         ids_img += ids_
         # print(ids_)  # 这个只支持单个元素
     ids_img = list(set(ids_img))  # 去重
-    # print(len(ids_img))
 
     '''查看图片信息  '''
-    infos_img = coco.loadImgs(ids_img[0])
+    infos_img = coco_obj.loadImgs(ids_img[0])
     print(infos_img)  # [{'height': 281, 'width': 500, 'id': 1, 'file_name': '2007_000032.jpg'}]
-    ids_ann = coco.getAnnIds(imgIds=infos_img[0]['id'])
-    info_ann = coco.loadAnns(ids_ann)  # annotation 对象
+    ids_ann = coco_obj.getAnnIds(imgIds=infos_img[0]['id'])
+    info_ann = coco_obj.loadAnns(ids_ann)  # annotation 对象
 
     '''获取数据集类别数'''
-    flog.debug(coco.loadCats(coco.getCatIds()))
+    # flog.debug(coco_obj.loadCats(coco_obj.getCatIds()))
     '''显示标注'''
-    f_show_coco_pics(coco, path_img)
+    # f_show_coco_pics(coco_obj, path_img)

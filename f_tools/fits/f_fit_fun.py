@@ -64,8 +64,28 @@ def base_set(cfg):
     #     # img_size = random.randrange(grid_min, grid_max + 1) * gs
     #     flog.info("输入画像的尺寸范围为[{}, {}] 可选尺寸为{}".format(imgsz_min, imgsz_max, sizes_in))
 
-
     return device, cfg
+
+
+def fdatas_l2(batch_data, device, cfg):
+    '''
+    cpu转gpu 输入模型前数据处理方法 定制
+    :param batch_data:
+    :param device:
+    :return:
+    '''
+    images, targets = batch_data
+    images = images.to(device)
+    for target in targets:
+        target['boxes'] = target['boxes'].to(device)
+        target['labels'] = target['labels'].to(device)
+        target['size'] = target['size'].to(device)
+        if cfg.NUM_KEYPOINTS > 0:
+            target['keypoints'] = target['keypoints'].to(device)
+
+        # for key, val in target.items():
+        #     target[key] = val.to(device)
+    return images, targets
 
 
 def train_eval4od(start_epoch, model, optimizer,
@@ -97,7 +117,7 @@ def train_eval4od(start_epoch, model, optimizer,
             #     flog.warning('更新 lr_scheduler %s', log_dict['loss_total'])
             #     lr_scheduler.step(log_dict['loss_total'])  # 更新学习
 
-        if model.cfg.IS_COCO_EVAL:
+        if model.cfg.IS_COCO_EVAL and epoch > cfg.START_EVAL:
             flog.info('COCO 验证开始 %s', epoch + 1)
             model.eval()
             # with torch.no_grad():

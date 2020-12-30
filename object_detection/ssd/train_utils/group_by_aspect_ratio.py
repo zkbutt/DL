@@ -133,7 +133,7 @@ def _compute_aspect_ratios_coco_dataset(dataset, indices=None):
         indices = range(len(dataset))
     aspect_ratios = []
     for i in indices:
-        img_info = dataset.coco.imgs[dataset.ids[i]]
+        img_info = dataset.coco_obj.imgs[dataset.ids[i]]
         aspect_ratio = float(img_info["width"]) / float(img_info["height"])
         aspect_ratios.append(aspect_ratio)
     return aspect_ratios

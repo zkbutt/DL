@@ -54,6 +54,7 @@ def fdatas_l2(batch_data, device, cfg=None):
         match4center(boxes_xywh, labels, fsize, targets_center[i], cfg.NUM_KEYPOINTS, keypoints)
 
         if cfg.IS_VISUAL:
+            # -------------------目标可视化--------------------
             import json
             # json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_widerface_proj.json'), 'r', encoding='utf-8')
             # json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_voc_proj.json'), 'r', encoding='utf-8')

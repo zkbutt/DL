@@ -13,13 +13,24 @@ from torch.utils.tensorboard import SummaryWriter
 from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
 import torch
 from f_tools.GLOBAL_LOG import flog
-from object_detection.z_retinaface.train_retinaface import init_model, fdatas_l2
+from object_detection.z_retinaface.train_retinaface import init_model, fdatas_l2, train_set
 
 '''
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py
 --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_retinaface/train_retinaface_DDP.py
 python -m torch.distributed.launch --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_retinaface/train_retinaface_DDP.py
 
+04runs_rac_b4_f1_s512_mf 双GPU 0:00:06 (0.3087 s / it) 23-93-53-1.32
+01runs_rac_b20_f1_s512_mf 双GPU 0:00:05 (1.3929 s / it) 28-93-53-1.06
+02runs_rac_b20_f4_s512_mf 双GPU 0:00:05 (1.3661 s / it) 45-91-48-1.2
+03runs_rac_b20_f8_s512_mf 双GPU 0:00:05 (1.3661 s / it) 58-91-48-1.09
+06runs_rac_b20_f4_s512_mt 双GPU 0:00:02 (2.7344 s / it) 可能是m2不行
+05runs_rac_b20_f1_s512_mt 双GPU 0:00:02 (2.7385 s / it) 89-71-42-1.09
+
+07runs_voc_b20_f1_s512_mf 双GPU 0:07:31 (1.0538 s / it)
+07runs_voc_b48_f1_s416_mf 双GPU 0:05:06 (1.7192 s / it)
+
+08runs_type3_b32_f1_s512_mf 双GPU 0:00:29 (1.7214 s / it)
 
 '''
 
@@ -27,6 +38,7 @@ if __name__ == '__main__':
     if torch.cuda.is_available() is False:
         raise EnvironmentError("未发现GPU")
     cfg = CFG
+    train_set(cfg)
     torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
     if cfg.DEBUG or cfg.IS_FMAP_EVAL:
         raise Exception('调试 和 IS_FMAP_EVAL 模式无法使用')
@@ -36,6 +48,8 @@ if __name__ == '__main__':
     '''---------------数据加载及处理--------------'''
     loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = cfg.FUN_LOADER_DATA(cfg,
                                                                                                       is_mgpu=True, )
+    cfg.PATH_PROJECT_ROOT = cfg.PATH_HOST + '/AI/temp/tmp_pycharm/DL/object_detection/z_retinaface'  # 这个要改
+
     '''------------------模型定义---------------------'''
     model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=args)
 
@@ -51,12 +65,11 @@ if __name__ == '__main__':
                 flog.error(' %s %s', CFG.PATH_SAVE_WEIGHT, e)
         # tensorboard --logdir=runs_widerface --host=192.168.0.199
         # tensorboard --logdir=runs_voc --host=192.168.0.199
-        # cfg.PATH_TENSORBOARD = 'raccoon200'
-        print('"tensorboard --logdir=%s --host=192.168.0.199", view at http://192.168.0.199:6006/'
-              % cfg.PATH_TENSORBOARD)
+        # print('"tensorboard --logdir=runs_raccoon200 --host=192.168.0.199", view at http://192.168.0.199:6006/'
+        #       % cfg.PATH_TENSORBOARD)
         tb_writer = SummaryWriter(os.path.join(cfg.PATH_PROJECT_ROOT, cfg.PATH_TENSORBOARD))
 
-    print('cfg.BATCH_SIZE', cfg.BATCH_SIZE)
+    print('cfg.BATCH_SIZE---', cfg.BATCH_SIZE)
     '''---------------训练验证开始--------------'''
     train_eval4od(start_epoch=start_epoch, model=model, optimizer=optimizer,
                   fdatas_l2=fdatas_l2, lr_scheduler=lr_scheduler,

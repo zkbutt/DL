@@ -1,3 +1,7 @@
+from matplotlib import pyplot as plt
+
+plt.rcParams['font.sans-serif'] = ['SimHei']  # 显示中文标签
+plt.rcParams['axes.unicode_minus'] = False
 import random
 
 import cv2
@@ -11,7 +15,7 @@ from f_tools.GLOBAL_LOG import flog
 
 # 126种颜色
 
-STANDARD_COLORS = [
+COLORS_ImageDraw = [
     'AliceBlue',  # 白色
     'Chartreuse',  # 绿色
     'Aqua',
@@ -42,6 +46,148 @@ STANDARD_COLORS = [
     'Teal', 'Thistle', 'Tomato', 'Turquoise', 'Violet', 'Wheat', 'White',
     'WhiteSmoke', 'Yellow', 'YellowGreen'
 ]
+
+COLORS_plt = {
+    'aliceblue': '#F0F8FF',
+    'antiquewhite': '#FAEBD7',
+    'aqua': '#00FFFF',
+    'aquamarine': '#7FFFD4',
+    'azure': '#F0FFFF',
+    'beige': '#F5F5DC',
+    'bisque': '#FFE4C4',
+    'black': '#000000',
+    'blanchedalmond': '#FFEBCD',
+    'blue': '#0000FF',
+    'blueviolet': '#8A2BE2',
+    'brown': '#A52A2A',
+    'burlywood': '#DEB887',
+    'cadetblue': '#5F9EA0',
+    'chartreuse': '#7FFF00',
+    'chocolate': '#D2691E',
+    'coral': '#FF7F50',
+    'cornflowerblue': '#6495ED',
+    'cornsilk': '#FFF8DC',
+    'crimson': '#DC143C',
+    'cyan': '#00FFFF',
+    'darkblue': '#00008B',
+    'darkcyan': '#008B8B',
+    'darkgoldenrod': '#B8860B',
+    'darkgray': '#A9A9A9',
+    'darkgreen': '#006400',
+    'darkkhaki': '#BDB76B',
+    'darkmagenta': '#8B008B',
+    'darkolivegreen': '#556B2F',
+    'darkorange': '#FF8C00',
+    'darkorchid': '#9932CC',
+    'darkred': '#8B0000',
+    'darksalmon': '#E9967A',
+    'darkseagreen': '#8FBC8F',
+    'darkslateblue': '#483D8B',
+    'darkslategray': '#2F4F4F',
+    'darkturquoise': '#00CED1',
+    'darkviolet': '#9400D3',
+    'deeppink': '#FF1493',
+    'deepskyblue': '#00BFFF',
+    'dimgray': '#696969',
+    'dodgerblue': '#1E90FF',
+    'firebrick': '#B22222',
+    'floralwhite': '#FFFAF0',
+    'forestgreen': '#228B22',
+    'fuchsia': '#FF00FF',
+    'gainsboro': '#DCDCDC',
+    'ghostwhite': '#F8F8FF',
+    'gold': '#FFD700',
+    'goldenrod': '#DAA520',
+    'gray': '#808080',
+    'green': '#008000',
+    'greenyellow': '#ADFF2F',
+    'honeydew': '#F0FFF0',
+    'hotpink': '#FF69B4',
+    'indianred': '#CD5C5C',
+    'indigo': '#4B0082',
+    'ivory': '#FFFFF0',
+    'khaki': '#F0E68C',
+    'lavender': '#E6E6FA',
+    'lavenderblush': '#FFF0F5',
+    'lawngreen': '#7CFC00',
+    'lemonchiffon': '#FFFACD',
+    'lightblue': '#ADD8E6',
+    'lightcoral': '#F08080',
+    'lightcyan': '#E0FFFF',
+    'lightgoldenrodyellow': '#FAFAD2',
+    'lightgreen': '#90EE90',
+    'lightgray': '#D3D3D3',
+    'lightpink': '#FFB6C1',
+    'lightsalmon': '#FFA07A',
+    'lightseagreen': '#20B2AA',
+    'lightskyblue': '#87CEFA',
+    'lightslategray': '#778899',
+    'lightsteelblue': '#B0C4DE',
+    'lightyellow': '#FFFFE0',
+    'lime': '#00FF00',
+    'limegreen': '#32CD32',
+    'linen': '#FAF0E6',
+    'magenta': '#FF00FF',
+    'maroon': '#800000',
+    'mediumaquamarine': '#66CDAA',
+    'mediumblue': '#0000CD',
+    'mediumorchid': '#BA55D3',
+    'mediumpurple': '#9370DB',
+    'mediumseagreen': '#3CB371',
+    'mediumslateblue': '#7B68EE',
+    'mediumspringgreen': '#00FA9A',
+    'mediumturquoise': '#48D1CC',
+    'mediumvioletred': '#C71585',
+    'midnightblue': '#191970',
+    'mintcream': '#F5FFFA',
+    'mistyrose': '#FFE4E1',
+    'moccasin': '#FFE4B5',
+    'navajowhite': '#FFDEAD',
+    'navy': '#000080',
+    'oldlace': '#FDF5E6',
+    'olive': '#808000',
+    'olivedrab': '#6B8E23',
+    'orange': '#FFA500',
+    'orangered': '#FF4500',
+    'orchid': '#DA70D6',
+    'palegoldenrod': '#EEE8AA',
+    'palegreen': '#98FB98',
+    'paleturquoise': '#AFEEEE',
+    'palevioletred': '#DB7093',
+    'papayawhip': '#FFEFD5',
+    'peachpuff': '#FFDAB9',
+    'peru': '#CD853F',
+    'pink': '#FFC0CB',
+    'plum': '#DDA0DD',
+    'powderblue': '#B0E0E6',
+    'purple': '#800080',
+    'red': '#FF0000',
+    'rosybrown': '#BC8F8F',
+    'royalblue': '#4169E1',
+    'saddlebrown': '#8B4513',
+    'salmon': '#FA8072',
+    'sandybrown': '#FAA460',
+    'seagreen': '#2E8B57',
+    'seashell': '#FFF5EE',
+    'sienna': '#A0522D',
+    'silver': '#C0C0C0',
+    'skyblue': '#87CEEB',
+    'slateblue': '#6A5ACD',
+    'slategray': '#708090',
+    'snow': '#FFFAFA',
+    'springgreen': '#00FF7F',
+    'steelblue': '#4682B4',
+    'tan': '#D2B48C',
+    'teal': '#008080',
+    'thistle': '#D8BFD8',
+    'tomato': '#FF6347',
+    'turquoise': '#40E0D0',
+    'violet': '#EE82EE',
+    'wheat': '#F5DEB3',
+    'white': '#FFFFFF',
+    'whitesmoke': '#F5F5F5',
+    'yellow': '#FFFF00',
+    'yellowgreen': '#9ACD32'}
 
 
 def show_od_keypoints4np(img_np, bboxs, keypoints, scores):
@@ -91,37 +237,37 @@ def show_od4np(img_np, bboxs, scores):
     cv2.waitKey(0)
 
 
-def show_bbox4pil(img_pil, boxs, labels=None):
-    '''
-    https://blog.csdn.net/qq_36834959/article/details/79921152?utm_medium=distribute.pc_aggpage_search_result.none-task-blog-2~all~first_rank_v2~rank_v25-1-79921152.nonecase&utm_term=imagedraw%E7%94%BB%E7%82%B9%E7%9A%84%E5%A4%A7%E5%B0%8F%20pil&spm=1000.2123.3001.4430
-    :param img_np: tensor 或 img_pil
-    :param boxs: np ltrb
-    :return:
-    '''
-    if labels is not None:
-        flog.info('%s', labels)
-    pil_copy = img_pil.copy()
-    draw = ImageDraw.Draw(pil_copy)
-    # im_width, im_height = pil_copy.size
-    # print(im_width, im_height)
-    if isinstance(boxs, torch.Tensor):
-        boxs = boxs.numpy()
-    for i, box in enumerate(boxs):
-        l, t, r, b = box.astype(np.int)
-        # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
-        draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=1,
-                  fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)],
-                  # fill='White',
-                  )
-        # __draw_text(draw, labels[i], box, l, r, t, b, STANDARD_COLORS)
-    pil_copy.show()
-    # plt.imshow(img_pil)
-    # plt.show()
-
-
-def show_bbox4ts(img_ts, boxs, labels=None):
-    img_pil = transforms.ToPILImage(mode="RGB")(img_ts)
-    show_bbox4pil(img_pil, boxs.numpy(), labels)
+# def show_bbox4pil(img_pil, boxes_ltrb, labels=None):
+#     '''
+#     https://blog.csdn.net/qq_36834959/article/details/79921152?utm_medium=distribute.pc_aggpage_search_result.none-task-blog-2~all~first_rank_v2~rank_v25-1-79921152.nonecase&utm_term=imagedraw%E7%94%BB%E7%82%B9%E7%9A%84%E5%A4%A7%E5%B0%8F%20pil&spm=1000.2123.3001.4430
+#     :param img_np: tensor 或 img_pil
+#     :param boxes_ltrb: 2维 tensor ltrb
+#     :return:
+#     '''
+#     if labels is not None:
+#         flog.info('%s', labels)
+#     pil_copy = img_pil.copy()
+#     draw = ImageDraw.Draw(pil_copy)
+#     # im_width, im_height = pil_copy.size
+#     # print(im_width, im_height)
+#     if isinstance(boxes_ltrb, torch.Tensor):
+#         boxes_ltrb = boxes_ltrb.numpy()
+#     for i, box in enumerate(boxes_ltrb):
+#         l, t, r, b = box.astype(np.int)
+#         # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
+#         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=2,
+#                   fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)],
+#                   # fill='White',
+#                   )
+#         # __draw_text(draw, labels[i], box, l, r, t, b, STANDARD_COLORS)
+#     pil_copy.show()
+#     # plt.imshow(img_pil)
+#     # plt.show()
+#
+#
+# def show_bbox4ts(img_ts, boxs, labels=None):
+#     img_pil = transforms.ToPILImage(mode="RGB")(img_ts)
+#     show_bbox4pil(img_pil, boxs.numpy(), labels)
 
 
 def show_anc4pil(img_pil, anc, size=(1, 1)):
@@ -150,7 +296,7 @@ def show_anc4pil(img_pil, anc, size=(1, 1)):
         else:
             raise Exception('类型错误', type(c))
         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
-                  fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)])
+                  fill=COLORS_ImageDraw[random.randint(0, len(COLORS_ImageDraw) - 1)])
     img_pil.show()
 
 
@@ -186,7 +332,7 @@ def show_bbox_scores4pil(img_pil, bboxs, scores):
             raise Exception('类型错误', type(bboxs))
 
         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
-                  fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)])
+                  fill=COLORS_ImageDraw[random.randint(0, len(COLORS_ImageDraw) - 1)])
         # draw.text((l, t), "hello", (0, 255, 0))
         # draw.point([(20, 20), (25, 25), (50, 50), (30, 30)], (0, 255, 0))
         # ltrb 角度顺时间 框色 填充色
@@ -218,7 +364,7 @@ def show_bbox_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
             raise Exception('类型错误', type(bboxs))
 
         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
-                  fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)])
+                  fill=COLORS_ImageDraw[random.randint(0, len(COLORS_ImageDraw) - 1)])
         draw.chord((k[0] - cw, k[1] - cw, k[0] + cw, k[1] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
         draw.chord((k[2] - cw, k[3] - cw, k[2] + cw, k[3] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
         draw.chord((k[4] - cw, k[5] - cw, k[4] + cw, k[5] + cw), 0, 360, fill=(0, 0, 255), outline=(0, 255, 0))
@@ -359,7 +505,7 @@ def f_plot_od4pil(img_pil, boxes_ltrb, scores, labels, id_to_class=None, font_si
             text_bottom = top
         else:
             text_bottom = bottom + text_height
-        color = STANDARD_COLORS[label]
+        color = COLORS_ImageDraw[label]
 
         draw = ImageDraw.Draw(img_pil)
         draw.rectangle([left, top, right, bottom], outline=color, width=2)
@@ -414,7 +560,7 @@ def f_plot_od4pil_keypoints(img_pil, boxes_ltrb, keypoints,
             text_bottom = top
         else:
             text_bottom = bottom + text_height
-        color = STANDARD_COLORS[label]
+        color = COLORS_ImageDraw[label]
 
         draw = ImageDraw.Draw(img_pil)
         draw.rectangle([left, top, right, bottom], outline=color, width=2)
@@ -482,8 +628,8 @@ def f_show_iou4plt(box1, box2):
         _rect = plt.Rectangle((b[0], b[1]), b[2], b[3], color='r', fill=False)
         ax.add_patch(_rect)
     for i, b in enumerate(box2):
-        plt.text(b[0], b[1], 'P%s' % i, color=STANDARD_COLORS[i])
-        _rect = plt.Rectangle((b[0], b[1]), b[2], b[3], color=STANDARD_COLORS[i], fill=False)
+        plt.text(b[0], b[1], 'P%s' % i, color=COLORS_ImageDraw[i])
+        _rect = plt.Rectangle((b[0], b[1]), b[2], b[3], color=COLORS_ImageDraw[i], fill=False)
         ax.add_patch(_rect)
     plt.show()
 
@@ -503,7 +649,7 @@ def _draw_box_circle4pil(draw, gboxes, color=None, width=4, is_draw_circle=False
     if is_draw_circle:
         for c in boxes_ltrb:
             if color is None:
-                _color = STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)]
+                _color = COLORS_ImageDraw[random.randint(0, len(COLORS_ImageDraw) - 1)]
             else:
                 _color = color
             # draw.point(c[:2].numpy().tolist(), fill = color)
@@ -522,7 +668,7 @@ def _draw_box_circle4pil(draw, gboxes, color=None, width=4, is_draw_circle=False
         else:
             raise Exception('类型错误', type(c))
         if color is None:
-            _color = STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)]
+            _color = COLORS_ImageDraw[random.randint(0, len(COLORS_ImageDraw) - 1)]
         else:
             _color = color
         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=width, fill=_color)
@@ -589,6 +735,54 @@ def f_show_grid4pil(img_pil, grids=(7, 7)):
     draw = ImageDraw.Draw(img_pil)
     _draw_grid4pil(draw, img_pil.size, grids)
     pil_copy.show()
+
+
+def f_plt_od(img_pil, boxes_ltrb_f, ids2classes=None, labels=None, scores=None):
+    plt.imshow(img_pil, alpha=0.7)
+    current_axis = plt.gca()
+    for i, box_ltrb_f in enumerate(boxes_ltrb_f):
+        l, t, r, b = box_ltrb_f
+        # ltwh
+        current_axis.add_patch(plt.Rectangle((l, t), r - l, b - t, color='green', fill=False, linewidth=2))
+        if labels is not None:
+            # labels : tensor -> int
+            show_text = ids2classes[int(labels[i])] + str(scores[i])
+            current_axis.text(l, t - 2, show_text, size=8, color='white',
+                              bbox={'facecolor': 'green', 'alpha': 0.6})
+    plt.show()
+
+
+def f_plt_box2(img_pil, g_boxes_ltrb=None, boxes1_ltrb=None, is_recover_size=True):
+    '''
+    显示对比
+    :param img_pil:
+    :param g_boxes_ltrb:
+    :param boxes1_ltrb:
+    :param is_recover_size:
+    :return:
+    '''
+    whwh = np.array(img_pil.size).repeat(2, axis=0)  # 单体复制
+    plt.imshow(img_pil)
+    current_axis = plt.gca()
+
+    if boxes1_ltrb is not None:
+        if is_recover_size:
+            boxes1_ltrb = boxes1_ltrb * whwh
+        for box in boxes1_ltrb:
+            l, t, r, b = box
+            rectangle = plt.Rectangle((l, t), r - l, b - t,
+                                      color=COLORS_plt[list(COLORS_plt.keys())[random.randint(0, len(COLORS_plt) - 1)]],
+                                      fill=False, linewidth=1)
+            current_axis.add_patch(rectangle)
+
+    if g_boxes_ltrb is not None:
+        if is_recover_size:
+            g_boxes_ltrb = g_boxes_ltrb * whwh
+        for box in g_boxes_ltrb:
+            l, t, r, b = box
+            plt_rectangle = plt.Rectangle((l, t), r - l, b - t, color='lightcyan', fill=False, linewidth=3)
+            current_axis.add_patch(plt_rectangle)
+    plt.show()
 
 
 if __name__ == '__main__':

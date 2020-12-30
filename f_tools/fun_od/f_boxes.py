@@ -7,6 +7,17 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.pic.f_show import f_show_iou4plt, show_anc4pil, f_show_3box4pil
 
 
+def empty_bboxes(bboxs):
+    if isinstance(bboxs, np.ndarray):
+        bboxs_ = np.empty_like(bboxs)
+    elif isinstance(bboxs, torch.Tensor):
+        device = bboxs.device
+        bboxs_ = torch.empty_like(bboxs, device=device)
+    else:
+        raise Exception('类型错误', type(bboxs))
+    return bboxs_
+
+
 def offxy2xy(xy, colrow_index, z_grids):
     '''
 
@@ -21,101 +32,92 @@ def offxy2xy(xy, colrow_index, z_grids):
     return ret2
 
 
-def ltrb2xywh(bboxs, safe=True):
+def ltrb2xywh(bboxs):
     dim = len(bboxs.shape)
-    if safe:
-        if isinstance(bboxs, np.ndarray):
-            bboxs = np.copy(bboxs)
-        elif isinstance(bboxs, torch.Tensor):
-            bboxs = torch.clone(bboxs)
-        else:
-            raise Exception('类型错误', type(bboxs))
-
+    bboxs_ = empty_bboxes(bboxs)
     if dim == 3:  # 可优化
-        bboxs[:, :, 2:] = bboxs[:, :, 2:] - bboxs[:, :, :2]
-        bboxs[:, :, :2] = bboxs[:, :, :2] + 0.5 * bboxs[:, :, 2:]
+        bboxs_[:, :, 2:] = bboxs[:, :, 2:] - bboxs[:, :, :2]
+        bboxs_[:, :, :2] = bboxs[:, :, :2] + 0.5 * bboxs[:, :, 2:]
     elif dim == 2:
-        bboxs[:, 2:] = bboxs[:, 2:] - bboxs[:, :2]
-        bboxs[:, :2] = bboxs[:, :2] + 0.5 * bboxs[:, 2:]
+        bboxs_[:, 2:] = bboxs[:, 2:] - bboxs[:, :2]  # wh = rb -lt
+        bboxs_[:, :2] = bboxs[:, :2] + 0.5 * bboxs_[:, 2:]  # xy = lt + 0.5*wh
     else:
         raise Exception('维度错误', bboxs.shape)
-    return bboxs
+    return bboxs_
 
 
-def ltrb2ltwh(bboxs, safe=True):
+def ltrb2ltwh(bboxs):
     dim = len(bboxs.shape)
-    if safe:
-        if isinstance(bboxs, np.ndarray):
-            bboxs = np.copy(bboxs)
-        elif isinstance(bboxs, torch.Tensor):
-            bboxs = torch.clone(bboxs)
-        else:
-            raise Exception('类型错误', type(bboxs))
+    bboxs_ = empty_bboxes(bboxs)
 
     if dim == 3:
-        bboxs[:, :, 2:] = bboxs[:, :, 2:] - bboxs[:, :, :2]
+        bboxs_[:, :, 2:] = bboxs[:, :, 2:] - bboxs[:, :, :2]  # wh = rb - lt
     elif dim == 2:
-        bboxs[:, 2:] = bboxs[:, 2:] - bboxs[:, :2]
+        bboxs_[:, 2:] = bboxs[:, 2:] - bboxs[:, :2]
     else:
-        raise Exception('维度错误', bboxs.shape)
-    return bboxs
+        raise Exception('维度错误', bboxs_.shape)
+    return bboxs_
 
 
-def ltwh2ltrb(bboxs, safe=True):
+def ltwh2ltrb(bboxs):
     dim = len(bboxs.shape)
-    if safe:
-        if isinstance(bboxs, np.ndarray):
-            bboxs = np.copy(bboxs)
-        elif isinstance(bboxs, torch.Tensor):
-            bboxs = torch.clone(bboxs)
-        else:
-            raise Exception('类型错误', type(bboxs))
+    bboxs_ = empty_bboxes(bboxs)
 
     if dim == 3:
-        bboxs[:, :, 2:] = bboxs[:, :, 2:] + bboxs[:, :, :2]
+        bboxs_[:, :, :2] = bboxs[:, :, :2]
+        bboxs_[:, :, 2:] = bboxs[:, :, 2:] + bboxs[:, :, :2]  # rb = wh + lt
     elif dim == 2:
-        bboxs[:, 2:] = bboxs[:, 2:] + bboxs[:, :2]
+        bboxs_[:, :2] = bboxs[:, :2]
+        bboxs_[:, 2:] = bboxs[:, 2:] + bboxs[:, :2]
     else:
-        raise Exception('维度错误', bboxs.shape)
-    return bboxs
+        raise Exception('维度错误', bboxs_.shape)
+    return bboxs_
 
 
-def xywh2ltrb(bboxs, safe=True):
+def xywh2ltrb(bboxs):
     dim = len(bboxs.shape)
-    if safe:
-        if isinstance(bboxs, np.ndarray):
-            bboxs = np.copy(bboxs)
-        elif isinstance(bboxs, torch.Tensor):
-            bboxs = torch.clone(bboxs)
-        else:
-            raise Exception('类型错误', type(bboxs))
+    bboxs_ = empty_bboxes(bboxs)
+
+    if isinstance(bboxs_, np.ndarray):
+        fdiv = np.true_divide
+        v = 2
+    elif isinstance(bboxs_, torch.Tensor):
+        fdiv = torch.true_divide
+        v = torch.tensor(2, device=bboxs.device)
+    else:
+        raise Exception('类型错误', type(bboxs))
+
     if dim == 2:
-        bboxs[:, :2] -= bboxs[:, 2:] / 2  # 中点移左上
-        bboxs[:, 2:] += bboxs[:, :2]
+        bboxs_[:, :2] = bboxs[:, :2] - fdiv(bboxs[:, 2:], v)  # lt = xy + wh/2
+        bboxs_[:, 2:] = bboxs_[:, :2] + bboxs[:, 2:]  # rb = nlt + wh
     elif dim == 3:
-        bboxs[:, :, :2] -= bboxs[:, :, 2:] / 2  # 中点移左上
-        bboxs[:, :, 2:] += bboxs[:, :, :2]
+        bboxs_[:, :, :2] = bboxs[:, :, :2] - fdiv(bboxs[:, :, 2:], v)
+        bboxs_[:, :, 2:] = bboxs_[:, :, :2] + bboxs[:, :, 2:]
     else:
         raise Exception('维度错误', bboxs.shape)
-    return bboxs
+    return bboxs_
 
 
-def xywh2ltwh(bboxs, safe=True):
+def xywh2ltwh(bboxs):
     dim = len(bboxs.shape)
-    if safe:
-        if isinstance(bboxs, np.ndarray):
-            bboxs = np.copy(bboxs)
-        elif isinstance(bboxs, torch.Tensor):
-            bboxs = torch.clone(bboxs)
-        else:
-            raise Exception('类型错误', type(bboxs))
+    bboxs_ = empty_bboxes(bboxs)
+
+    if isinstance(bboxs_, np.ndarray):
+        fdiv = np.true_divide
+        v = 2
+    elif isinstance(bboxs_, torch.Tensor):
+        fdiv = torch.true_divide
+        v = torch.tensor(2, device=bboxs.device)
+    else:
+        raise Exception('类型错误', type(bboxs))
+
     if dim == 2:
-        bboxs[:, :2] = bboxs[:, :2] - bboxs[:, 2:] / 2.
+        bboxs_[:, :2] = bboxs[:, :2] - fdiv(bboxs[:, 2:], v)  # lt = xy - wh/2
     elif dim == 3:
-        bboxs[:, :, :2] = bboxs[:, :, :2] - bboxs[:, :, 2:] / 2.
+        bboxs_[:, :, :2] = bboxs[:, :, :2] - fdiv(bboxs[:, :, 2:], v)
     else:
         raise Exception('维度错误', bboxs.shape)
-    return bboxs
+    return bboxs_
 
 
 def diff_keypoints(anc, g_keypoints, variances=(0.1, 0.2)):
@@ -143,7 +145,7 @@ def diff_bbox(anc, g_bbox, variances=(0.1, 0.2)):
     '''
     用anc同维 和 已匹配的GT 计算差异
     :param anc: xywh  (nn,4) torch.Size([1, 16800, 4])
-    :param p_loc: 修正系数 (nn,4)  torch.Size([5, 16800, 4])
+    :param g_bbox: gt torch.Size([5, 16800, 4])
     :return: 计算差异值   对应xywh
     '''
     if len(anc.shape) == 2:
@@ -168,19 +170,19 @@ def fix_bbox(anc, p_loc, variances=(0.1, 0.2)):
     '''
     if len(anc.shape) == 2:
         # 坐标移动
-        _a = anc[:, :2] + p_loc[:, :2] * variances[0] * anc[:, 2:]
+        xy = anc[:, :2] + p_loc[:, :2] * variances[0] * anc[:, 2:]
         # 宽高缩放
-        _b = anc[:, 2:] * torch.exp(p_loc[:, 2:] * variances[1])
-        _t = torch.cat([_a, _b], dim=1)
+        wh = anc[:, 2:] * torch.exp(p_loc[:, 2:] * variances[1])
+        xywh = torch.cat([xy, wh], dim=1)
     elif len(anc.shape) == 3:
         # 坐标移动
-        _a = anc[:, :, :2] + p_loc[:, :, :2] * variances[0] * anc[:, :, 2:]
+        xy = anc[:, :, :2] + p_loc[:, :, :2] * variances[0] * anc[:, :, 2:]
         # 宽高缩放
-        _b = anc[:, :, 2:] * torch.exp(p_loc[:, :, 2:] * variances[1])
-        _t = torch.cat([_a, _b], dim=2)
+        wh = anc[:, :, 2:] * torch.exp(p_loc[:, :, 2:] * variances[1])
+        xywh = torch.cat([xy, wh], dim=2)
     else:
         raise Exception('维度错误', anc.shape)
-    return _t
+    return xywh
 
 
 def fix_boxes4yolo3(p_yolo_boxes, anc, fsize_p_anc):

@@ -6,6 +6,7 @@ import xmltodict
 from tqdm import tqdm
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.f_coco.convert_data.csv2coco import to_coco
 
 
 class Widerface2Csv:
@@ -97,7 +98,7 @@ class Widerface2Csv:
                 # flog.debug('f %s', path_src
 
                 # -----------这里处理类别------------
-                # 59--people--driving--car\59_peopledrivingcar_peopledrivingcar_59_592.jpg
+                # 59--people--driving--car/59_peopledrivingcar_peopledrivingcar_59_592.jpg
                 # _t = str_split[-2].split('--')
                 # _class_name = '_'.join(_t[1:])
                 # label = _class_name
@@ -146,7 +147,7 @@ class Widerface2Csv:
         with open(path_csv, "w") as csv_labels:
             for info in infos:
                 info = [str(i) for i in info]
-                s_ = ','.join(info) + 'human_face' + '\n'  # ---类别---
+                s_ = ','.join(info) + 'human_face' + '/n'  # ---类别---
                 csv_labels.write(s_)
             csv_labels.close()
 
@@ -155,7 +156,7 @@ def handler_widerface():
     # 标注文件
     data_type = 'train'  # val  test
     # type = 'val'
-    path_root = os.path.join('M:\AI\datas\widerface', data_type)
+    path_root = os.path.join('M:/AI/datas/widerface', data_type)
     file_name = 'label.txt'
     mode = 'keypoints'  # bbox segm keypoints caption
     widerface_csv = Widerface2Csv(path_root, file_name, mode)
@@ -165,13 +166,18 @@ def handler_widerface():
 
 
 def hadler_voc():
-    # path_data_root = r'M:\AI\datas\VOC2012\test'
-    # path_data_root = r'M:\AI\datas\VOC2012\trainval'
-    path_data_root = r'M:\AI\datas\raccoon200\VOCdevkit'
-    path_file_txt = 'train.txt'
+    mode = 'bbox'  # 'keypoints'  # 'bbox':
+    path_root = r'M:/AI/datas/VOC2012'
+    path_data = path_root + '/train'  # 这个和 type 一起改
+    type = 'train'  # train2017 name
+    path_file_txt = 'train.txt'  # 文件名txt
+    file_classes_ids = path_root + '/classes_ids.json'
 
-    path_txt = os.path.join(path_data_root, path_file_txt)
-    path_xml = os.path.join(path_data_root, 'Annotations')
+    path_coco_save = path_root  # 这个是生成的根 目录必须存在
+
+    path_img = path_data + '/JPEGImages'  # 真实图片路径
+    path_txt = os.path.join(path_data, path_file_txt)
+    path_xml = os.path.join(path_data, 'Annotations')
     with open(path_txt) as read:
         # 读每一行加上路径和扩展名---完整路径
         xml_list = [os.path.join(path_xml, line.strip() + ".xml") for line in read.readlines()]
@@ -181,7 +187,7 @@ def hadler_voc():
     '''读文件获取类型名称'''
     # try:
     #     # {"类别1": 1, "类别2":2}
-    #     path_classes = os.path.join(r'D:\tb\tb\ai_code\DL\f_tools\datas\f_coco\_file', 'classes_ids_voc.json')
+    #     path_classes = os.path.join(r'D:/tb/tb/ai_code/DL/f_tools/datas/f_coco/_file', 'classes_ids_voc.json')
     #     json_file = open(path_classes, 'r')
     #     class_dict = json.load(json_file)
     # except Exception as e:
@@ -190,7 +196,7 @@ def hadler_voc():
 
     rets = []
     # for file_xml in tqdm(xml_list[:1000]):  # 这里定义测试数量
-    for file_xml in tqdm(xml_list):
+    for file_xml in tqdm(xml_list, desc='组装CSV标签'):
         with open(file_xml) as file:
             str_xml = file.read()
         doc = xmltodict.parse(str_xml)
@@ -223,12 +229,19 @@ def hadler_voc():
     # print(rets)
     # ['2007_000027.jpg', '174.0', '101.0', '349.0', '351.0', 'person']
     infos = rets
-    path_csv = '../_file/csv_labels_' + 'voc_' + path_file_txt.split()[0] + '.csv'
-    with open(path_csv, "w") as csv_labels:
+    file_csv = '../_file/csv_labels_' + 'voc_' + path_file_txt.split('.')[0] + '.csv'
+    with open(file_csv, "w") as csv_labels:
         for info in infos:
             s_ = ','.join(info) + '\n'  # ---类别---
             csv_labels.write(s_)
         csv_labels.close()
+    flog.debug('file_csv : %s', file_csv)
+
+    '''这里是转换'''
+    with open(file_classes_ids, 'r', encoding='utf-8') as f:
+        classes_ids = json.load(f)  # 文件转dict 或list
+
+    to_coco(file_csv, classes_ids, path_img, path_coco_save, mode, is_copy=False, is_move=False, type=type)
 
 
 if __name__ == '__main__':

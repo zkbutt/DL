@@ -24,7 +24,7 @@ import torch.distributed as dist
 from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
 from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
-from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints
+from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od
 
 
 def is_mgpu():
@@ -138,7 +138,7 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
         for k, v, in log_dict_avg.items():
             tb_writer.add_scalar('Loss/%s' % k, v, epoch + 1)
 
-    if epoch % cfg.NUM_SAVE != 0:
+    if (epoch % cfg.NUM_SAVE) != 0:
         return log_dict_avg
 
     # 每个epoch保存
@@ -205,23 +205,18 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
             if torch.any(mask):  # 如果最终有目标存在 将写出info中
                 if cfg.IS_VISUAL:
                     img_ts = img_ts4[i]
-                    from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
-                    from f_tools.pic.f_show import show_bbox4ts
-                    _img_ts = f_recover_normalization4ts(img_ts)
-                    _size = torch.tensor(cfg.IMAGE_SIZE * 2)
-                    _target = targets[i]
-
-                    import json
-                    import os
-                    # json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_voc.json'), 'r')
-                    # ids_classes = json.load(json_file) # json key是字符
-                    # ids_classes = data_loader.dataset.classes_ids
-                    ids_classes = data_loader.dataset.ids_classes  # key是数字
-                    flog.debug('nms后 原图 %s', )
-                    show_bbox4ts(_img_ts, _target['boxes'] * _size, _target['labels'])
                     flog.debug('nms后 预测共有多少个目标: %s' % p_boxes_ltrb[mask].shape[0])
-                    show_bbox4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_labels[mask])
-                    # f_show_od4ts(_img_ts, p_boxes_ltrb[mask] * _size, p_scores[mask], p_labels[mask], ids_classes)
+                    from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
+                    img_ts = f_recover_normalization4ts(img_ts)
+                    from torchvision.transforms import functional as transformsF
+                    img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
+                    # 处理完后尺寸
+                    _size = torch.tensor(cfg.IMAGE_SIZE * 2)
+                    p_boxes_ltrb_f = p_boxes_ltrb[mask].cpu() * _size
+                    f_plt_od(img_pil, p_boxes_ltrb_f,
+                             ids2classes=data_loader.dataset.ids_classes,
+                             labels=p_labels[mask],
+                             scores=p_scores[mask].tolist())
 
                 # coco需要 ltwh
                 boxes_ltwh = ltrb2ltwh(p_boxes_ltrb[mask] * size.repeat(2)[None])
@@ -240,6 +235,7 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
         res.update(_res_t)
         # __d = 1
     if len(res) == 0:
+        # 一个GPU没有 一个有
         flog.critical('本次未检测出目标')
         return
     # 这里可以优化

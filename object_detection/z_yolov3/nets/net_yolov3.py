@@ -2,12 +2,9 @@ import torch
 import torch.nn as nn
 from collections import OrderedDict
 
-from f_pytorch.tools_model.f_layer_get import ModelOut4Densenet121
 from f_pytorch.tools_model.fmodels.model_modules import SPP
-from f_pytorch.tools_model.model_look import f_look_model
 from f_tools.GLOBAL_LOG import flog
-from f_tools.f_od_gen import f_get_rowcol_index
-from f_tools.f_predictfun import label_nms
+from f_tools.fits.f_predictfun import label_nms
 from f_tools.fits.f_lossfun import LossYOLOv3
 import numpy as np
 
@@ -244,7 +241,7 @@ class YoloV3SPP(nn.Module):
 
 
 if __name__ == '__main__':
-    from torchvision import models
+    pass
 
     # model = models.densenet121(pretrained=True)
     # # # f_look(model, input=(1, 3, 416, 416))

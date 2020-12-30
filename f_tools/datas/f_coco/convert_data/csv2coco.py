@@ -196,18 +196,18 @@ class Csv2CocoKeypoints(Csv2CocoInstances):
         return annotation
 
 
-def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
-            is_copy=True, is_move=False, type='train2017'):
+def to_coco_v2(annotations, classname_to_id, path_img, path_coco_save, mode,
+               is_copy=False, is_move=False, type='train2017'):
     '''
-    coco ann ltwh
-    :param file_csv: csv标注
+
+    :param annotations:
     :param classname_to_id:
-    :param path_img: 图片所在的根目录
-    :param path_coco_save: 这个是生成的根
-    :param mode:
-    :param is_copy: 复制文件
-    :param is_move: 是否移动
-    :param type:  train2017  val2017
+    :param path_img:
+    :param path_coco_save:
+    :param mode: bbox segm keypoints caption
+    :param is_copy:
+    :param is_move:
+    :param type:
     :return:
     '''
     if is_move:
@@ -215,10 +215,10 @@ def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
     else:
         fun_copy = shutil.copy
 
-    annotations = pd.read_csv(file_csv, header=None).values
     # 重构csv格式标注文件
     file_annotations_dict = {}
-    if mode == 'boxes' and annotations[0].shape[0] != 6:
+    # 检查格式错误
+    if mode == 'bbox' and annotations[0].shape[0] != 6:
         raise Exception('加载csv格式出错 mode=%s value=%s' % (mode, annotations[0]))
     if mode == 'keypoints' and annotations[0].shape[0] != 21:
         raise Exception('加载csv格式出错 mode=%s value=%s' % (mode, annotations[0]))
@@ -241,7 +241,7 @@ def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
     if not os.path.exists(path_annotations):
         os.makedirs(path_annotations)
 
-    if mode == 'boxes':
+    if mode == 'bbox':
         # 把训练集转化为COCO的json格式
         name_file = 'instances'
 
@@ -267,7 +267,7 @@ def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
     coco_obj = coco_generate.to_coco_obj(file_names)
     path_csv = os.path.join(path_annotations, '%s_%s.json' % (name_file, type))
     coco_generate.save_coco_json(coco_obj, path_csv)
-    flog.debug('标注文件制作完成 %s', )
+    flog.debug('标注文件制作完成 %s', path_csv)
 
     if is_copy:
         path_save_img = os.path.join(path_coco_save, 'coco/images', type)
@@ -283,38 +283,57 @@ def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
                 pbar.update(1)
 
 
+def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
+            is_copy=False, is_move=False, type='train2017'):
+    '''
+    coco ann ltwh
+    :param file_csv: csv标注
+    :param classname_to_id:
+    :param path_img: 图片所在的根目录
+    :param path_coco_save: 这个是生成的根
+    :param mode:
+    :param is_copy: 复制文件
+    :param is_move: 是否移动
+    :param type:  train2017  val2017
+    :return:
+    '''
+    # 文件名, ltrb + keys 类型名
+    annotations = pd.read_csv(file_csv, header=None).values
+    # 重构csv格式标注文件
+    to_coco_v2(annotations, classname_to_id, path_img, path_coco_save, mode, is_copy, is_move, type)
+
+
 if __name__ == '__main__':
     '''
     
     '''
     np.random.seed(20200925)
+    mode = 'bbox'  # 'keypoints'  # 'bbox':
 
     '''widerface数据集'''
-    # path_classes_ids = 'M:\AI\datas\widerface\coco\classes_ids_widerface.json'
-    # path_img = r'M:\AI\datas\widerface\coco\images\train2017'  # 真实图片路径
+    # file_classes_ids = 'M:/AI/datas/widerface/coco/classes_ids_widerface.json'
+    # path_img = r'M:/AI/datas/widerface/coco/images/train2017'  # 真实图片路径
     # # file_csv = "../_file/csv_labels_boxes.csv"
     # file_csv = "../_file/csv_labels_keypoints.csv"
     # type = 'train2017'
-    # mode = 'keypoints' # 'boxes'
-    # path_coco_save = r"M:\temp\11\widerface"
+    # path_coco_save = r"M:/temp/11/widerface"
 
     '''voc 数据集'''
     # 验证集
-    # path_classes_ids = 'M:\AI\datas\VOC2012\classes_ids_voc.json'
-    # path_img = r'M:\AI\datas\VOC2012\test\JPEGImages'  # 真实图片路径
-    # file_csv = "../_file/csv_labels_voc.csv"
-    # type = 'val2017'  # train2017
-    # mode = 'boxes'  # 'keypoints'  # 'boxes':
-    # path_coco_save = r"M:\AI\datas\VOC2012"  # 这个是生成的根 目录必须存在
-    # 训练集
-    path_classes_ids = r'M:\AI\datas\raccoon200\classes_ids_raccoon.json'
-    path_img = r'M:\AI\datas\raccoon200\VOCdevkit\JPEGImages'  # 真实图片路径
-    file_csv = "../_file/csv_labels_voc_val.txt.csv"
+    file_classes_ids = 'M:/AI/datas/VOC2012/classes_ids.json'
+    path_img = r'M:/AI/datas/VOC2012/test/JPEGImages'  # 真实图片路径
+    file_csv = "../_file/csv_labels_voc_train.csv"
     type = 'val2017'  # train2017
-    mode = 'boxes'  # 'keypoints'  # 'boxes':
-    path_coco_save = r"M:\AI\datas\raccoon200"  # 这个是生成的根 目录必须存在
+    path_coco_save = r"M:/AI/datas/VOC2012"  # 这个是生成的根 目录必须存在
 
-    with open(path_classes_ids, 'r', encoding='utf-8') as f:
+    # 训练集
+    # file_classes_ids = r'M:/AI/datas/raccoon200/classes_ids.json'
+    # path_img = r'M:/AI/datas/raccoon200/VOCdevkit/JPEGImages'  # 真实图片路径
+    # file_csv = "../_file/csv_labels_voc_val.txt.csv"
+    # type = 'val2017'  # train2017
+    # path_coco_save = r"M:/AI/datas/raccoon200"  # 这个是生成的根 目录必须存在
+
+    with open(file_classes_ids, 'r', encoding='utf-8') as f:
         classes_ids = json.load(f)  # 文件转dict 或list
 
     to_coco(file_csv, classes_ids, path_img, path_coco_save, mode, is_copy=False, is_move=False, type=type)

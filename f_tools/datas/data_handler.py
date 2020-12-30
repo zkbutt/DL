@@ -2,6 +2,8 @@ import os
 import random
 from shutil import copy
 
+from tqdm import tqdm
+
 from f_tools.GLOBAL_LOG import flog
 
 
@@ -9,7 +11,7 @@ def spilt_voc2txt(path_files, val_rate=0.3, overlay=False):
     '''
     划分文件为训练集和验证集,适用于所有数据在同一文件夹
     :param path_files: 指定 trainval 文件夹的路径
-    :param val_rate: 验证集比例 或数量
+    :param val_rate: 验证集比例 或数量  为0不要验证集
     :return: 训练和验证的文件名
     '''
     if not os.path.exists(path_files):
@@ -85,7 +87,7 @@ def spilt_data2folder(path_root, val_rate=0.3):
         num = len(name_images)
         eval_index = random.sample(name_images, k=int(num * val_rate))
 
-        for i, n in enumerate(name_images):
+        for i, n in tqdm(enumerate(name_images)):
             path_img = os.path.join(path_cla_imgs, n)
             if n in eval_index:  # 验值集
                 path_img_new = os.path.join(path_val_n, n)
@@ -98,9 +100,12 @@ def spilt_data2folder(path_root, val_rate=0.3):
 
 
 if __name__ == '__main__':
-    # path = r'M:\AI\datas\VOC2012\test'
-    # path = r'M:\AI\datas\VOC2012\trainval'
-    path = r'M:\AI\datas\raccoon200\VOCdevkit\VOC2007'
+    # path = r'M:\AI\datas\VOC2012\train'
+    path = r'M:\AI\datas\VOC2012\val'
+    # path = r'M:\AI\datas\VOC2007\train'
+    # path = r'M:\AI\datas\VOC2007\val'
+    # path = r'M:\AI\datas\raccoon200\VOCdevkit\VOC2007'
+
     # spilt_data2folder(r'M:\datas\flower_data\flower_photos')
     # spilt_voc2txt(path, val_rate=256)
-    spilt_voc2txt(path, val_rate=0.2)
+    spilt_voc2txt(path, val_rate=0)  # 为0不要验证集
