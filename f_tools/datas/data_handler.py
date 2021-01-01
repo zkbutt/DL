@@ -100,8 +100,8 @@ def spilt_data2folder(path_root, val_rate=0.3):
 
 
 if __name__ == '__main__':
-    # path = r'M:\AI\datas\VOC2012\train'
-    path = r'M:\AI\datas\VOC2012\val'
+    path = r'M:\AI\datas\VOC2012\train'
+    # path = r'M:\AI\datas\VOC2012\val'
     # path = r'M:\AI\datas\VOC2007\train'
     # path = r'M:\AI\datas\VOC2007\val'
     # path = r'M:\AI\datas\raccoon200\VOCdevkit\VOC2007'

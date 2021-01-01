@@ -2,9 +2,6 @@ import math
 import torch
 import numpy as np
 
-from f_tools.GLOBAL_LOG import flog
-
-from f_tools.pic.f_show import f_show_iou4plt, show_anc4pil, f_show_3box4pil
 
 
 def empty_bboxes(bboxs):

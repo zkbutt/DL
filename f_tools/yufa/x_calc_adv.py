@@ -93,10 +93,12 @@ def mershgrid():
     # for i in range(3):
     #     for j in range(4):
     # print("(", x[i, j], ",", y[i, j], ")")
+    print(x)
+    print(y)
 
     # print(torch.stack((x, y), 2))
     stack = torch.stack((x, y), dim=2)
-    print(stack.view(-1,2))  # 升维
+    # print(stack.view(-1,2))  # 升维
 
 
 if __name__ == '__main__':

@@ -6,7 +6,7 @@ curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 from f_tools.fits.f_fit_fun import train_eval4od, fdatas_l2
-from object_detection.z_yolov1.train_yolov1 import init_model, train_set
+from object_detection.z_yolov1.train_yolov1 import init_model, train_eval_set
 
 from torch.utils.tensorboard import SummaryWriter
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
@@ -28,7 +28,7 @@ if __name__ == '__main__':
     if torch.cuda.is_available() is False:
         raise EnvironmentError("未发现GPU")
     cfg = CFG
-    train_set(cfg)
+    train_eval_set(cfg)
     torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
     if cfg.DEBUG or cfg.IS_FMAP_EVAL:
         raise Exception('调试 和 IS_FMAP_EVAL 模式无法使用')

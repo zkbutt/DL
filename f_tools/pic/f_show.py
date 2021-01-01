@@ -3,7 +3,6 @@ from matplotlib import pyplot as plt
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 显示中文标签
 plt.rcParams['axes.unicode_minus'] = False
 import random
-
 import cv2
 import torch
 from PIL import ImageDraw, ImageFont
@@ -471,7 +470,7 @@ def f_show_od4pil_yolo(img_pil, p_yolo, id_to_class=None):
 
 def f_plot_od4pil(img_pil, boxes_ltrb, scores, labels, id_to_class=None, font_size=10, text_fill=True):
     '''
-
+    显示预测结果
     :param img_pil:
     :param labels:list(int)  torch.tensor
     :param id_to_class: 支持dict + list ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle',]
@@ -782,6 +781,28 @@ def f_plt_box2(img_pil, g_boxes_ltrb=None, boxes1_ltrb=None, is_recover_size=Tru
             l, t, r, b = box
             plt_rectangle = plt.Rectangle((l, t), r - l, b - t, color='lightcyan', fill=False, linewidth=3)
             current_axis.add_patch(plt_rectangle)
+    plt.show()
+
+
+def f_plt_od_f(img_ts, boxes_ltrb):
+    '''
+    恢复图片 只显示 框
+    :param img_ts:
+    :param boxes_ltrb:
+    :return:
+    '''
+    from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
+    from torchvision.transforms import functional as transformsF
+    # 特图恢复s
+    img_ts = f_recover_normalization4ts(img_ts)
+    img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
+    _size = img_pil.size
+    boxes_ltrb_f = boxes_ltrb.cpu() * torch.tensor(_size).repeat(2)
+    f_plt_od(img_pil, boxes_ltrb_f)
+
+
+def f_plt_show_pil(img_pil):
+    plt.imshow(img_pil)
     plt.show()
 
 

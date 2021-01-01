@@ -58,7 +58,7 @@ def custom_set(cfg):
     cfg.PATH_SAVE_WEIGHT = cfg.PATH_HOST + '/AI/weights/feadre'
     cfg.FILE_FIT_WEIGHT = cfg.PATH_SAVE_WEIGHT + '/' + cfg.FILE_NAME_WEIGHT
     json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes.json'), 'r', encoding='utf-8')
-    cfg.ids2classes = json.load(json_file, encoding='utf-8')  # json key是字符
+    cfg.IDS_CLASSES = json.load(json_file, encoding='utf-8')  # json key是字符
 
     if cfg.IS_FMAP_EVAL:
         f_recover_gt(cfg.PATH_EVAL_INFO + '/gt_info')
@@ -197,9 +197,9 @@ def fload_raccoon(cfg, is_mgpu):
 
     cfg.PRINT_FREQ = 10  # 400张图打印
 
-    cfg.IMAGE_SIZE = (416, 416)  # wh 预处理 统一尺寸
-    cfg.NUM_SAVE = 20 - 1  # 20 实际 21
-    cfg.START_EVAL = 3 - 2  # 10实际是12
+    cfg.IMAGE_SIZE = (448, 448)  # wh 预处理 统一尺寸
+    cfg.NUM_SAVE = 50-1  # 第一次是19
+    cfg.START_EVAL = 5 - 2  # 10实际是12
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
     cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
@@ -208,11 +208,12 @@ def fload_raccoon(cfg, is_mgpu):
     cfg.NUM_CLASSES = 1
     cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
     cfg.DATA_NUM_WORKERS = 2
+
     cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/raccoon200'
     cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/VOCdevkit/JPEGImages'
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/coco/images/val2017'
+    # cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/coco/images/val2017'
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'raccoon200'
     cfg.PATH_TENSORBOARD = 'runs_rac'
 
@@ -247,6 +248,9 @@ def fload_raccoon(cfg, is_mgpu):
         is_debug=cfg.DEBUG,
         cfg=cfg
     )
+
+    ''' --------强制使用单GPU-------- '''
+    is_mgpu = False
     _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu)
     loader_train, loader_val_coco, train_sampler, eval_sampler = _res
     loader_val_fmap = None
@@ -258,6 +262,10 @@ def fload_raccoon(cfg, is_mgpu):
     ]
     mean = [0.45320560056079773, 0.43316440952455354, 0.3765994764105359]
     std = [0.2196906701893696, 0.21533684244241802, 0.21516573455080967]
+
+    # json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes.json'), 'r', encoding='utf-8')
+    # ids_classes = json.load(json_file, encoding='utf-8')  # json key是字符
+    # cfg.IDS_CLASSES = ids_classes
 
     custom_set(cfg)
     return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler

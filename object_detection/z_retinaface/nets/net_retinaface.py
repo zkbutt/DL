@@ -217,7 +217,10 @@ class PredictRetinaface(nn.Module):
         mask = p_scores >= self.threshold_conf
         # mask = torch.any(mask, dim=-1) # 修正维度
         if not torch.any(mask):  # 如果没有一个对象
-            print('该批次没有找到目标 max:%s min:%s mean:%s' % (p_scores.max(), p_scores.min(), p_scores.mean()))
+            print('该批次没有找到目标 max:%s min:%s mean:%s' % (p_scores.max().item(),
+                                                       p_scores.min().item(),
+                                                       p_scores.mean().item(),
+                                                       ))
             return [None] * 5
 
         '''第一阶段'''

@@ -1,6 +1,8 @@
 import os
 import sys
 
+from object_detection.z_yolov1.nets.net import ResNetYolov1, resnet50
+
 '''用户命令行启动'''
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
@@ -10,7 +12,7 @@ from torch import optim
 from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2, ModelOut4Resnet18
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init
-from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1
+from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1_1, Yolo_v1
 
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
 
@@ -31,11 +33,14 @@ def init_model(cfg, device, id_gpu=None):
 
     model = models.resnet18(pretrained=True)
     model = ModelOut4Resnet18(model)
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'resnet18'
-
     model = Yolo_v1(backbone=model, dim_in=model.dim_out, grid=cfg.NUM_GRID,
                     num_classes=cfg.NUM_CLASSES, num_bbox=cfg.NUM_BBOX, cfg=cfg)
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'resnet18'
     # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))
+
+    # model = resnet50(cfg)
+    # model = Yolo_v1_1(backbone=model, grid=cfg.NUM_GRID,
+    #                   num_classes=cfg.NUM_CLASSES, num_bbox=cfg.NUM_BBOX, cfg=cfg)
 
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         for name, param in model.backbone.named_parameters():
@@ -64,10 +69,15 @@ def init_model(cfg, device, id_gpu=None):
     return model, optimizer, lr_scheduler, start_epoch
 
 
-def train_set(cfg):
+def train_eval_set(cfg):
     # cfg.FILE_NAME_WEIGHT = 'train_yolo1_raccoon200mobilenet_v2-1_47.912' + '.pth'
-    cfg.FILE_NAME_WEIGHT = 'train_yolo1_raccoon200resnet18-1_42.395' + '.pth'
+    cfg.FILE_NAME_WEIGHT = 'rain_yolo1_raccoon200resnet18-1_7.882' + '.pth'  # 初始resnet
+
+    cfg.FILE_NAME_WEIGHT = 'zz/train_yolo1_raccoon200resnet18-24_1.26_p91.6_r42.9' + '.pth'  # 最好
+    cfg.MAPS_VAL = [0.917, 0.430]  # resnet18-12_1.33_0.8
+
     # cfg.FILE_NAME_WEIGHT = '123' + '.pth'
+
     pass
 
 
@@ -76,7 +86,7 @@ if __name__ == '__main__':
     # -----------通用系统配置----------------
     init_od()
     device, cfg = base_set(CFG)
-    train_set(cfg)
+    train_eval_set(cfg)
 
     '''---------------数据加载及处理--------------'''
     loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = cfg.FUN_LOADER_DATA(cfg,
@@ -88,6 +98,6 @@ if __name__ == '__main__':
                   fdatas_l2=fdatas_l2, lr_scheduler=lr_scheduler,
                   loader_train=loader_train, loader_val_fmap=loader_val_fmap, loader_val_coco=loader_val_coco,
                   device=device, train_sampler=None, eval_sampler=None,
-                  tb_writer=None,
+                  tb_writer=None, maps_val=cfg.MAPS_VAL
                   )
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

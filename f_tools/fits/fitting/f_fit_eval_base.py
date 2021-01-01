@@ -24,7 +24,8 @@ import torch.distributed as dist
 from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
 from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
-from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od
+from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od, \
+    f_plt_show_pil
 
 
 def is_mgpu():
@@ -237,7 +238,7 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
     if len(res) == 0:
         # 一个GPU没有 一个有
         flog.critical('本次未检测出目标')
-        return
+        return None
     # 这里可以优化
     coco_gt = data_loader.dataset.coco
     coco_eval = CocoEvaluator(coco_gt, [mode])
@@ -249,7 +250,7 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
     if is_mgpu() and torch.distributed.get_rank() != 0:
         # 才进行以下操作, 只有0进程
         # flog.debug('get_rank %s', get_rank())
-        return
+        return None
 
     # res = {}
     # for g in gather_list:
@@ -274,6 +275,10 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
                 'Recall': result_info[i + 6],
             }
             tb_writer.add_scalars(title, _d, epoch + 1)
+    maps_val = []
+    maps_val.append(result_info[1])  # IoU=0.50   Precision
+    maps_val.append(result_info[7])  # IoU=0.50:0.95  maxDets= 10  Recall
+    return maps_val
 
 
 def _polt_boxes(img_pil, p_boxes_ltrb, szie_scale4bbox, p_scores, p_labels, labels_lsit):
@@ -307,9 +312,10 @@ def f_prod_pic(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg
     img_ts = data_transform['val'](img_pil)[0][None]
 
     '''---------------预测开始--------------'''
-    ids_batch, p_boxes_ltrb, p_labels, p_scores = model(img_ts)
+    ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts)
+    # ids_batch, p_boxes_ltrb, p_labels, p_scores = model(img_ts)
     img_pil = _polt_boxes(img_pil, p_boxes_ltrb, szie_scale4bbox, p_scores, p_labels, labels_lsit)
-    img_pil.show()
+    f_plt_show_pil(img_pil)
 
 
 def f_prod_pic4keypoints(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg=None):

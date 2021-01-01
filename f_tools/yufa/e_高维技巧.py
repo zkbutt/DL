@@ -73,6 +73,40 @@ def x_高级2(labels):
     return labels
 
 
+def f数据高级():
+    input = [
+        [2, 3, 4, 5, 0, 0],
+        [1, 4, 3, 0, 0, 0],
+        [4, 2, 2, 5, 7, 0],
+        [1, 0, 0, 0, 0, 0]
+    ]
+    input = torch.tensor(input)
+    # 4,6 ^ 4,1 = 4,1
+    idx = torch.LongTensor([3, 2, 4, 0])
+    idx.unsqueeze_(-1)
+    # 数据索引取数
+    out = torch.gather(input, dim=1, index=idx)
+    print(out)  # tensor([[5],    [3],    [7],    [1]])
+
+    input = [
+        [[2, 3, 4, 5, 0, 0],
+         [1, 4, 3, 0, 0, 0],
+         [4, 2, 2, 5, 7, 0],
+         [1, 0, 0, 0, 0, 0]],
+        [[2, 3, 4, 5, 0, 0],
+         [1, 4, 3, 0, 0, 0],
+         [4, 2, 2, 5, 7, 0],
+         [1, 0, 0, 0, 0, 0]],
+    ]
+    input = torch.tensor(input)
+    print(input.shape)
+    # 多维数组索引 [2, 4, 6] 只要每批的  第0行和1行 选择的在第0维, 最后一维需要复制匹配
+    idx = torch.LongTensor([0, 2])
+    idx.unsqueeze_(-1).unsqueeze_(-1)
+    idx = idx.repeat(1, 1, input.shape[-1])
+    out = torch.gather(input, dim=1, index=idx)
+    print(out)
+
 if __name__ == '__main__':
     # t1 = torch.arange(8)
     # t2 = t1.reshape(2, 4)
@@ -85,9 +119,10 @@ if __name__ == '__main__':
 
     # f布尔同维1()
     # 反序
-    arr = np.array([[1, 2, 3, 4, 5], [2, 3, 4, 5, 6]])
-    tensor = torch.tensor(arr)
-    print(tensor.numpy())
+    # arr = np.array([[1, 2, 3, 4, 5], [2, 3, 4, 5, 6]])
+    # tensor = torch.tensor(arr)
+    # print(tensor.numpy())
     # x_高级2(1)
 
     # t_交叉运算()
+    f数据高级()

@@ -3,6 +3,7 @@ import torch
 
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fun_od.f_boxes import ltrb2xywh, xy2offxy, xywh2ltrb, calc_iou4ts
+from f_tools.pic.f_show import f_plt_od_f
 from object_detection.z_center.utils import gaussian_radius, draw_gaussian
 
 
@@ -294,6 +295,47 @@ def fmatch4yolo1(boxes_ltrb, labels, num_bbox, num_class, grid, device=None):
             p_yolo_one[row, col] = t
     # p_yolo = p_yolo.permute(2, 0, 1)
     return p_yolo_one
+
+
+def fmatch4yolo1_v2(boxes_ltrb, labels, num_bbox, num_class, grid, device=None, img_ts=None):
+    '''
+
+    :param boxes_ltrb:
+    :param labels:
+    :param num_bbox:
+    :param num_class:
+    :param grid:
+    :param device:
+    :param img_ts:
+    :return: offsetxywh_grid
+    '''
+    g_boxes_offsetxywh_grid_one = torch.empty((grid, grid, num_bbox * 4), device=device)
+    g_confs_one = torch.zeros((grid, grid, num_bbox), device=device)
+    g_clses_one = torch.empty((grid, grid, num_class), device=device)
+
+    # onehot 只有第一个类别 index 为0
+    labels_onehot = labels2onehot4ts(labels - 1, num_class)
+
+    # ltrb -> xywh
+    boxes_xywh = ltrb2xywh(boxes_ltrb)
+    cxcy = boxes_xywh[:, :2]
+    wh = boxes_xywh[:, 2:]
+
+    grids_ts = torch.tensor([grid] * 2, device=device, dtype=torch.int16)
+    '''求 cxcy 所在的格子 相同  xy与 row col相反'''
+    colrow_index = (cxcy * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xy = torch.true_divide(colrow_index, grid)  # 网络index 对应归一化的实距
+    grid_xy = (cxcy - offset_xy) * grids_ts  # 归一尺寸 - 归一实距 / 网格数 = 相对一格左上角的偏移
+    # 这里如果有两个GT在一个格子里将丢失
+    for i, (col, row) in enumerate(colrow_index):
+        offsetxywh_grid = torch.cat([grid_xy[i], wh[i]], dim=0)
+        # 正例的conf 和 onehot
+        conf2 = torch.ones([2], device=device, dtype=torch.int16)
+        g_confs_one[row, col] = conf2
+        g_boxes_offsetxywh_grid_one[row, col] = offsetxywh_grid.repeat(2)
+        g_clses_one[row, col] = labels_onehot[i]
+    # f_plt_od_f(img_ts, boxes_ltrb) # 可视化显示
+    return g_boxes_offsetxywh_grid_one, g_confs_one, g_clses_one
 
 
 def fmatch_OHEM(l_conf, match_index_pos, neg_ratio, num_neg, device, dim=-1):

@@ -2,6 +2,8 @@ import os
 import torch
 import numpy as np
 
+from f_tools.fun_od.f_boxes import ltwh2ltrb
+
 torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
 np.set_printoptions(linewidth=320, suppress=True,
                     formatter={'float_kind': '{:11.5g}'.format})  # format short g, %precision=5
@@ -11,7 +13,6 @@ from torch.utils.data import Dataset
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.f_coco.coco_api import f_show_coco_pics, f_open_cocoimg
-from f_tools.fun_od.f_boxes import ltwh2ltrb
 from f_tools.pic.enhance.f_mosaic import f_mosaic_pics_ts
 from f_tools.pic.f_show import f_plt_box2
 
@@ -193,12 +194,12 @@ class CocoDataset(Dataset):
         # annotation_ids = self.coco.getAnnIds(self.image_ids[index], iscrowd=False)
         annotation_ids = self.coco.getAnnIds(self.ids_img[index])  # ann的id
         # anns is num_anns x 4, (x1, x2, y1, y2)
-        bboxs = np.zeros((0, 4), dtype=np.float32)  # np创建 空数组 高级
+        bboxs_ltwh = np.zeros((0, 4), dtype=np.float32)  # np创建 空数组 高级
         labels = []
         keypoints = np.zeros((0, 10), dtype=np.float32)
         # skip the image without annoations
         if len(annotation_ids) == 0:
-            return bboxs, labels
+            return bboxs_ltwh, labels
 
         coco_anns = self.coco.loadAnns(annotation_ids)
         for a in coco_anns:
@@ -210,7 +211,7 @@ class CocoDataset(Dataset):
             labels.append(self.ids_old_new[a['category_id']])
             bbox = np.zeros((1, 4), dtype=np.float32)
             bbox[0, :4] = a['bbox']
-            bboxs = np.append(bboxs, bbox, axis=0)
+            bboxs_ltwh = np.append(bboxs_ltwh, bbox, axis=0)
 
             if self.mode == 'keypoints':
                 k_ = np.array(a['keypoints'])
@@ -223,15 +224,15 @@ class CocoDataset(Dataset):
                 keypoints = np.append(keypoints, k_[None,], axis=0)
 
         # ltwh --> ltrb
-        ltwh2ltrb(bboxs, safe=False)
-        if bboxs.shape[0] == 0:
+        bboxs_ltrb = ltwh2ltrb(bboxs_ltwh)
+        if bboxs_ltwh.shape[0] == 0:
             flog.error('这图标注 不存在 %s', coco_anns)
             # raise Exception('这图标注 不存在 %s', coco_anns)
 
         if self.mode == 'bbox':
-            return [torch.tensor(bboxs, dtype=torch.float), torch.tensor(labels, dtype=torch.int64)]
+            return [torch.tensor(bboxs_ltrb, dtype=torch.float), torch.tensor(labels, dtype=torch.int64)]
         elif self.mode == 'keypoints':
-            return [torch.tensor(bboxs, dtype=torch.float),
+            return [torch.tensor(bboxs_ltrb, dtype=torch.float),
                     torch.tensor(labels, dtype=torch.int64),
                     torch.tensor(keypoints, dtype=torch.float)]
 

@@ -7,8 +7,6 @@ import matplotlib.pyplot as plt
 import pylab
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fun_od.f_boxes import ltwh2ltrb
-from f_tools.pic.f_show import show_anc4pil
 import skimage.io as io
 
 

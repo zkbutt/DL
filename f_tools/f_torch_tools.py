@@ -73,7 +73,7 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=to
     return start_epoch
 
 
-def save_weight(path_save, model, name, loss=None, optimizer=None, lr_scheduler=None, epoch=0):
+def save_weight(path_save, model, name, loss=None, optimizer=None, lr_scheduler=None, epoch=0, maps_val=None):
     '''
 
     :param path_save:
@@ -91,6 +91,18 @@ def save_weight(path_save, model, name, loss=None, optimizer=None, lr_scheduler=
             'optimizer': optimizer.state_dict() if optimizer else None,
             'lr_scheduler': lr_scheduler.state_dict() if lr_scheduler else None,
             'epoch': epoch}
-        file_weight = os.path.join(path_save, (name + '-{}_{}.pth').format(epoch + 1, round(loss, 3)))
+        if maps_val is not None:
+            if loss is not None:
+                l = round(loss, 2)
+            else:
+                l = ''
+            file_weight = os.path.join(path_save, (name + '-{}_{}_{}_{}.pth')
+                                       .format(epoch + 1,
+                                               l,
+                                               'p' + str(round(maps_val[0]*100, 1)),
+                                               'r' + str(round(maps_val[1]*100, 1)),
+                                               ))
+        else:
+            file_weight = os.path.join(path_save, (name + '-{}_{}.pth').format(epoch + 1, round(loss, 3)))
         torch.save(sava_dict, file_weight)
         flog.info('保存成功 %s', file_weight)

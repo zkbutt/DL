@@ -11,6 +11,7 @@ from f_tools.GLOBAL_LOG import flog
 import socket
 
 from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_recover_gt
+from f_tools.f_torch_tools import save_weight
 from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2, f_evaluate4fmap
 
 
@@ -88,14 +89,33 @@ def fdatas_l2(batch_data, device, cfg):
     return images, targets
 
 
+def fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch):
+    flog.info('map 最大值 %s', maps_val)
+    if log_dict is not None:
+        l = log_dict['loss_total']
+    else:
+        l = None
+    save_weight(
+        path_save=cfg.PATH_SAVE_WEIGHT,
+        model=model,
+        name=cfg.SAVE_FILE_NAME,
+        loss=l,
+        optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
+        epoch=epoch,
+        maps_val=maps_val)
+
+
 def train_eval4od(start_epoch, model, optimizer,
                   fdatas_l2, lr_scheduler=None,
                   loader_train=None, loader_val_fmap=None, loader_val_coco=None,
                   device=torch.device('cpu'), train_sampler=None, eval_sampler=None,
-                  tb_writer=None,
+                  tb_writer=None, maps_val=(0., 0),
                   ):
     cfg = model.cfg
 
+    map_val_max_p = maps_val[0]
+    map_val_max_r = maps_val[1]
     fun_datas_l2 = fdatas_l2
     for epoch in range(start_epoch, cfg.END_EPOCH):
 
@@ -116,6 +136,8 @@ def train_eval4od(start_epoch, model, optimizer,
             # if lr_scheduler is not None:
             #     flog.warning('更新 lr_scheduler %s', log_dict['loss_total'])
             #     lr_scheduler.step(log_dict['loss_total'])  # 更新学习
+        else:
+            log_dict = None
 
         if model.cfg.IS_COCO_EVAL and epoch > cfg.START_EVAL:
             flog.info('COCO 验证开始 %s', epoch + 1)
@@ -123,7 +145,7 @@ def train_eval4od(start_epoch, model, optimizer,
             # with torch.no_grad():
             mode = 'bbox'
             res_eval = []
-            f_evaluate4coco2(
+            maps_val = f_evaluate4coco2(
                 model=model,
                 fun_datas_l2=fun_datas_l2,
                 data_loader=loader_val_coco,
@@ -135,6 +157,14 @@ def train_eval4od(start_epoch, model, optimizer,
                 eval_sampler=eval_sampler,
                 is_keeep=cfg.IS_KEEP_SCALE
             )
+
+            if maps_val is not None:
+                if maps_val[0] > map_val_max_p:
+                    map_val_max_p = maps_val[0]
+                    fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch)
+                elif maps_val[1] > map_val_max_r:
+                    map_val_max_r = maps_val[1]
+                    fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch)
 
         if model.cfg.IS_FMAP_EVAL:
             flog.info('FMAP 验证开始 %s', epoch + 1)

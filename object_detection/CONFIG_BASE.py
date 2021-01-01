@@ -16,7 +16,7 @@ class CfgBase:
         PATH_HOST = ''
 
     '''训练参数'''
-    SYSNC_BN = False  # 不冻结时可使用多设备同步BN,速度减慢
+    SYSNC_BN = True  # 不冻结时可使用多设备同步BN,速度减慢
     IS_MULTI_SCALE = True  # 多尺度训练
     MULTI_SCALE_VAL = [0.667, 1.5]  # 多尺寸的比例0.667~1.5 之间 满足32的倍数
 
