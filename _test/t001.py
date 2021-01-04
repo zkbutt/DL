@@ -35,4 +35,15 @@ from f_tools.GLOBAL_LOG import flog
 s1 = [1, 2, 3]
 s2 = [4, 3, 2]
 print(np.true_divide(np.array(s1), np.array(s2)))
-print(torch.true_divide(torch.tensor(s1), torch.tensor(s2)))
+tensor_s1 = torch.tensor(s1)
+tensor_s2 = torch.tensor(s2)
+res = torch.true_divide(tensor_s1, tensor_s2)
+print(res)
+print(round(res[0].item(), 2))
+res___ = res[res == 0.25]
+res___[0] = 99
+view = res.view(1, 1, -1)
+view[0, 0, 1] = 9999
+print(view)
+print(res)
+print(res___)

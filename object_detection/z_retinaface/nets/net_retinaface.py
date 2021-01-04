@@ -47,9 +47,9 @@ class LossRetinaface(nn.Module):
         :return:
         '''
         cfg = self.cfg
-        p_locs_box, p_labels, p_locs_keypoint = outs
-        p_labels = p_labels[:, :, 1:]
-        p_confs = p_labels[:, :, 0]
+        p_locs_box, p_labels_p_scores, p_locs_keypoint = outs
+        p_labels = p_labels_p_scores[:, :, 1:]
+        p_confs = p_labels_p_scores[:, :, 0]  # head中0conf 1label
         num_batch = p_locs_box.shape[0]
         num_ancs = p_locs_box.shape[1]
         device = p_locs_box.device
@@ -64,7 +64,7 @@ class LossRetinaface(nn.Module):
             gkeypoints_xy = torch.zeros_like(p_locs_keypoint, device=device)
         else:
             gkeypoints_xy = None
-
+        # 匹配
         for index in range(num_batch):
             g_bboxs_ltrb = targets[index]['boxes']  # torch.Size([batch, 4])
             g_labels = targets[index]['labels']  # torch.Size([batch])
@@ -140,13 +140,13 @@ class LossRetinaface(nn.Module):
         # loss_confs = (self.focal_loss(p_conf, gconfs) * mssk_).sum(-1)
         gconfs[mask_pos] = 1
         gconfs[torch.logical_or(mask_neg, mash_ignore)] = 0
-        loss_confs = self.focal_loss(p_confs, gconfs).sum(-1)
 
-        # f_ohem_simpleness(loss_confs)
+        # loss_confs = self.focal_loss(p_confs, gconfs).sum(-1)
 
         '''------------------------conf 难例挖掘----------------------------------'''
         # (batch,anc)
-        # loss_confs = F.binary_cross_entropy_with_logits(p_conf, gconfs, reduction='none')
+        loss_confs = F.binary_cross_entropy_with_logits(p_confs, gconfs, reduction='none')
+        loss_confs = f_ohem_simpleness(loss_confs, self.neg_ratio * num_pos, mask_pos)
         # p_bboxs_xywh_fix = fix_bbox(self.anc_xywh.unsqueeze(dim=0), p_bboxs_xywh)
         # loss_confs = f_ohem(scores=loss_confs,
         #                     nums_neg=self.neg_ratio * num_pos,
@@ -183,6 +183,11 @@ class LossRetinaface(nn.Module):
         log_dict['l_bboxs'] = loss_bboxs.item()
         log_dict['l_labels'] = loss_labels.item()
         log_dict['l_keypoints'] = loss_keypoints.item()
+
+        detach = p_confs.clone().detach().sigmoid()
+        log_dict['p_confs-max'] = detach.max().item()
+        log_dict['p_confs-min'] = detach.min().item()
+        log_dict['p_confs-mean'] = detach.mean().item()
         return loss_total, log_dict
 
 
@@ -209,18 +214,18 @@ class PredictRetinaface(nn.Module):
             p_scores2 [nn]
         '''
         cfg = self.cfg
-        p_bboxs_xywh, p_labels, p_keypoints = p_tuple
+        p_bboxs_xywh, p_labels_p_scores, p_keypoints = p_tuple
 
-        p_labels = torch.softmax(p_labels[:, :, 1:], dim=-1)
-        p_scores = torch.sigmoid(p_labels[:, :, 0])
+        p_labels = torch.softmax(p_labels_p_scores[:, :, 1:], dim=-1)
+        p_scores = torch.sigmoid(p_labels_p_scores[:, :, 0])
 
         mask = p_scores >= self.threshold_conf
         # mask = torch.any(mask, dim=-1) # 修正维度
         if not torch.any(mask):  # 如果没有一个对象
-            print('该批次没有找到目标 max:%s min:%s mean:%s' % (p_scores.max().item(),
-                                                       p_scores.min().item(),
-                                                       p_scores.mean().item(),
-                                                       ))
+            print('该批次没有找到目标 max:{0:.2f} min:{0:.2f} mean:{0:.2f}'.format(p_scores.max().item(),
+                                                                          p_scores.min().item(),
+                                                                          p_scores.mean().item(),
+                                                                          ))
             return [None] * 5
 
         '''第一阶段'''
@@ -359,45 +364,6 @@ class RetinaFace(nn.Module):
         for i in range(fpn_num):
             landmarkhead.append(LandmarkHead(inchannels, anchor_num))
         return landmarkhead
-
-    def data_packaging(self, outs, targets):
-        '''
-
-        :param outs:
-        :param targets:
-        :return:
-        '''
-        cfg = self.cfg
-        p_bboxs_xywh = outs[0]  # (batch,16800,4)  xywh  xywh
-        p_labels = outs[1]  # (batch,16800,10)
-        p_keypoints = outs[2]  # (batch,16800,2)
-        num_batch = p_bboxs_xywh.shape[0]
-        num_ancs = p_bboxs_xywh.shape[1]
-        gbboxs_ltrb = torch.zeros_like(p_bboxs_xywh, device=self.device)
-        glabels = torch.empty((num_batch, num_ancs), device=self.device)  # 这里只存label值 1位
-        if cfg.NUM_KEYPOINTS > 0:
-            gkeypoints = torch.zeros_like(p_keypoints, device=self.device)
-        else:
-            gkeypoints = None
-        for index in range(num_batch):
-            g_bboxs = targets[index]['boxes']  # torch.Size([batch, 4])
-            g_labels = targets[index]['labels']  # torch.Size([batch])
-            if gkeypoints is not None:
-                g_keypoints = targets[index]['keypoints']  # torch.Size([batch, 10])
-            else:
-                g_keypoints = None
-            match_bboxs, match_keypoints, match_labels, mask_pos, mask_neg, mash_ignore = pos_match_retinaface(
-                self.anc_obj.ancs, g_bboxs_ltrb=g_bboxs,
-                g_labels=g_labels,
-                g_keypoints=g_keypoints,
-                threshold_pos=self.cfg.THRESHOLD_PREDICT_CONF,
-                threshold_neg=self.cfg.THRESHOLD_PREDICT_NMS
-            )
-            glabels[index] = match_labels
-            gbboxs_ltrb[index] = match_bboxs
-            if gkeypoints is not None:
-                gkeypoints[index] = match_keypoints
-        return gbboxs_ltrb, glabels, gkeypoints
 
     def forward(self, x, targets=None):
         '''

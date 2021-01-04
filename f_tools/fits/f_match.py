@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from f_tools.f_general import labels2onehot4ts
-from f_tools.fun_od.f_boxes import ltrb2xywh, xy2offxy, xywh2ltrb, calc_iou4ts
+from f_tools.fun_od.f_boxes import ltrb2xywh, xy2offxy, xywh2ltrb, calc_iou4ts, offxy2xy, calc_iou4some_dim
 from f_tools.pic.f_show import f_plt_od_f
 from object_detection.z_center.utils import gaussian_radius, draw_gaussian
 
@@ -178,7 +178,7 @@ def pos_match4yolo(ancs, bboxs, criteria):
     :return:
 
     '''
-    threshold = 99
+    threshold = 99  # 任意指定一个值
     # (bboxs个,anc个)
     gn = bboxs.shape[0]
     num_anc = ancs.shape[0]
@@ -240,7 +240,7 @@ def pos_match_retinaface(ancs_ltrb, g_bboxs_ltrb, g_labels, g_keypoints, thresho
     mask_neg = anc_max_iou <= threshold_neg  # anc 的反例 index
     mash_ignore = torch.logical_not(torch.logical_or(mask_pos, mask_neg))
 
-    match_conf = anc_max_iou
+    match_conf = anc_max_iou  # 这里是全局真 iou 做为conf
     match_labels = g_labels[bbox_index]
     match_bboxs = g_bboxs_ltrb[bbox_index]
     if g_keypoints is not None:
@@ -251,10 +251,11 @@ def pos_match_retinaface(ancs_ltrb, g_bboxs_ltrb, g_labels, g_keypoints, thresho
     return match_bboxs, match_keypoints, match_labels, match_conf, mask_pos, mask_neg, mash_ignore
 
 
-def fmatch4yolo1(boxes_ltrb, labels, num_bbox, num_class, grid, device=None):
+def fmatch4yolov1_1(pboxes, boxes_ltrb, labels, num_bbox, num_class, grid, device=None, img_ts=None):
     '''
     一个网格匹配两个对象 只能预测一个类型
     输入一个图片的 target
+    :param pboxes:
     :param boxes_ltrb: ltrb
     :param labels:
     :param num_bbox:
@@ -263,9 +264,7 @@ def fmatch4yolo1(boxes_ltrb, labels, num_bbox, num_class, grid, device=None):
     :param device:
     :return:
     '''
-    dim_out = num_bbox * (4 + 1) + num_class
-    # dim_out = 4 * num_bbox + 1 + num_class
-    p_yolo_one = torch.zeros((grid, grid, dim_out), device=device)  # [7, 7, 11]
+    p_yolo_one = torch.zeros((grid, grid, num_bbox * (5 + num_class)), device=device)
     # onehot 只有第一个类别 index 为0
     labels_onehot = labels2onehot4ts(labels - 1, num_class)
 
@@ -280,20 +279,65 @@ def fmatch4yolo1(boxes_ltrb, labels, num_bbox, num_class, grid, device=None):
     offset_xy = torch.true_divide(colrow_index, grid)  # 网络index 对应归一化的实距
     grid_xy = (cxcy - offset_xy) * grids_ts  # 归一尺寸 - 归一实距 / 网格数 = 相对一格左上角的偏移
 
-    # 这里如果有两个GT在一个格子里将丢失
+    # 遍历格子
     for i, (col, row) in enumerate(colrow_index):
+        # 修复xy
+        _bbox = pboxes[col, row].clone().detach()
+        _bbox[:, :2] = offxy2xy(_bbox[:, :2], torch.tensor((col, row), device=device), grids_ts)
+        pbox_ltrb = xywh2ltrb(_bbox)
+        ious = calc_iou4some_dim(pbox_ltrb, boxes_ltrb[i][None].repeat(2, 1)).view(-1, num_bbox)
+        max_val, max_inx = ious.max(dim=-1)
+
         # 这里一定是一个gt 的处理 shape4
-        offxywh = torch.cat([grid_xy[i], wh[i]], dim=0)
+        offxywh_g = torch.cat([grid_xy[i], wh[i]], dim=0)
         # 正例的conf 和 onehot
-        conf2 = torch.tensor([1] * 2, device=device, dtype=torch.int16)
+        conf = torch.tensor([1], device=device, dtype=torch.int16)
         # 组装正例 yolo_data
-        t = torch.cat([offxywh.repeat(2), conf2, labels_onehot[i]], dim=0)
-        if p_yolo_one[row, col, 8] == 1:  # 该网格已有一个GT框了
-            # 改第一个框 ,  一个格子最多两个目标
-            p_yolo_one[row, col, :4] = offxywh
-        else:
-            p_yolo_one[row, col] = t
-    # p_yolo = p_yolo.permute(2, 0, 1)
+        t = torch.cat([offxywh_g, conf, labels_onehot[i]], dim=0)
+        idx_start = max_inx[0] * (5 + num_class)
+        p_yolo_one[row, col, idx_start:idx_start + 5 + num_class] = t
+        # p_yolo_one[row, col, :4] = offxywh
+        # p_yolo_one[row, col, 5 + num_class:5 + num_class + 4] = offxywh
+        # p_yolo_one[row, col, [4, 4 + 5 + num_class]] = offxywh
+        # p_yolo_one[row, col, 5: 5 + num_class] = offxywh
+    return p_yolo_one
+
+
+def fmatch4yolov1_2(boxes_ltrb, labels, num_bbox, num_class, grid, device=None, img_ts=None):
+    '''
+    一个网格匹配两个对象 预测两个类型
+    输入一个图片的 target
+    :param boxes_ltrb: ltrb
+    :param labels:
+    :param num_bbox:
+    :param num_class:
+    :param grid:
+    :param device:
+    :return:
+    '''
+    p_yolo_one = torch.zeros((grid, grid, num_bbox * (5 + num_class)), device=device)
+    # onehot 只有第一个类别 index 为0
+    labels_onehot = labels2onehot4ts(labels - 1, num_class)
+
+    # ltrb -> xywh
+    boxes_xywh = ltrb2xywh(boxes_ltrb)
+    wh = boxes_xywh[:, 2:]
+    cxcy = boxes_xywh[:, :2]
+
+    grids_ts = torch.tensor([grid] * 2, device=device, dtype=torch.int16)
+    '''xy与 row col相反'''
+    colrow_index = (cxcy * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xy = torch.true_divide(colrow_index, grid)  # 网络index 对应归一化的实距
+    grid_xy = (cxcy - offset_xy) * grids_ts  # 归一尺寸 - 归一实距 / 网格数 = 相对一格左上角的偏移
+
+    # 遍历格子
+    for i, (col, row) in enumerate(colrow_index):
+        offxywh_g = torch.cat([grid_xy[i], wh[i]], dim=0)
+        # 正例的conf 和 onehot
+        conf = torch.tensor([1], device=device, dtype=torch.int16)
+        # 组装正例 yolo_data
+        t = torch.cat([offxywh_g, conf, labels_onehot[i]] * 2, dim=0)
+        p_yolo_one[row, col] = t
     return p_yolo_one
 
 

@@ -57,8 +57,9 @@ def base_set(cfg):
 def custom_set(cfg):
     cfg.PATH_SAVE_WEIGHT = cfg.PATH_HOST + '/AI/weights/feadre'
     cfg.FILE_FIT_WEIGHT = cfg.PATH_SAVE_WEIGHT + '/' + cfg.FILE_NAME_WEIGHT
-    json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes.json'), 'r', encoding='utf-8')
-    cfg.IDS_CLASSES = json.load(json_file, encoding='utf-8')  # json key是字符
+
+    # json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes.json'), 'r', encoding='utf-8')
+    # cfg.IDS_CLASSES = json.load(json_file, encoding='utf-8')  # json key是字符
 
     if cfg.IS_FMAP_EVAL:
         f_recover_gt(cfg.PATH_EVAL_INFO + '/gt_info')
@@ -72,6 +73,9 @@ def custom_set(cfg):
             os.makedirs(cfg.PATH_SAVE_WEIGHT)
         except Exception as e:
             flog.error(' %s %s', cfg.PATH_SAVE_WEIGHT, e)
+
+
+'''-----------------------voc---------------------------------'''
 
 
 def fload_voc(cfg, is_mgpu):
@@ -116,6 +120,9 @@ def fload_voc(cfg, is_mgpu):
     loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = _res
 
     return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
+
+
+'''-----------------------widerface---------------------------------'''
 
 
 def fload_widerface(cfg, is_mgpu):
@@ -181,25 +188,21 @@ def fload_widerface(cfg, is_mgpu):
     return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 
 
-def fload_raccoon(cfg, is_mgpu):
-    '''
-    tensorboard --logdir=runs_raccoon200 --host=192.168.0.199
-    最大 BATCH_SIZE 32
-    :param cfg:
-    :param is_mgpu:
-    :return:
-    '''
-    base_set(cfg)
+'''-----------------------raccoon---------------------------------'''
 
+
+def cfg_raccoon(cfg):
+    base_set(cfg)
     '''样本及预处理'''
-    cfg.BATCH_SIZE = 20  # batch过小需要设置连续前传
+    cfg.BATCH_SIZE = 16  # batch过小需要设置连续前传
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
 
     cfg.PRINT_FREQ = 10  # 400张图打印
 
-    cfg.IMAGE_SIZE = (448, 448)  # wh 预处理 统一尺寸
-    cfg.NUM_SAVE = 50-1  # 第一次是19
-    cfg.START_EVAL = 5 - 2  # 10实际是12
+    cfg.IMAGE_SIZE = (448, 448)  # yolov1
+    # cfg.IMAGE_SIZE = (224, 224)  # yolov1
+    cfg.NUM_SAVE = 30 - 1  # 第一次是19
+    cfg.START_EVAL = 1 - 2  # 第一个数是实际 第一次
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
     cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
@@ -218,9 +221,25 @@ def fload_raccoon(cfg, is_mgpu):
     cfg.PATH_TENSORBOARD = 'runs_rac'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
+    cfg.ANC_SCALE = [
+        [[0.3057723641395569, 0.4176517724990845], [0.4394904375076294, 0.7138888835906982]],
+        [[0.5542857050895691, 0.8598382472991943], [0.7507279813289642, 0.6872279644012451], ],
+        [[0.6718146800994873, 0.9088607430458069], [0.865470826625824, 0.9411764740943909], ],
+    ]
+
+
+def fload_raccoon_train(cfg, is_mgpu):
+    '''
+
+    :param cfg:
+    :param is_mgpu:
+    :return:
+    '''
+    cfg_raccoon(cfg)
+    mode = 'bbox'  # bbox segm keypoints caption
+
     data_transform = cre_transform4resize(cfg)
 
-    mode = 'bbox'  # bbox segm keypoints caption
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
     file_json = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_train2017.json'
     path_img = cfg.PATH_IMG_TRAIN
@@ -248,18 +267,14 @@ def fload_raccoon(cfg, is_mgpu):
         is_debug=cfg.DEBUG,
         cfg=cfg
     )
+    # print('dataset_train 数量', len(dataset_train))
+    # print('dataset_val 数量', len(dataset_val))
 
     ''' --------强制使用单GPU-------- '''
-    is_mgpu = False
-    _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu)
+    _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu, use_mgpu_eval=cfg.USE_MGPU_EVAL)
     loader_train, loader_val_coco, train_sampler, eval_sampler = _res
     loader_val_fmap = None
 
-    cfg.ANC_SCALE = [
-        [[0.3057723641395569, 0.4176517724990845], [0.4394904375076294, 0.7138888835906982]],
-        [[0.5542857050895691, 0.8598382472991943], [0.7507279813289642, 0.6872279644012451], ],
-        [[0.6718146800994873, 0.9088607430458069], [0.865470826625824, 0.9411764740943909], ],
-    ]
     mean = [0.45320560056079773, 0.43316440952455354, 0.3765994764105359]
     std = [0.2196906701893696, 0.21533684244241802, 0.21516573455080967]
 
@@ -271,29 +286,39 @@ def fload_raccoon(cfg, is_mgpu):
     return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 
 
-def fload_type(cfg, is_mgpu):
-    '''
+def fload_raccoon_eval(cfg):
+    cfg_raccoon(cfg)
+    mode = 'bbox'  # bbox segm keypoints caption
+    file_json = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val2017.json'
+    dataset_val = CustomCocoDataset(
+        file_json=file_json,
+        path_img=cfg.PATH_IMG_TRAIN,
+        mode=mode,
+        transform=None,
+        is_mosaic=False,
+        is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
+        is_mosaic_fill=cfg.IS_MOSAIC_FILL,
+        is_debug=cfg.DEBUG,
+        cfg=cfg
+    )
+    custom_set(cfg)  # 必须复制
+    return dataset_val
 
-    '''
+
+'''-----------------------type3---------------------------------'''
+
+
+def cfg_type(cfg):
     base_set(cfg)
 
     '''样本及预处理'''
-    cfg.BATCH_SIZE = 32  # batch过小需要设置连续前传
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
 
-    cfg.PRINT_FREQ = 10  # 400张图打印
+    cfg.PRINT_FREQ = 5  # 400张图打印
 
-    cfg.IMAGE_SIZE = (512, 512)  # wh 预处理 统一尺寸
-    cfg.NUM_SAVE = 8
-    cfg.START_EVAL = 10  # 实际是12
-
-    cfg.ANC_SCALE = [
-        [[0.052000001072883606, 0.06400000303983688], [0.1120000034570694, 0.1257496327161789]],
-        [[0.18799999356269836, 0.24533332884311676], [0.335999995470047, 0.4320000112056732], ],
-        [[0.5659999847412109, 0.6568804979324341], [0.8339999914169312, 0.8615975975990295], ],
-    ]
-    mean = [0.44852942096873344, 0.42499869427618714, 0.3919993789920617]
-    std = [0.23994531712015926, 0.2343272957639497, 0.23674994997257454]
+    cfg.IMAGE_SIZE = (448, 448)  # yolov1
+    cfg.NUM_SAVE = 10 - 1  # 第一次是19
+    cfg.START_EVAL = 3 - 2  # 10实际是12
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
     cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
@@ -314,13 +339,23 @@ def fload_type(cfg, is_mgpu):
     cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
+    cfg.ANC_SCALE = [
+        [[0.052000001072883606, 0.06400000303983688], [0.1120000034570694, 0.1257496327161789]],
+        [[0.18799999356269836, 0.24533332884311676], [0.335999995470047, 0.4320000112056732], ],
+        [[0.5659999847412109, 0.6568804979324341], [0.8339999914169312, 0.8615975975990295], ],
+    ]
+
+
+def fload_type_train(cfg, is_mgpu):
+    cfg_type(cfg)  # 固定格式
+    mode = 'bbox'  # bbox segm keypoints caption
+
     data_transform = cre_transform4resize(cfg)
 
-    mode = 'bbox'  # bbox segm keypoints caption
     # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
-    file_json = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train.json'
+    file_json_train = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train.json'
     dataset_train = CustomCocoDataset(
-        file_json=file_json,
+        file_json=file_json_train,
         path_img=cfg.PATH_IMG_TRAIN,
         mode=mode,
         transform=data_transform['train'],
@@ -331,9 +366,9 @@ def fload_type(cfg, is_mgpu):
         cfg=cfg
     )
 
-    file_json = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_val.json'
+    file_json_test = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_val.json'
     dataset_val = CustomCocoDataset(
-        file_json=file_json,
+        file_json=file_json_test,
         path_img=cfg.PATH_IMG_EVAL,
         mode=mode,
         transform=data_transform['val'],
@@ -343,9 +378,33 @@ def fload_type(cfg, is_mgpu):
         is_debug=cfg.DEBUG,
         cfg=cfg
     )
-    _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu)
+
+    ''' --------强制使用单GPU-------- '''
+    _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu, use_mgpu_eval=cfg.USE_MGPU_EVAL)
     loader_train, loader_val_coco, train_sampler, eval_sampler = _res
     loader_val_fmap = None
 
-    custom_set(cfg)
+    mean = [0.44852942096873344, 0.42499869427618714, 0.3919993789920617]
+    std = [0.23994531712015926, 0.2343272957639497, 0.23674994997257454]
+
+    custom_set(cfg)  # 固定格式
     return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
+
+
+def fload_type_eval(cfg):
+    cfg_type(cfg)
+    mode = 'bbox'  # bbox segm keypoints caption
+    file_json_test = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_val.json'
+    dataset_val = CustomCocoDataset(
+        file_json=file_json_test,
+        path_img=cfg.PATH_IMG_EVAL,
+        mode=mode,
+        transform=None,
+        is_mosaic=False,
+        is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
+        is_mosaic_fill=cfg.IS_MOSAIC_FILL,
+        is_debug=cfg.DEBUG,
+        cfg=cfg
+    )
+    custom_set(cfg)  # 必须复制
+    return dataset_val

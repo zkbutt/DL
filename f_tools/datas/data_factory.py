@@ -672,7 +672,7 @@ def load_od4voc(cfg, data_transform, is_mgpu, ids2classes):
     return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 
 
-def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
+def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu, use_mgpu_eval=True):
     loader_train, loader_val_coco, train_sampler, eval_sampler = [None] * 4
     if cfg.IS_TRAIN:
         # __d = dataset_train[0]  # 调试
@@ -700,14 +700,14 @@ def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu):
                 dataset_train,
                 batch_size=cfg.BATCH_SIZE,
                 num_workers=cfg.DATA_NUM_WORKERS,
-                # shuffle=True,
+                shuffle=True,
                 pin_memory=True,  # 不使用虚拟内存 GPU要报错
                 # drop_last=True,  # 除于batch_size余下的数据
                 collate_fn=fun4dataloader,
             )
 
     if cfg.IS_COCO_EVAL:
-        if is_mgpu:
+        if is_mgpu and use_mgpu_eval:
             # 给每个rank按显示个数生成定义类 shuffle -> ceil(样本/GPU个数)自动补 -> 间隔分配到GPU
             eval_sampler = torch.utils.data.distributed.DistributedSampler(dataset_val,
                                                                            shuffle=True,

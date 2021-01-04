@@ -1,18 +1,19 @@
 import os
 import sys
 
-from object_detection.z_yolov1.nets.net import ResNetYolov1, resnet50
-
 '''用户命令行启动'''
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 from torch import optim
 
-from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2, ModelOut4Resnet18
+from f_pytorch.tools_model.backbones.mobilenetv3 import f_get_mv3
+from object_detection.z_yolov1.nets.net import ResNetYolov1, resnet50
+from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2, ModelOut4Resnet18, ModelOut4Mobilenet_v3, \
+    ModelOut4Resnet50
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init
-from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1_1, Yolo_v1
+from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1, Yolo_v1_1
 
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
 
@@ -29,13 +30,23 @@ from torchvision import models
 def init_model(cfg, device, id_gpu=None):
     # model = models.mobilenet_v2(pretrained=True)
     # model = ModelOut4Mobilenet_v2(model)
-    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'mobilenet_v2'
+    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_mv3'
+
+    # model = f_get_mv3(cfg.PATH_HOST, device)
+    # model = ModelOut4Mobilenet_v3(model)
+    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_mv3'
 
     model = models.resnet18(pretrained=True)
     model = ModelOut4Resnet18(model)
-    model = Yolo_v1(backbone=model, dim_in=model.dim_out, grid=cfg.NUM_GRID,
-                    num_classes=cfg.NUM_CLASSES, num_bbox=cfg.NUM_BBOX, cfg=cfg)
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'resnet18'
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_res18'
+
+    # model = models.resnet50(pretrained=True)
+    # model = ModelOut4Resnet50(model)
+    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_res50'
+
+    # model = Yolo_v1(backbone=model, dim_in=model.dim_out, cfg=cfg)
+    model = Yolo_v1_1(backbone=model, dim_in=model.dim_out, cfg=cfg)
+
     # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))
 
     # model = resnet50(cfg)
@@ -53,12 +64,9 @@ def init_model(cfg, device, id_gpu=None):
 
     # ------------------------自定义backbone完成-------------------------------
     pg = model.parameters()
-    # 最初学习率
-    lr0 = 1e-3
-    lrf = lr0 / 100
-    # 权重衰减(如L2惩罚)(默认: 0)
-    optimizer = optim.Adam(pg, lr0)
-    # optimizer = optim.Adam(pg, lr0, weight_decay=5e-4)
+    # optimizer = optim.Adam(pg, cfg.LR0)
+    # optimizer = optim.Adam(pg, cfg.LR0, weight_decay=5e-4)
+    optimizer = optim.SGD(pg, lr=cfg.LR0, momentum=0.937, weight_decay=0.0005, nesterov=True)
     # 两次不上升，降低一半
     lr_scheduler = None
     # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=1, verbose=True)
@@ -70,13 +78,32 @@ def init_model(cfg, device, id_gpu=None):
 
 
 def train_eval_set(cfg):
-    # cfg.FILE_NAME_WEIGHT = 'train_yolo1_raccoon200mobilenet_v2-1_47.912' + '.pth'
-    cfg.FILE_NAME_WEIGHT = 'rain_yolo1_raccoon200resnet18-1_7.882' + '.pth'  # 初始resnet
+    # raccoon mobilenet_v2
+    # cfg.FILE_NAME_WEIGHT = 'zz/train_yolo1_raccoon200_mv2-base' + '.pth'  # 初始resnet
+    # cfg.FILE_NAME_WEIGHT = 'zz/train_yolo1_raccoon200_mv2-39_0.52_p52.8_r31.7' + '.pth'
+    # cfg.MAPS_VAL = [0.529, 0.318]
 
-    cfg.FILE_NAME_WEIGHT = 'zz/train_yolo1_raccoon200resnet18-24_1.26_p91.6_r42.9' + '.pth'  # 最好
-    cfg.MAPS_VAL = [0.917, 0.430]  # resnet18-12_1.33_0.8
+    # raccoon resnet18
+    cfg.FILE_NAME_WEIGHT = 'zz/train_yolo1_raccoon200_res18-base' + '.pth'  # 初始resnet
+    cfg.FILE_NAME_WEIGHT = 'train_yolo1_raccoon200_res18-30_80.742' + '.pth'  # 最好
+    # cfg.MAPS_VAL = [0.614, 0.351]
 
-    # cfg.FILE_NAME_WEIGHT = '123' + '.pth'
+    # raccoon mobilenet_v3
+    # cfg.FILE_NAME_WEIGHT = 'zz/train_yolo1_raccoon200_mv3-base' + '.pth'  # 初始resnet
+    # cfg.FILE_NAME_WEIGHT = 'zz/train_yolo1_raccoon200_mv3-5_0.94_p25.5_r11.1' + '.pth'
+    # cfg.MAPS_VAL = [0.60, 0.24]
+
+    # type3 resnet18 0:00:29
+    # cfg.FILE_NAME_WEIGHT = 'train_yolo1_type3_res18-1_29.204' + '.pth'  # 初始resnet
+    # cfg.FILE_NAME_WEIGHT = 'train_yolo1_type3_res18-108_7.39_p10.2_r11.0' + '.pth'  # conf>0.5
+    # cfg.MAPS_VAL = [1.00, 0.201]
+    cfg.MAPS_VAL = [0.60, 0.60]
+    cfg.LR0 = 1e-3
+    cfg.DEL_TB = False
+
+    cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
+
+    # cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
     pass
 
@@ -98,6 +125,6 @@ if __name__ == '__main__':
                   fdatas_l2=fdatas_l2, lr_scheduler=lr_scheduler,
                   loader_train=loader_train, loader_val_fmap=loader_val_fmap, loader_val_coco=loader_val_coco,
                   device=device, train_sampler=None, eval_sampler=None,
-                  tb_writer=None, maps_val=cfg.MAPS_VAL
+                  tb_writer=None, maps_def=cfg.MAPS_VAL
                   )
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

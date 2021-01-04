@@ -73,7 +73,7 @@ def x_高级2(labels):
     return labels
 
 
-def f数据高级():
+def f_gather():
     input = [
         [2, 3, 4, 5, 0, 0],
         [1, 4, 3, 0, 0, 0],
@@ -99,13 +99,28 @@ def f数据高级():
          [1, 0, 0, 0, 0, 0]],
     ]
     input = torch.tensor(input)
-    print(input.shape)
-    # 多维数组索引 [2, 4, 6] 只要每批的  第0行和1行 选择的在第0维, 最后一维需要复制匹配
-    idx = torch.LongTensor([0, 2])
-    idx.unsqueeze_(-1).unsqueeze_(-1)
-    idx = idx.repeat(1, 1, input.shape[-1])
-    out = torch.gather(input, dim=1, index=idx)
+    dim0, dim1, dim2 = input.shape
+    print(dim0, dim1, dim2)  # [2, 4, 6]
+    # 定义在要选的上一维
+    idx1 = torch.LongTensor([0, 1, 2, 5])  # 定义在前1维
+    idx = idx.reshape(1, idx1.shape[0], 1)  # 扩维   要选的为维度为1 其它同维
+    idx = idx.repeat(dim0, 1, 1)  # 一致
+    out = torch.gather(input, dim=-1, index=idx)  # 其它都要匹配 选择那维单独处理
+
+    # idx = torch.LongTensor([0, 3])  # 选[2, 4, 6]第1维则第1维匹配维度为1 定义在前一维0维长度
+    # idx.unsqueeze_(-1).unsqueeze_(-1)
+    # idx = idx.reshape(len(idx), 1, 1)
+    # idx = idx.reshape(idx.shape[0], 1, 1)
+    # idx = idx.repeat(1, 1, dim2)
+    # print(idx.shape)  # [2, 1, 6]
+    # out = torch.gather(input, dim=1, index=idx)  # 其它都要匹配 选择那维单独处理
     print(out)
+
+    fill = input.index_fill(-1, idx1, 99)  # 直接使用1维索引
+    print(fill)
+
+    print(input.scatter_(-1, idx, 55))  # 与 gather 相同
+
 
 if __name__ == '__main__':
     # t1 = torch.arange(8)
@@ -125,4 +140,4 @@ if __name__ == '__main__':
     # x_高级2(1)
 
     # t_交叉运算()
-    f数据高级()
+    f_gather()

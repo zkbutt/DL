@@ -5,6 +5,9 @@ from contextlib import contextmanager
 
 import torch
 import torch.distributed as dist
+from torch.utils.tensorboard import SummaryWriter
+
+from f_tools.GLOBAL_LOG import flog
 
 
 def all_gather(data):
@@ -79,6 +82,14 @@ def reduce_dict(input_dict, average=True):
 
 
 def warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor):
+    '''
+
+    :param optimizer:
+    :param warmup_iters:  warmup_iters = min(1000, len(data_loader) - 1)
+    :param warmup_factor: warmup_factor = 5.0 / 10000
+    :return:
+    '''
+
     def f(x):
         """根据step数返回一个学习率倍率因子"""
         if x >= warmup_iters:  # 当迭代数大于给定的warmup_iters时，倍率因子为1
@@ -194,6 +205,42 @@ def mgpu_init():
                                          )
     torch.distributed.barrier()  # 等待所有GPU初始化 初始化完成 629M
     return args, device
+
+
+def mgpu_process0(args, cfg, loader_train, loader_val_coco):
+    path = os.path.join(cfg.PATH_PROJECT_ROOT, cfg.PATH_TENSORBOARD)
+    if cfg.DEL_TB and os.path.exists(path):
+        # os.remove(path)  # 删除空文件夹 shutil.rmtree(path, ignore_errors=True)
+        os.system("rm -rf %s" % path)  # Linux下调用bash命令
+        import time
+
+        while os.path.exists(path):
+            time.sleep(1)
+        else:
+            print('删除成功')
+        pass
+
+    # 主进程任务
+    flog.info(args)
+    if not os.path.exists(cfg.PATH_SAVE_WEIGHT):
+        try:
+            os.makedirs(cfg.PATH_SAVE_WEIGHT)
+        except Exception as e:
+            flog.error(' %s %s', cfg.PATH_SAVE_WEIGHT, e)
+    # tensorboard --logdir=runs_widerface --host=192.168.0.199
+    # tensorboard --logdir=runs_voc --host=192.168.0.199
+    # print('"tensorboard --logdir=runs_raccoon200 --host=192.168.0.199", view at http://192.168.0.199:6006/'
+    #       % cfg.PATH_TENSORBOARD)
+
+    print('cfg.BATCH_SIZE---', cfg.BATCH_SIZE)
+    print('cfg.LOSS_WEIGHT---', cfg.LOSS_WEIGHT)
+    if loader_train is not None:
+        print('dataset_train 数量', len(loader_train.dataset))
+    if loader_val_coco is not None:
+        print('dataset_val 数量', len(loader_val_coco.dataset))
+
+    tb_writer = SummaryWriter(path)
+    return tb_writer
 
 
 def model_device_init(model, device, id_gpu, cfg):

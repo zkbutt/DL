@@ -9,7 +9,7 @@ from PIL import Image
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import get_path_root
 from f_tools.fits.f_fit_fun import custom_set
-from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic
+from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4pil
 from f_tools.pic.f_show import f_plot_od4pil, f_show_od4pil
 # 这里要删除
 from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
@@ -46,5 +46,5 @@ if __name__ == '__main__':
         '''---------------数据加载及处理--------------'''
         file_img = os.path.join(path_img, name)
         # 这里需要修复
-        f_prod_pic(file_img, model, labels_lsit, data_transform, is_keeep=cfg.IS_KEEP_SCALE, cfg=cfg)
+        f_prod_pic4pil(file_img, model, labels_lsit, data_transform, is_keeep=cfg.IS_KEEP_SCALE, cfg=cfg)
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

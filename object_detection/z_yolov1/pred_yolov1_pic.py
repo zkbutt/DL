@@ -28,9 +28,10 @@ if __name__ == '__main__':
     # json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes_voc_proj.json'), 'r', encoding='utf-8')
     # ids_classes = json.load(json_file, encoding='utf-8')  # json key是字符
 
-    _ = cfg.FUN_LOADER_DATA(cfg, is_mgpu=False, )  # 用于加载配置
-    
-    ids_classes = cfg.IDS_CLASSES
+    # 这里是原图
+    dataset_val = cfg.FUN_EVAL_DATA(cfg)
+
+    ids_classes = dataset_val.ids_classes
     labels_lsit = list(ids_classes.values())  # index 从 1开始 前面随便加一个空
     labels_lsit.insert(0, None)  # index 从 1开始 前面随便加一个空
     flog.debug('测试类型 %s', labels_lsit)
@@ -39,15 +40,19 @@ if __name__ == '__main__':
     model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=None)
     model.eval()
 
-    path_img = cfg.PATH_IMG_TRAIN
-    # path_img = os.path.join(get_path_root(), '_test_pic')
-    file_names = os.listdir(path_img)
-    random.seed(20201215)
-    random.shuffle(file_names)  # 随机打乱
     data_transform = cre_transform4resize(cfg)
 
-    for name in file_names:
-        '''---------------数据加载及处理--------------'''
-        file_img = os.path.join(path_img, name)
-        f_prod_pic(file_img, model, labels_lsit, data_transform)
+    # 这里是原图
+    for img, _ in dataset_val:
+        f_prod_pic(img, model, labels_lsit, data_transform)
+
+    # path_img = dataset_val.path_img
+    # # path_img = os.path.join(get_path_root(), '_test_pic')
+    # file_names = os.listdir(path_img)
+    # random.seed(20201215)
+    # random.shuffle(file_names)  # 随机打乱
+    # for name in file_names:
+    #     '''---------------数据加载及处理--------------'''
+    #     file_img = os.path.join(path_img, name)
+    #     f_prod_pic4pil(file_img, model, labels_lsit, data_transform)
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

@@ -4,7 +4,6 @@ import time
 
 from tqdm import tqdm
 
-from object_detection.yolov3_spp.utils import torch_utils
 
 
 def t_argparse():
@@ -32,25 +31,25 @@ def t_tqdm():
     # 工具进度t_tqdm使用
     num_show = 100
     num_total = 1000
-    with tqdm(total=num_total, desc=f'复制文件111111111111111111111111111111', postfix=dict, mininterval=0.3) as pbar:
-        '''
-        1.01s/it        1秒/次
-        63.65it/s       次/秒
-        '''
-        for i in range(num_total):
-            time.sleep(0.01)
-            d = {
-                'Conf Loss': random.randint(1, 99),
-                'Regression Loss1': random.randint(1, 99),
-                'Regression Loss2': random.randint(1, 99),
-                'Regression Loss3': random.randint(1, 99),
-                'LandMark Loss': random.randint(1, 99),
-                'lr': random.randint(1, 99),
-                's/step': random.randint(1, 99),
-            }
+    pbar = tqdm(range(num_show), desc=f'标题', postfix=dict, mininterval=0.3)
+    '''
+    1.01s/it        1秒/次
+    63.65it/s       次/秒
+    '''
+    for i in pbar:
+        time.sleep(0.01)
+        d = {
+            'Conf Loss': random.randint(1, 99),
+            'Regression Loss1': random.randint(1, 99),
+            'Regression Loss2': random.randint(1, 99),
+            'Regression Loss3': random.randint(1, 99),
+            'LandMark Loss': random.randint(1, 99),
+            'lr': random.randint(1, 99),
+            's/step': random.randint(1, 99),
+        }
 
-            pbar.set_postfix(**d)
-            pbar.update(num_total / num_total)
+        pbar.set_postfix(**d)
+        # pbar.update(i)
 
 
 def t_random(a, b):
@@ -72,8 +71,8 @@ def t_random(a, b):
 
 
 if __name__ == '__main__':
-    # t_tqdm()
+    t_tqdm()
 
-    t_argparse()
+    # t_argparse()
 
     # t_random(0.7, 2.1)

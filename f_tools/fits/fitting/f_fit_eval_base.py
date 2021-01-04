@@ -21,7 +21,7 @@ from f_tools.datas.f_map.map_go import f_do_fmap
 from f_tools.f_torch_tools import save_weight
 import torch.distributed as dist
 
-from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank
+from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank, warmup_lr_scheduler
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
 from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
 from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od, \
@@ -68,6 +68,14 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
     if train_sampler is not None:
         train_sampler.set_epoch(epoch)  # 使每一轮多gpu获取的数据不一样
 
+    if epoch < 3:  # 当训练第一轮（epoch=0）时，启用warmup训练方式，可理解为热身训练
+        warmup_factor = 5.0 / 10000
+        warmup_iters = min(1000, len(data_loader) - 1)
+        # 是否进行 lr 策略配置
+        lr_scheduler_warmup = warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
+    else:
+        lr_scheduler_warmup = None
+
     metric_logger = MetricLogger(delimiter="  ")  # 日志记录器
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}/{}]'.format(epoch + 1, end_epoch)
@@ -103,8 +111,8 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
         '''多GPU输出均值 对 loss_total 进行修正'loss_total'  'loss_g' '''
         loss_total = calc_average_loss(loss_total, log_dict)
 
-        # if lr_scheduler is not None:  # 每批训练lr更新器 感觉没必要
-        #     lr_scheduler.step()
+        if lr_scheduler_warmup is not None:  # 每批训练lr更新器 用于热身
+            lr_scheduler_warmup.step()
 
         # 这里记录日志输出 直接用字典输入
         metric_logger.update(**log_dict)
@@ -170,7 +178,9 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
 
     cfg = model.cfg
     res = {}
-    for batch_data in tqdm(data_loader, desc='当前第 %s 次' % epoch):
+    num_no_pos = 0
+    pbar = tqdm(data_loader, desc='%s' % epoch, postfix=dict, mininterval=0.3)
+    for batch_data in pbar:
         # torch.Size([5, 3, 416, 416])
         img_ts4, p_yolos = fun_datas_l2(batch_data, device, cfg)
         # 处理size 和 ids 用于coco
@@ -192,12 +202,16 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
         #     torch.cuda.synchronize(device)  # 测试时间的
 
         # ids_batch 用于把一批的box label score 一起弄出来
-        if hasattr(cfg, 'NUM_KEYPOINTS') and cfg.NUM_KEYPOINTS > 0:
-            ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
-        else:
-            ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
-
+        # if hasattr(cfg, 'NUM_KEYPOINTS') and cfg.NUM_KEYPOINTS > 0:
+        #     ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
+        # else:
+        #     ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
+        ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
         if p_labels is None:
+            if num_no_pos > 4:  # 如果4个批都没有目标则放弃
+                return
+            else:
+                num_no_pos += 1
             continue
         _res_t = {}
         # 每一张图的 id 与批次顺序保持一致 选出匹配
@@ -230,15 +244,26 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
             else:
                 # flog.warning('没有预测出框 %s', files_txt)
                 pass
+
+            d = {
+                'pos': len(p_scores),
+                'max': round(p_scores.max().item() * 100, 1),
+                # 'min': round(p_scores.min().item(), 1),
+                'mean': round(p_scores.mean().item() * 100, 1),
+            }
+            pbar.set_postfix(**d)
+
         if len(_res_t) == 0:
             flog.error('这里到不了 该批次未检测出目标')
             continue
         res.update(_res_t)
         # __d = 1
+
     if len(res) == 0:
         # 一个GPU没有 一个有
-        flog.critical('本次未检测出目标')
+        flog.critical('本次未检测出 目标整个批')
         return None
+
     # 这里可以优化
     coco_gt = data_loader.dataset.coco
     coco_eval = CocoEvaluator(coco_gt, [mode])
@@ -275,6 +300,7 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
                 'Recall': result_info[i + 6],
             }
             tb_writer.add_scalars(title, _d, epoch + 1)
+
     maps_val = []
     maps_val.append(result_info[1])  # IoU=0.50   Precision
     maps_val.append(result_info[7])  # IoU=0.50:0.95  maxDets= 10  Recall
@@ -299,8 +325,7 @@ def _polt_keypoints(img_pil, p_boxes_ltrb, szie_scale4bbox, p_keypoints, szie_sc
     return img_pil
 
 
-def f_prod_pic(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg=None):
-    img_pil = Image.open(file_img).convert('RGB')
+def f_prod_pic(img_pil, model, labels_lsit, data_transform, is_keeep=False, cfg=None):
     size_input = img_pil.size
     if is_keeep:
         max1 = max(size_input)
@@ -316,6 +341,11 @@ def f_prod_pic(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg
     # ids_batch, p_boxes_ltrb, p_labels, p_scores = model(img_ts)
     img_pil = _polt_boxes(img_pil, p_boxes_ltrb, szie_scale4bbox, p_scores, p_labels, labels_lsit)
     f_plt_show_pil(img_pil)
+
+
+def f_prod_pic4file(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg=None):
+    img_pil = Image.open(file_img).convert('RGB')
+    f_prod_pic(img_pil, model, labels_lsit, data_transform, is_keeep=is_keeep, cfg=cfg)
 
 
 def f_prod_pic4keypoints(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg=None):
@@ -664,28 +694,31 @@ class MetricLogger(object):
                 eta_second = iter_time.global_avg * (len(iterable) - i)
                 eta_string = str(datetime.timedelta(seconds=eta_second))
                 if torch.cuda.is_available():
-                    flog.debug(log_msg.format(i + 1, len(iterable),
-                                              eta=eta_string,
-                                              meters=str(self),
-                                              time=str(iter_time),  # 模型迭代时间(含数据加载) SmoothedValue对象
-                                              data=str(data_time),  # 取数据时间 SmoothedValue对象
-                                              # r_time=str(int(iter_time.value * (len(iterable) - i))),
-                                              memory=torch.cuda.max_memory_allocated() / MB))  # 只能取第一个显卡
+                    # flog.debug(log_msg.format(i + 1, len(iterable),
+                    print(log_msg.format(i + 1, len(iterable),
+                                         eta=eta_string,
+                                         meters=str(self),
+                                         time=str(iter_time),  # 模型迭代时间(含数据加载) SmoothedValue对象
+                                         data=str(data_time),  # 取数据时间 SmoothedValue对象
+                                         # r_time=str(int(iter_time.value * (len(iterable) - i))),
+                                         memory=torch.cuda.max_memory_allocated() / MB))  # 只能取第一个显卡
                 else:
-                    flog.debug(log_msg.format(i, len(iterable),
-                                              eta=eta_string,
-                                              meters=str(self),
-                                              time=str(iter_time),
-                                              # r_time=str(int(iter_time.value * (len(iterable) - i))),
-                                              data=str(data_time)))
+                    # flog.debug(log_msg.format(i, len(iterable),
+                    print(log_msg.format(i, len(iterable),
+                                         eta=eta_string,
+                                         meters=str(self),
+                                         time=str(iter_time),
+                                         # r_time=str(int(iter_time.value * (len(iterable) - i))),
+                                         data=str(data_time)))
             i += 1
             end = time.time()
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         # 每批时间
-        flog.debug('{} Total time: {} ({:.4f} s / it)'.format(header,
-                                                              total_time_str,
-                                                              total_time / len(iterable)))
+        # flog.debug('{} Total time: {} ({:.4f} s / it)'.format(header,
+        print('{} Total time: {} ({:.4f} s / it)'.format(header,
+                                                         total_time_str,
+                                                         total_time / len(iterable)))
 
 
 if __name__ == '__main__':

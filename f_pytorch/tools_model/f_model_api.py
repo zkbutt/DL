@@ -6,16 +6,16 @@ from collections import OrderedDict
 '''-----------------模型方法区-----------------------'''
 
 
-def init_weights(model):
-    for m in model.modules():
-        t = type(m)
-        if t is nn.Conv2d:
-            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-        elif t is nn.BatchNorm2d:
-            m.eps = 1e-4
-            m.momentum = 0.03
-        elif t in [nn.LeakyReLU, nn.ReLU, nn.ReLU6]:
-            m.inplace = True
+def finit_weights(model):
+    # for m in model.modules():
+    #     t = type(m)
+    #     if t is nn.Conv2d:
+    #         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+    #     elif t is nn.BatchNorm2d:
+    #         m.eps = 1e-4
+    #         m.momentum = 0.03
+    #     elif t in [nn.LeakyReLU, nn.ReLU, nn.ReLU6]:
+    #         m.inplace = True
 
     for m in model.modules():
         if isinstance(m, nn.Conv2d):

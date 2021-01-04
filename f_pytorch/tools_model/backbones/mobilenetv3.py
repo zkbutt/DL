@@ -8,6 +8,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
 
+from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v3
+from f_pytorch.tools_model.model_look import f_look_model
+
 
 class hswish(nn.Module):
     def forward(self, x):
@@ -176,21 +179,35 @@ class MobileNetV3_Small(nn.Module):
                 if m.bias is not None:
                     init.constant_(m.bias, 0)
 
+    def _forward_impl(self, x):
+        # See note [TorchScript super()]
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
+
+        return x
+
     def forward(self, x):
-        out = self.hs1(self.bn1(self.conv1(x)))
-        out = self.bneck(out)
-        out = self.hs2(self.bn2(self.conv2(out)))
-        out = F.avg_pool2d(out, 7)
-        out = out.view(out.size(0), -1)
-        out = self.hs3(self.bn3(self.linear3(out)))
-        out = self.linear4(out)
-        return out
+        return self._forward_impl(x)
 
 
-if __name__ == '__main__':
+def f_get_mv3(path_host='', device='cpu'):
     model = MobileNetV3_Small()
-    checkpoint = torch.load("M:/AI/weights/pytorch/mbv3_small.pth.tar", map_location='cpu')
-    pretrained_dict=checkpoint['state_dict']
+    checkpoint = torch.load(path_host + "/AI/weights/pytorch/mbv3_small.pth.tar", map_location=device)
+
+    # model = MobileNetV3_Large() # 这个加载不起
+    # checkpoint = torch.load("/AI/weights/pytorch/mbv3_large.old.pth.tar", map_location='cpu')
+    pretrained_dict = checkpoint['state_dict']
     dd = {}
     ss = 'module.'
     for k, v in pretrained_dict.items():
@@ -198,6 +215,14 @@ if __name__ == '__main__':
     keys_missing, keys_unexpected = model.load_state_dict(dd, strict=False)
     print('keys_missing', keys_missing)
     print('keys_unexpected', keys_unexpected)
+    return model
+
+
+if __name__ == '__main__':
+    model = f_get_mv3()
+    model = ModelOut4Mobilenet_v3(model)
+    # f_look_model(model, input=(1, 3, 416, 416))
+
     x = torch.randn(2, 3, 224, 224)
     y = model(x)
     print(y.size())

@@ -112,7 +112,10 @@ def f_二值交叉熵2():
     # print(input)
     # input = torch.randn(*size, requires_grad=True)
     input = torch.tensor([[0.8, 0.8],
-                          [0.5, 0.6]], dtype=torch.float)  # 默认是int64
+                          [0.5, 2.]], dtype=torch.float)  # 默认是int64
+
+    input = torch.tensor([[0.8, 0.8],
+                          [0.5, 0.3]], dtype=torch.float)  # 默认是int64
     # input = torch.randn(*size, requires_grad=True)
     # [0,2)
     # target = torch.tensor(np.random.randint(0, 5, size), dtype=torch.float)
@@ -132,6 +135,7 @@ def f_二值交叉熵2():
     # print(loss3)
 
     loss2 = F.binary_cross_entropy_with_logits(input, target, reduction='none')  # 无需sigmoid
+    # loss2 = F.binary_cross_entropy_with_logits(torch.sigmoid(input), target, reduction='none')  # 无需sigmoid
     print(loss2)
 
     # loss = F.binary_cross_entropy(F.softmax(input, dim=-1), target, reduction='none')  # input不为1要报错
@@ -559,8 +563,6 @@ class LossYOLOv3(nn.Module):
         return loss_total, log_dict
 
 
-
-
 def f_ohem(scores, nums_neg, mask_pos, boxes_ltrb=None, threshold_iou=0.7):
     '''
 
@@ -627,8 +629,8 @@ if __name__ == '__main__':
 
     np.random.seed(20201031)
 
-    t_focal_loss()
+    # t_focal_loss()
 
     # t_多值交叉熵()
-    # f_二值交叉熵2()
+    f_二值交叉熵2()
     # f_二值交叉熵1()

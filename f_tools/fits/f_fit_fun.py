@@ -110,12 +110,12 @@ def train_eval4od(start_epoch, model, optimizer,
                   fdatas_l2, lr_scheduler=None,
                   loader_train=None, loader_val_fmap=None, loader_val_coco=None,
                   device=torch.device('cpu'), train_sampler=None, eval_sampler=None,
-                  tb_writer=None, maps_val=(0., 0),
+                  tb_writer=None, maps_def=(0., 0),
                   ):
     cfg = model.cfg
 
-    map_val_max_p = maps_val[0]
-    map_val_max_r = maps_val[1]
+    map_val_max_p = maps_def[0]
+    map_val_max_r = maps_def[1]
     fun_datas_l2 = fdatas_l2
     for epoch in range(start_epoch, cfg.END_EPOCH):
 
@@ -161,9 +161,11 @@ def train_eval4od(start_epoch, model, optimizer,
             if maps_val is not None:
                 if maps_val[0] > map_val_max_p:
                     map_val_max_p = maps_val[0]
+                    map_val_max_r = max(map_val_max_r, maps_val[1])
                     fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch)
                 elif maps_val[1] > map_val_max_r:
                     map_val_max_r = maps_val[1]
+                    map_val_max_p = max(map_val_max_p, maps_val[0])
                     fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch)
 
         if model.cfg.IS_FMAP_EVAL:

@@ -3,6 +3,10 @@ import socket
 
 class CfgBase:
     START_EVAL = 10
+    MAPS_VAL = [0.1, 0.1]
+    LR0 = 1e-3
+    USE_MGPU_EVAL = True
+    DEL_TB = False
 
     '''多尺度'''
     IS_MULTI_SCALE = True  # 多尺度训练

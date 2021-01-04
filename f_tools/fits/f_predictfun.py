@@ -129,3 +129,4 @@ def label_nms4keypoints(ids_batch1, p_boxes_ltrb1, p_keypoints1, p_labels1, p_sc
             p_keypoints2 = None
         # print('12')
     return ids_batch2, p_boxes_ltrb2, p_keypoints2, p_labels2, p_scores2,
+

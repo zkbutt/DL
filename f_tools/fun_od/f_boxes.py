@@ -1,7 +1,7 @@
 import math
 import torch
 import numpy as np
-
+from torch.nn import functional as F
 
 
 def empty_bboxes(bboxs):
@@ -389,6 +389,25 @@ def calc_iou_wh4ts(wh1, wh2):
     return inter_area / union_area
 
 
+def calc_iou4some_dim(box1, box2):
+    '''
+    同维IOU计算
+    '''
+
+    lt = torch.max(box1[:, :2], box2[:, :2])
+    rb = torch.min(box1[:, 2:], box2[:, 2:])
+
+    wh = rb - lt
+    wh[wh < 0] = 0
+    inter = wh[:, 0] * wh[:, 1]
+
+    area1 = (box1[:, 2] - box1[:, 0]) * (box1[:, 3] - box1[:, 1])
+    area2 = (box2[:, 2] - box2[:, 0]) * (box2[:, 3] - box2[:, 1])
+
+    iou = inter / (area1 + area2 - inter + 1e-4)
+    return iou
+
+
 def resize_boxes4np(boxes, original_size, new_size):
     '''
     用于预处理 和 最后的测试(预测还原) 直接拉伸调整
@@ -401,6 +420,17 @@ def resize_boxes4np(boxes, original_size, new_size):
     ratios = new_size / original_size
     boxes = boxes * np.concatenate([ratios, ratios]).astype(np.float32)
     return boxes
+
+
+def resize_boxes(boxes, original_size, new_size):
+    ratios = tuple(float(s) / float(s_orig) for s, s_orig in zip(new_size, original_size))
+    ratio_height, ratio_width = ratios
+    xmin, ymin, xmax, ymax = boxes.unbind(1)
+    xmin = xmin * ratio_width
+    xmax = xmax * ratio_width
+    ymin = ymin * ratio_height
+    ymax = ymax * ratio_height
+    return torch.stack((xmin, ymin, xmax, ymax), dim=1)
 
 
 def get_boxes_colrow_index(boxes_xy, fsize):
@@ -426,6 +456,128 @@ def xy2offxy(boxes_xy, fsize):
     offset_xy = colrow_index / fsize  # 格子偏移对特图的
     offset_xy_wh = (boxes_xy - offset_xy) * fsize  # 特图坐标 - 格子偏移 * 对应格子数
     return offset_xy_wh
+
+
+def remove_small_boxes(boxes, num_min_wh):
+    """
+    Remove boxes which contains at least one side smaller than min_size.
+
+    Arguments:
+        boxes (Tensor[N, 4]): boxes in [x0, y0, x1, y1] format
+        num_min_wh (int): minimum size
+
+    Returns:
+        keep (Tensor[K]): indices of the boxes that have both sides
+            larger than min_size
+    """
+    ws, hs = boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1]
+    keep = (ws >= num_min_wh) & (hs >= num_min_wh)
+    keep = keep.nonzero().squeeze(1)
+    return keep
+
+
+def clip_boxes_to_image(boxes_ltrb, size_wh):
+    """
+    Clip boxes so that they lie inside an image of size `size`.
+
+    Arguments:
+        boxes_ltrb (Tensor[N, 4]): boxes in [x0, y0, x1, y1] format
+        size_wh (Tuple[height, width]): size of the image
+
+    Returns:
+        clipped_boxes (Tensor[N, 4])
+    """
+    dim = boxes_ltrb.dim()
+    boxes_x = boxes_ltrb[..., 0::2]
+    boxes_y = boxes_ltrb[..., 1::2]
+    width, height = size_wh
+    boxes_x = boxes_x.clamp(min=0, max=width)
+    boxes_y = boxes_y.clamp(min=0, max=height)
+    clipped_boxes = torch.stack((boxes_x, boxes_y), dim=dim)
+    return clipped_boxes.reshape(boxes_ltrb.shape)
+
+
+class Resize_fixed(object):
+    def __init__(self, img_size=448, image_mean=None, image_std=None, training=True, multi_scale=True):  # 416
+        # if not isinstance(img_size,(tuple,list)):
+        #     img_size=[img_size]
+
+        self.img_size = img_size
+        self.training = training
+        if image_mean is None:
+            image_mean = [0.485, 0.456, 0.406]
+        if image_std is None:
+            image_std = [0.229, 0.224, 0.225]
+
+        self.image_mean = image_mean
+        self.image_std = image_std
+
+        if multi_scale:
+            s = img_size / 32
+            nb = 8
+            self.multi_scale = ((np.linspace(0.5, 2, nb) * s).round().astype(np.int) * 32)
+
+            # self.multi_scale=[320,352,384,416,448,480,512,544,576,608]
+
+    def normalize(self, image):
+        dtype, device = image.dtype, image.device
+        mean = torch.as_tensor(self.image_mean, dtype=dtype, device=device)
+        std = torch.as_tensor(self.image_std, dtype=dtype, device=device)
+        return (image - mean[:, None, None]) / std[:, None, None]
+
+    def pad_img(self, A, box=None, mode='constant', value=0):
+        h, w = A.size()[-2:]
+        if h >= w:
+            diff = h - w
+            pad_list = [diff // 2, diff - diff // 2, 0, 0]
+            if box is not None:
+                box = [[b[0] + diff // 2, b[1], b[2] + diff // 2, b[3]] for b in box]
+                box = torch.as_tensor(box)
+        else:
+            diff = w - h
+            pad_list = [0, 0, diff // 2, diff - diff // 2]
+            if box is not None:
+                box = [[b[0], b[1] + diff // 2, b[2], b[3] + diff // 2] for b in box]
+                box = torch.as_tensor(box)
+
+        A_pad = F.pad(A, pad_list, mode=mode, value=value)
+
+        return A_pad, box, h, w
+
+    def resize(self, image, target):
+
+        if self.training:
+            size = random.choice(self.multi_scale)
+        else:
+            # FIXME assume for now that testing uses the largest scale
+            size = self.img_size
+
+        if target is None:
+            bbox = None
+        else:
+            bbox = target["boxes"]
+        image, bbox, h, w = self.pad_img(image, box=bbox)
+
+        # resize
+        image = F.interpolate(
+            image[None], size=(size, size), mode='bilinear', align_corners=False)[0]
+
+        if target is None:
+            target = {}
+            target["scale_factor"] = torch.as_tensor([h, w, size], device=image.device)
+            return image, target
+
+        bbox = resize_boxes(bbox, (h, h) if h > w else (w, w), image.shape[-2:])
+        target["boxes"] = bbox
+
+        return image, target
+
+    def __call__(self, image, target):
+        # normalizer
+        image = self.normalize(image)
+        image, target = self.resize(image, target)
+
+        return image, target
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ import random
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic
+from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4pil
 # 这里要删除
 from object_detection.z_center.CONFIG_CENTER import CFG
 from object_detection.z_center.process_fun import cre_data_transform, init_model
@@ -39,9 +39,12 @@ if __name__ == '__main__':
     random.shuffle(file_names)  # 随机打乱
     data_transform = cre_data_transform(cfg)
 
+
+
+
     for name in file_names:
         '''---------------数据加载及处理--------------'''
         file_img = os.path.join(path_img, name)
         # 这里需要修复
-        f_prod_pic(file_img, model, labels_lsit, data_transform, is_keeep=cfg.IS_KEEP_SCALE, cfg=cfg)
+        f_prod_pic4pil(file_img, model, labels_lsit, data_transform, is_keeep=cfg.IS_KEEP_SCALE, cfg=cfg)
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))
