@@ -19,26 +19,26 @@ def finit_weights(model):
 
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            # nn.init.normal_(m.weight.data)
+            # nn.init.xavier_normal_(m.weight, gain=1.0)  # 正态分布
+            torch.nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in', nonlinearity='leaky_relu')  # 正态分布
+            nn.init.kaiming_uniform_(m.weight, a=0, mode='fan_in', nonlinearity='leaky_relu')
+            # nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('tanh'))  # 均匀分布
+            # nn.init.xavier_normal_(m.weight.data)
+            # nn.init.kaiming_normal_(m.weight.data)  # 卷积层参数初始化
+            # m.bias.data.fill_(0)
             if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+                nn.init.constant_(m.bias, 0.1)
         elif isinstance(m, nn.BatchNorm2d):
             m.weight.data.fill_(1)
             m.bias.data.zero_()
         elif isinstance(m, nn.Linear):
-            nn.init.constant_(m.weight, 0)
-            nn.init.constant_(m.bias, 0)
+            nn.init.normal_(m.weight.data)  # normal: mean=0, std=1
+            # nn.init.normal_(m.weight.data, std=np.sqrt(1 / self.neural_num))  ## normal: mean=0, std=1/n
+            # nn.init.constant_(m.weight, 0)
+            # nn.init.constant_(m.bias, 0)
 
-
-def _conv3x3(in_channels, out_channels, stride=1):
-    return nn.Sequential(
-        nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1,
-                  bias=False),
-        nn.BatchNorm2d(out_channels),
-        # nn.ReLU6(inplace=True), # 最大值为6
-        nn.LeakyReLU(inplace=True),  # 负x轴给一个固定的斜率
-        # nn.RReLU(inplace=True),  # 负x轴给定范围内随机
-    )
+            nn.init.uniform_(m.weight.data, -a, a)
 
 
 def conv2d(filter_in, filter_out, kernel_size):
@@ -74,6 +74,21 @@ def conv_bn1X1(inp, oup, stride, leaky=0):
 
 
 '''-----------------模型层区-----------------------'''
+
+
+class CBL(nn.Module):
+    '''基础层'''
+
+    def __init__(self, c1, c2, k, s=1, p=0, d=1, g=1, leaky=True):
+        super(CBL, self).__init__()
+        self.convs = nn.Sequential(
+            nn.Conv2d(c1, c2, k, stride=s, padding=p, dilation=d, groups=g),
+            nn.BatchNorm2d(c2),
+            nn.LeakyReLU(0.1, inplace=True) if leaky else nn.Identity()
+        )
+
+    def forward(self, x):
+        return self.convs(x)
 
 
 class NoneLayer(nn.Module):

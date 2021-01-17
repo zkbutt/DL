@@ -116,7 +116,7 @@ def setup_for_distributed(is_master):
     __builtin__.print = print
 
 
-def is_dist_avail_and_initialized():
+def fis_mgpu():
     """检查是否支持分布式环境"""
     if not dist.is_available():
         return False
@@ -126,13 +126,13 @@ def is_dist_avail_and_initialized():
 
 
 def get_world_size():
-    if not is_dist_avail_and_initialized():
+    if not fis_mgpu():
         return 1
     return dist.get_world_size()
 
 
 def get_rank():
-    if not is_dist_avail_and_initialized():
+    if not fis_mgpu():
         return 0
     return dist.get_rank()
 
@@ -207,19 +207,8 @@ def mgpu_init():
     return args, device
 
 
-def mgpu_process0(args, cfg, loader_train, loader_val_coco):
-    path = os.path.join(cfg.PATH_PROJECT_ROOT, cfg.PATH_TENSORBOARD)
-    if cfg.DEL_TB and os.path.exists(path):
-        # os.remove(path)  # 删除空文件夹 shutil.rmtree(path, ignore_errors=True)
-        os.system("rm -rf %s" % path)  # Linux下调用bash命令
-        import time
-
-        while os.path.exists(path):
-            time.sleep(1)
-        else:
-            print('删除成功')
-        pass
-
+def mgpu_process0_init(args, cfg, loader_train, loader_val_coco, model, device):
+    '''支持 add_graph'''
     # 主进程任务
     flog.info(args)
     if not os.path.exists(cfg.PATH_SAVE_WEIGHT):
@@ -232,14 +221,28 @@ def mgpu_process0(args, cfg, loader_train, loader_val_coco):
     # print('"tensorboard --logdir=runs_raccoon200 --host=192.168.0.199", view at http://192.168.0.199:6006/'
     #       % cfg.PATH_TENSORBOARD)
 
-    print('cfg.BATCH_SIZE---', cfg.BATCH_SIZE)
-    print('cfg.LOSS_WEIGHT---', cfg.LOSS_WEIGHT)
-    if loader_train is not None:
-        print('dataset_train 数量', len(loader_train.dataset))
-    if loader_val_coco is not None:
-        print('dataset_val 数量', len(loader_val_coco.dataset))
+    path = os.path.join(cfg.PATH_PROJECT_ROOT, cfg.PATH_TENSORBOARD)
+
+    img_ = None
+    if os.path.exists(path):
+        if cfg.DEL_TB and cfg.PATH_HOST == '':
+            # os.remove(path)  # 删除空文件夹 shutil.rmtree(path, ignore_errors=True)
+            os.system("rm -rf %s" % path)  # Linux下调用bash命令
+            img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 删除后需要
+            import time
+            while os.path.exists(path):
+                time.sleep(1)
+            else:
+                flog.warning('删除成功: %s', path)
+            pass
+    else:
+        img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 不存在时需要
 
     tb_writer = SummaryWriter(path)
+
+    # if img_ is not None:
+    #     tb_writer.add_graph(model, img_)
+
     return tb_writer
 
 
@@ -254,6 +257,7 @@ def model_device_init(model, device, id_gpu, cfg):
             model.to(device)  # 这个不需要加等号
         # 转为DDP模型
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[id_gpu], find_unused_parameters=True)
+        # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[id_gpu])
     else:
         model.to(device)  # 这个不需要加等号
         is_mgpu = False

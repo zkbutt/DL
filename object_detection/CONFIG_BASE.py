@@ -3,10 +3,14 @@ import socket
 
 class CfgBase:
     START_EVAL = 10
+    EVAL_INTERVAL = 3
     MAPS_VAL = [0.1, 0.1]
     LR0 = 1e-3
     USE_MGPU_EVAL = True
+    TB_WRITER = True
     DEL_TB = False
+    MODE_COCO_TRAIN = 'bbox'  # bbox segm keypoints caption
+    MODE_COCO_EVAL = 'bbox'  # bbox segm keypoints caption
 
     '''多尺度'''
     IS_MULTI_SCALE = True  # 多尺度训练
@@ -29,6 +33,7 @@ class CfgBase:
     IS_VISUAL_PRETREATMENT = False  # 图片预处理
 
     IS_MIXTURE_FIX = True  # 这个不要动 半精度训练
+    EPOCH_WARMUP = 2
 
     # import getpass
     # # 获取当前系统用户名

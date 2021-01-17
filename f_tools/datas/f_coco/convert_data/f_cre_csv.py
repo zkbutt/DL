@@ -167,9 +167,10 @@ def handler_widerface():
 
 def hadler_voc():
     mode = 'bbox'  # 'keypoints'  # 'bbox':
-    path_root = r'M:/AI/datas/VOC2012'
-    path_data = path_root + '/train'  # 这个和 type 一起改
-    type = 'train'  # train2017 name
+    # path_root = r'M:/AI/datas/VOC2012'
+    path_root = r'M:/AI/datas/VOC2007'
+    path_data = path_root + '/val'  # 这个是VOC文件名
+    type = 'test'  # JSON名 name
     path_file_txt = 'train.txt'  # 文件名txt
     file_classes_ids = path_root + '/classes_ids.json'
 
@@ -241,7 +242,16 @@ def hadler_voc():
     with open(file_classes_ids, 'r', encoding='utf-8') as f:
         classes_ids = json.load(f)  # 文件转dict 或list
 
-    to_coco(file_csv, classes_ids, path_img, path_coco_save, mode, is_copy=False, is_move=False, type=type)
+    classes_name = []
+    file = os.path.join(path_root, 'classes_name.txt')
+    if not os.path.exists(file):
+        for k, v in classes_ids.items():
+            classes_name.append(k)
+        with open(file, 'w') as f:
+            f.write(' '.join(classes_name))
+
+    to_coco(file_csv, classes_ids, path_img, path_coco_save, mode, is_copy=False, is_move=False,
+            type=type + '_' + str(len(xml_list)))
 
 
 if __name__ == '__main__':

@@ -49,42 +49,6 @@ def cre_data_transform(cfg):
     return data_transform
 
 
-def init_model(cfg, device, id_gpu=None):
-    # model = models.mobilenet_v2(pretrained=True)
-    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'm2'
-    model = models.resnet18(pretrained=True)
-    model = ModelOut4Resnet18(model)
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'r18'
-
-
-    model = CenterNet(cfg=cfg, backbone=model, num_classes=cfg.NUM_CLASSES, dim_in_backbone=model.dim_out)
-    # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))
-
-    if cfg.IS_LOCK_BACKBONE_WEIGHT:
-        for name, param in model.backbone.named_parameters():
-            param.requires_grad_(False)
-        # 除最后的全连接层外，其他权重全部冻结
-        # if "fc" not in name:
-        #     param.requires_grad_(False)
-
-    # 通用
-    model, is_mgpu = model_device_init(model, device, id_gpu, cfg)
-    # ------------------------模型完成-------------------------------
-
-    pg = model.parameters()
-    # 最初学习率
-    lr0 = cfg.LR
-    lrf = lr0 / 100
-    # 权重衰减(如L2惩罚)(默认: 0)
-    optimizer = optim.Adam(pg, lr0, weight_decay=5e-4)
-    # 两次不上升，降低一半
-    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=3, verbose=True)
-    lr_scheduler = None
-    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
-    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
-
-    model.cfg = cfg
-    return model, optimizer, lr_scheduler, start_epoch
 
 
 def data_loader4voc(cfg, is_mgpu=False, ids2classes=None):

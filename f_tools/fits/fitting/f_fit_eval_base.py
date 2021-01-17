@@ -1,7 +1,8 @@
-# import argparse
+import json
 import math
 import os
 import sys
+import tempfile
 import time
 import datetime
 
@@ -10,6 +11,7 @@ import torch
 from collections import defaultdict, deque
 
 from PIL import Image
+from pycocotools.cocoeval import COCOeval
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 import numpy as np
@@ -21,34 +23,32 @@ from f_tools.datas.f_map.map_go import f_do_fmap
 from f_tools.f_torch_tools import save_weight
 import torch.distributed as dist
 
-from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank, warmup_lr_scheduler
+from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank, fis_mgpu, is_main_process
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
 from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
 from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od, \
-    f_plt_show_pil
-
-
-def is_mgpu():
-    '''是否多GPU'''
-    if not torch.distributed.is_available():
-        return False
-    if not torch.distributed.is_initialized():
-        return False
-    return True
+    f_plt_show_pil, show_pic_ts
 
 
 def calc_average_loss(value, log_dict):
-    if is_mgpu():
+    '''
+    计算出多 GPU 的平均loss 直接修改 log_dict
+    :param value:
+    :param log_dict:
+    :return:
+    '''
+    if fis_mgpu():
         num_gpu = torch.distributed.get_world_size()  # 总GPU个数
     else:
-        return log_dict['loss_total']
+        return log_dict['l_total']
+
     with torch.no_grad():  # 多GPU重算loss
         torch.distributed.all_reduce(value)  # 所有设备求和
         value /= num_gpu
         value = value.detach().item()
-        _t = log_dict['loss_total']
-        log_dict['loss_total'] = value  # 变成平均值
-        log_dict['loss_g'] = _t
+        _t = log_dict['l_total']
+        log_dict['l_total'] = value  # 变成平均值
+        log_dict['lgpu'] = _t
         return value
 
 
@@ -62,28 +62,38 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
     cfg = model.cfg
     end_epoch = cfg.END_EPOCH
     print_freq = cfg.PRINT_FREQ
-    is_mixture_fix = cfg.IS_MIXTURE_FIX
     forward_count = cfg.FORWARD_COUNT
 
     if train_sampler is not None:
         train_sampler.set_epoch(epoch)  # 使每一轮多gpu获取的数据不一样
 
-    if epoch < 3:  # 当训练第一轮（epoch=0）时，启用warmup训练方式，可理解为热身训练
-        warmup_factor = 5.0 / 10000
-        warmup_iters = min(1000, len(data_loader) - 1)
-        # 是否进行 lr 策略配置
-        lr_scheduler_warmup = warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
-    else:
-        lr_scheduler_warmup = None
+    if fis_mgpu():
+        # flog.debug('get_rank %s 这里等待', get_rank())
+        torch.distributed.barrier()  # 等待GPU
 
-    metric_logger = MetricLogger(delimiter="  ")  # 日志记录器
+    metric_logger = MetricLogger(is_show_log=True, delimiter=" ")  # 日志记录器
+    # if is_main_process():  # 多gpu主进程 这里要报错
+    #     metric_logger = MetricLogger(is_show_log=True, delimiter=" ")  # 日志记录器
+    # else:
+    #     metric_logger = MetricLogger(is_show_log=False, delimiter=" ")
+
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    header = 'Epoch: [{}/{}]'.format(epoch + 1, end_epoch)
+    header = 'Epoch:[{}/{}]'.format(epoch + 1, end_epoch)
 
     # ---半精度训练1---
     # enable_amp = True if "cuda" in device.type else False
     scaler = GradScaler(enabled=cfg.IS_MIXTURE_FIX)
     for i, batch_data in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+        # lr 初始化 LR变更时使用
+        if epoch < cfg.EPOCH_WARMUP:  # warmup 热身训练
+            tmp_lr = cfg.LR0 * pow((i + epoch * len(data_loader)) * 1. / (cfg.EPOCH_WARMUP * len(data_loader)), 4)
+            # tmp_lr = 1e-6 + (cfg.LR0 - 1e-6) * (i + epoch * len(data_loader)) / (cfg.EPOCH_WARMUP * len(data_loader))
+
+        elif epoch == cfg.EPOCH_WARMUP:  # 相等时强制恢复一次
+            tmp_lr = cfg.LR0
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = tmp_lr
+
         # ---半精度训练2---
         with autocast(enabled=cfg.IS_MIXTURE_FIX):
             #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
@@ -96,11 +106,16 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
                 flog.critical("Loss is {}, stopping training".format(loss_total))
                 flog.critical(log_dict)
                 sys.exit(1)
+
+            _ = calc_average_loss(loss_total, log_dict)  # 更新log_dict 各显卡损失平均
+            loss_total *= 1. / forward_count  # 分解批次 整合一起
             # ---半精度训练2  完成---
 
         # ---半精度训练3---
         # torch.autograd.set_detect_anomaly(True)
         scaler.scale(loss_total).backward()
+
+        '''多GPU输出均值 对 loss_total 进行修正'l_total'  'loss_g' 直接修改 log_dict'''
 
         # 每训练n批图片更新一次权重
         if i % forward_count == 0:
@@ -108,36 +123,31 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
             scaler.update()  # 查看是否要更新scaler
             optimizer.zero_grad()
 
-        '''多GPU输出均值 对 loss_total 进行修正'loss_total'  'loss_g' '''
-        loss_total = calc_average_loss(loss_total, log_dict)
-
-        if lr_scheduler_warmup is not None:  # 每批训练lr更新器 用于热身
-            lr_scheduler_warmup.step()
-
         # 这里记录日志输出 直接用字典输入
         metric_logger.update(**log_dict)
         now_lr = optimizer.param_groups[0]["lr"]
         metric_logger.update(lr=now_lr)
 
         if tb_writer is not None:
-            # 这里是每一批的记录
+            # 训练中记录, 这里是每一批的记录
             # flog.warning('写入 tb_writer %s', loss_total)
             # tb_writer.add_scalar('Train/loss_total', loss_total, i)
             pass
-    # 这里返回的是该设备的平均loss ,不是所有GPU的
 
+    # 这里返回的是该设备的平均loss ,不是所有GPU的
     log_dict_avg = {}
     log_dict_avg['lr'] = metric_logger.meters['lr'].value
     for k, v in log_dict.items():
         log_dict_avg[k] = metric_logger.meters[k].avg
 
-    if is_mgpu() and torch.distributed.get_rank() != 0:
+    if fis_mgpu() and not is_main_process():
         # 只有0进程才需要保存
         return log_dict_avg
 
     if lr_scheduler is not None:
-        flog.warning('更新 lr_scheduler %s', log_dict['loss_total'])
-        lr_scheduler.step(log_dict['loss_total'])  # 更新学习
+        # 每批的LR更新
+        flog.warning('更新 lr_scheduler %s', log_dict['l_total'])
+        lr_scheduler.step(log_dict['l_total'])  # 更新学习
 
     if tb_writer is not None:
         # 每一epoch
@@ -147,17 +157,14 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
         for k, v, in log_dict_avg.items():
             tb_writer.add_scalar('Loss/%s' % k, v, epoch + 1)
 
-    if (epoch % cfg.NUM_SAVE) != 0:
-        return log_dict_avg
-
-    # 每个epoch保存
-    if not cfg.DEBUG or cfg.IS_FORCE_SAVE:
+    # epoch保存
+    if ((epoch + 1) % cfg.NUM_SAVE) == 0 or cfg.IS_FORCE_SAVE:
         flog.info('训练完成正在保存模型...')
         save_weight(
             path_save=cfg.PATH_SAVE_WEIGHT,
             model=model,
             name=cfg.SAVE_FILE_NAME,
-            loss=log_dict_avg['loss_total'],
+            loss=log_dict_avg['l_total'],
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
             epoch=epoch)
@@ -170,52 +177,59 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
 
 
 @torch.no_grad()
-def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
-                     res_eval=None, tb_writer=None, mode='bbox',
-                     device=None, eval_sampler=None, is_keeep=False, ):
+def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
+                     res_eval=None, tb_writer=None, ann_type='bbox',
+                     device=None, eval_sampler=None, is_keep=False, ):
+    '''
+
+    :param ann_type:  ['segm', 'bbox', 'keypoints']
+    '''
     if eval_sampler is not None:
         eval_sampler.set_epoch(epoch)  # 使每一轮多gpu获取的数据不一样
 
     cfg = model.cfg
-    res = {}
+    res_ = {}
+    ids_coco = []
     num_no_pos = 0
+
+    if fis_mgpu():
+        # flog.debug('get_rank %s 这里等待', get_rank())
+        torch.distributed.barrier()
+
     pbar = tqdm(data_loader, desc='%s' % epoch, postfix=dict, mininterval=0.3)
     for batch_data in pbar:
         # torch.Size([5, 3, 416, 416])
-        img_ts4, p_yolos = fun_datas_l2(batch_data, device, cfg)
+        img_ts4, g_targets = fun_datas_l2(batch_data, device, cfg)
         # 处理size 和 ids 用于coco
         images, targets = batch_data
-        sizes = []  # 用于修复box
-        ids_coco = []
-        for target in targets:
-            ids_coco.append(target['image_id'])
-            size_ = target['size']
-            if is_keeep:  # keep修复
-                max1 = max(size_)
-                size_ = [max1, max1]
-            if isinstance(size_, torch.Tensor):
-                sizes.append(size_.clone().detach().to(device))  # tnesor
+
+        '''提取真实ID及尺寸'''
+        _sizes = []  # 用于修复box
+        _ids = []
+        for target in targets:  # 通过target 提取ID 和 size
+            ids_coco.append(target['image_id'])  # 加入总ID
+            _ids.append(target['image_id'])
+            _s = target['size']
+            if is_keep:  # keep修复
+                max1 = max(_s)
+                _s = [max1, max1]
+            if isinstance(_s, torch.Tensor):
+                _sizes.append(_s.clone().detach())  # tnesor
             else:
-                sizes.append(torch.tensor(size_).to(device))  # tnesor
+                _sizes.append(torch.tensor(_s))  # tnesor
 
-        # if device != torch.device("cpu"):
-        #     torch.cuda.synchronize(device)  # 测试时间的
-
-        # ids_batch 用于把一批的box label score 一起弄出来
-        # if hasattr(cfg, 'NUM_KEYPOINTS') and cfg.NUM_KEYPOINTS > 0:
-        #     ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
-        # else:
-        #     ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
-        ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
-        if p_labels is None:
+        ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4, g_targets)
+        if p_labels is None or len(p_labels) == 0:
+            flog.info('本批没有目标 num_no_pos 4次后出 当前: %s', num_no_pos)
             if num_no_pos > 4:  # 如果4个批都没有目标则放弃
                 return
-            else:
+            else:  # 没有目标就下一个
                 num_no_pos += 1
             continue
-        _res_t = {}
+
+        _res_t = {}  # 每一批的结果
         # 每一张图的 id 与批次顺序保持一致 选出匹配
-        for i, (size, image_id) in enumerate(zip(sizes, ids_coco)):
+        for i, (size, image_id) in enumerate(zip(_sizes, _ids)):
             mask = ids_batch == i  # 构建 batch 次的mask
             if torch.any(mask):  # 如果最终有目标存在 将写出info中
                 if cfg.IS_VISUAL:
@@ -229,81 +243,94 @@ def f_evaluate4coco2(model, data_loader, epoch, fun_datas_l2=None,
                     _size = torch.tensor(cfg.IMAGE_SIZE * 2)
                     p_boxes_ltrb_f = p_boxes_ltrb[mask].cpu() * _size
                     f_plt_od(img_pil, p_boxes_ltrb_f,
+                             g_boxes_ltrb=targets[i]['boxes'].cpu(),  # gbox 默认不归一化
                              ids2classes=data_loader.dataset.ids_classes,
                              labels=p_labels[mask],
-                             scores=p_scores[mask].tolist())
+                             scores=p_scores[mask].tolist(),
+                             is_recover_size=False
+                             )
 
-                # coco需要 ltwh
+                # 恢复真实尺寸(原装未处理) coco需要 ltwh
                 boxes_ltwh = ltrb2ltwh(p_boxes_ltrb[mask] * size.repeat(2)[None])
                 _res_t[image_id] = {
                     'boxes': boxes_ltwh,
                     'labels': p_labels[mask],
                     'scores': p_scores[mask],
                 }
+                # 更新进度条值
+                d = {
+                    'pos': len(boxes_ltwh),
+                    'max': round(p_scores[mask].max().item() * 100, 1),
+                    # 'min': round(p_scores.min().item(), 1),
+                    'mean': round(p_scores[mask].mean().item() * 100, 1),
+                }
+                pbar.set_postfix(**d)
 
             else:
                 # flog.warning('没有预测出框 %s', files_txt)
-                pass
+                d = {
+                    'pos': '本批没有目标',
+                }
+                pbar.set_postfix(**d)
 
-            d = {
-                'pos': len(p_scores),
-                'max': round(p_scores.max().item() * 100, 1),
-                # 'min': round(p_scores.min().item(), 1),
-                'mean': round(p_scores.mean().item() * 100, 1),
-            }
-            pbar.set_postfix(**d)
+        if len(_res_t) > 0:
+            res_.update(_res_t)  # 扩展单个
 
-        if len(_res_t) == 0:
-            flog.error('这里到不了 该批次未检测出目标')
-            continue
-        res.update(_res_t)
-        # __d = 1
+    # if len(res_)
+    # 重组数据
+    res_coco = []
 
-    if len(res) == 0:
-        # 一个GPU没有 一个有
-        flog.critical('本次未检测出 目标整个批')
-        return None
+    '''这里处理多 GPU 数据同步 '''
+    if fis_mgpu():
+        # 这里未考虑 res_ 为空的优化
+        d = {}
+        d['res_'] = res_
+        d['ids_coco'] = ids_coco
+        data_list = all_gather(d)  # 任务类型同步
+        if not is_main_process():
+            # 其它 GPU 进程退出
+            flog.debug('get_rank %s 已退出', get_rank())
+            return None
+        res_.clear()  # 重组多GPU的数据
+        ids_coco.clear()
+        for d in data_list:
+            res_.update(d['res_'])
+            ids_coco.extend(d['ids_coco'])
 
-    # 这里可以优化
-    coco_gt = data_loader.dataset.coco
-    coco_eval = CocoEvaluator(coco_gt, [mode])
-    coco_eval.update(res)
-    coco_eval.synchronize_between_processes()  # 多设备coco同步
-
-    # merge_coco_res(res)
-    # gather_list = all_gather(res)  # 返回多gpu list
-    if is_mgpu() and torch.distributed.get_rank() != 0:
-        # 才进行以下操作, 只有0进程
-        # flog.debug('get_rank %s', get_rank())
-        return None
-
-    # res = {}
-    # for g in gather_list:
-    #     res.update(g)
-    # flog.debug('一共有 %s 个验证集', len(res))
-
-    coco_eval.accumulate()  # 积累
-    coco_eval.summarize()  # 总结
-
-    # 返回np float64 [0.9964964476743241, 0.9964964476743239, 0.9964964476743239, 1.0, 1.0, 0.9964562827964212, 0.7050492610837438, 0.9983579638752053, 0.9997947454844007, 1.0, 1.0, 0.9997541789577189]
-    result_info = coco_eval.coco_eval[mode].stats.tolist()
-    # flog.info('coco结果%s： %s', epoch, result_info)
-
-    if tb_writer is not None:
-        titles = [
-            'mAP [IoU=0.50:0.95]', 'mAP [IoU=0.50]', 'mAP [IoU=0.75]',
-            'mAP small', 'mAP medium', 'mAP large',
-        ]
-        for i, title in zip(range(6), titles):
-            _d = {
-                'Precision': result_info[i],
-                'Recall': result_info[i + 6],
-            }
-            tb_writer.add_scalars(title, _d, epoch + 1)
+    for i, (image_id, target) in enumerate(res_.items()):
+        labels = target['labels'].type(torch.int).tolist()
+        boxes_ltwh = target['boxes'].tolist()
+        score = target['scores'].tolist()
+        for i in range(len(labels)):
+            res_coco.append({"image_id": image_id, "category_id": labels[i], "bbox": boxes_ltwh[i], "score": score[i]})
 
     maps_val = []
-    maps_val.append(result_info[1])  # IoU=0.50   Precision
-    maps_val.append(result_info[7])  # IoU=0.50:0.95  maxDets= 10  Recall
+    if len(res_coco) > 0:
+        coco_gt = data_loader.dataset.coco
+        # 第一个元素指示操作该临时文件的安全级别，第二个元素指示该临时文件的路径
+        _, tmp = tempfile.mkstemp()
+        json.dump(res_coco, open(tmp, 'w'))
+        cocoDt = coco_gt.loadRes(tmp)
+        coco_eval_obj = COCOeval(coco_gt, cocoDt, ann_type)
+        coco_eval_obj.params.imgIds = ids_coco
+        coco_eval_obj.evaluate()
+        coco_eval_obj.accumulate()
+        coco_eval_obj.summarize()
+        maps_val.append(coco_eval_obj.stats[1])
+        maps_val.append(coco_eval_obj.stats[7])
+        if tb_writer is not None:
+            titles = [
+                'mAP [IoU=0.50:0.95]', 'mAP [IoU=0.50]', 'mAP [IoU=0.75]',
+                'mAP small', 'mAP medium', 'mAP large',
+            ]
+            for i, title in zip(range(6), titles):
+                _d = {
+                    'Precision': coco_eval_obj.stats[i],
+                    'Recall': coco_eval_obj.stats[i + 6],
+                }
+                tb_writer.add_scalars(title, _d, epoch + 1)
+    else:
+        maps_val = [0, 0]
     return maps_val
 
 
@@ -335,6 +362,7 @@ def f_prod_pic(img_pil, model, labels_lsit, data_transform, is_keeep=False, cfg=
     szie_scale4bbox = torch.Tensor(size_input * 2)
     # szie_scale4landmarks = torch.Tensor(size_input * 5)
     img_ts = data_transform['val'](img_pil)[0][None]
+    # show_pic_ts(img_ts[0])
 
     '''---------------预测开始--------------'''
     ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts)
@@ -583,7 +611,7 @@ class SmoothedValue(object):
         """
         Warning: does not synchronize the deque!
         """
-        if not is_mgpu():
+        if not fis_mgpu():
             return
         t = torch.tensor([self.count, self.total], dtype=torch.float64, device="cuda")
         dist.barrier()
@@ -624,9 +652,10 @@ class SmoothedValue(object):
 
 
 class MetricLogger(object):
-    def __init__(self, delimiter="\t"):
+    def __init__(self, is_show_log=True, delimiter="\t"):
         self.meters = defaultdict(SmoothedValue)
         self.delimiter = delimiter
+        self.is_show_log = is_show_log
 
     def update(self, **kwargs):
         for k, v in kwargs.items():
@@ -659,6 +688,9 @@ class MetricLogger(object):
         self.meters[name] = meter
 
     def log_every(self, iterable, print_freq, header=None):
+        if not self.is_show_log:
+            # 多GPU主进程才显示日志
+            return
         i = 0
         if not header:
             header = ""
@@ -674,7 +706,6 @@ class MetricLogger(object):
                                            '{meters}',
                                            'time: {time}',
                                            'data: {data}',
-                                           # '剩余时间: {r_time}',
                                            'max mem: {memory:.0f}'])
         else:
             log_msg = self.delimiter.join([header,
@@ -683,7 +714,6 @@ class MetricLogger(object):
                                            '{meters}',
                                            'time: {time}',
                                            'data: {data}',
-                                           # '剩余时间: {r_time}',
                                            ])
         MB = 1024.0 * 1024.0
         for obj in iterable:

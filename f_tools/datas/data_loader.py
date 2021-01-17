@@ -2,6 +2,8 @@ import json
 import os
 import socket
 
+import torch
+
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import load_od4voc, init_dataloader
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset, CustomCocoDataset
@@ -17,7 +19,7 @@ def cre_transform4resize(cfg):
                 # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
                 # Resize(cfg.IMAGE_SIZE),
                 ColorJitter(),
-                ToTensor(),
+                ToTensor(is_box_oned=True),
                 RandomHorizontalFlip4TS(0.5),
                 Normalization4TS(),
             ], cfg),
@@ -28,7 +30,7 @@ def cre_transform4resize(cfg):
                 # ResizeKeep(cfg.IMAGE_SIZE),  # 这个有边界需要修正
                 Resize(cfg.IMAGE_SIZE),
                 ColorJitter(),
-                ToTensor(),
+                ToTensor(is_box_oned=True),
                 RandomHorizontalFlip4TS(0.5),
                 Normalization4TS(),
             ], cfg),
@@ -36,173 +38,215 @@ def cre_transform4resize(cfg):
     data_transform["val"] = Compose([
         # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
         Resize(cfg.IMAGE_SIZE),
-        ToTensor(),
+        # ToTensor(is_box_oned=True),
+        ToTensor(is_box_oned=False),
         Normalization4TS(),
     ], cfg)
 
     return data_transform
 
 
-def base_set(cfg):
-    cfg.PATH_HOST = 'M:'
+class DataLoader:
 
-    host_name = socket.gethostname()
-    if host_name == 'Feadre-NB':
-        cfg.PATH_HOST = 'M:'
-        # raise Exception('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
-    elif host_name == 'e2680v2':
-        cfg.PATH_HOST = ''
+    def __init__(self, cfg) -> None:
+        super().__init__()
+        self.cfg = cfg
 
+        self.set_init()  # 初始化方法
+        self.data_transform = cre_transform4resize(cfg)  # 写死用这个
 
-def custom_set(cfg):
-    cfg.PATH_SAVE_WEIGHT = cfg.PATH_HOST + '/AI/weights/feadre'
-    cfg.FILE_FIT_WEIGHT = cfg.PATH_SAVE_WEIGHT + '/' + cfg.FILE_NAME_WEIGHT
+    def set_init(self):
+        host_name = socket.gethostname()
+        if host_name == 'Feadre-NB':
+            self.cfg.PATH_HOST = 'M:'
+            # raise Exception('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
+        elif host_name == 'e2680v2':
+            self.cfg.PATH_HOST = ''
 
-    # json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes.json'), 'r', encoding='utf-8')
-    # cfg.IDS_CLASSES = json.load(json_file, encoding='utf-8')  # json key是字符
+        import platform
 
-    if cfg.IS_FMAP_EVAL:
-        f_recover_gt(cfg.PATH_EVAL_INFO + '/gt_info')
-        # device = torch.device("cpu")
+        sysstr = platform.system()
+        print('当前系统为:', sysstr)
+        if sysstr == 'Windows':  # 'Linux'
+            torch.backends.cudnn.enabled = False
 
-    cfg.DATA_NUM_WORKERS = min([os.cpu_count(), cfg.DATA_NUM_WORKERS])
+    def set_tail(self):
+        self.cfg.PATH_SAVE_WEIGHT = self.cfg.PATH_HOST + '/AI/weights/feadre'
+        self.cfg.FILE_FIT_WEIGHT = self.cfg.PATH_SAVE_WEIGHT + '/' + self.cfg.FILE_NAME_WEIGHT
 
-    # 检查保存权重文件夹是否存在，不存在则创建
-    if not os.path.exists(cfg.PATH_SAVE_WEIGHT):
-        try:
-            os.makedirs(cfg.PATH_SAVE_WEIGHT)
-        except Exception as e:
-            flog.error(' %s %s', cfg.PATH_SAVE_WEIGHT, e)
+        # json_file = open(os.path.join(self.cfg.PATH_DATA_ROOT, 'ids_classes.json'), 'r', encoding='utf-8')
+        # self.cfg.IDS_CLASSES = json.load(json_file, encoding='utf-8')  # json key是字符
+
+        if self.cfg.IS_FMAP_EVAL:
+            f_recover_gt(self.cfg.PATH_EVAL_INFO + '/gt_info')
+            # device = torch.device("cpu")
+
+        self.cfg.DATA_NUM_WORKERS = min([os.cpu_count(), self.cfg.DATA_NUM_WORKERS])
+
+        # 检查保存权重文件夹是否存在，不存在则创建
+        if not os.path.exists(self.cfg.PATH_SAVE_WEIGHT):
+            try:
+                os.makedirs(self.cfg.PATH_SAVE_WEIGHT)
+            except Exception as e:
+                flog.error(' %s %s', self.cfg.PATH_SAVE_WEIGHT, e)
+
+    def get_test_dataset(self):
+        dataset_val = CustomCocoDataset(
+            file_json=self.cfg.FILE_JSON_TEST,
+            path_img=self.cfg.PATH_IMG_EVAL,
+            mode=self.cfg.MODE_COCO_EVAL,
+            transform=None,
+            is_mosaic=False,
+            is_mosaic_keep_wh=self.cfg.IS_MOSAIC_KEEP_WH,
+            is_mosaic_fill=self.cfg.IS_MOSAIC_FILL,
+            is_debug=self.cfg.DEBUG,
+            cfg=self.cfg
+        )
+
+        self.set_tail()  # 尾设置
+        return dataset_val
+
+    def get_train_eval_datas(self, is_mgpu):
+        dataset_train = CustomCocoDataset(
+            file_json=self.cfg.FILE_JSON_TRAIN,
+            path_img=self.cfg.PATH_IMG_TRAIN,
+            mode=self.cfg.MODE_COCO_TRAIN,
+            transform=self.data_transform['train'],
+            is_mosaic=self.cfg.IS_MOSAIC,
+            is_mosaic_keep_wh=self.cfg.IS_MOSAIC_KEEP_WH,
+            is_mosaic_fill=self.cfg.IS_MOSAIC_FILL,
+            is_debug=self.cfg.DEBUG,
+            cfg=self.cfg
+        )
+
+        dataset_val = CustomCocoDataset(
+            file_json=self.cfg.FILE_JSON_TEST,
+            path_img=self.cfg.PATH_IMG_EVAL,
+            mode=self.cfg.MODE_COCO_EVAL,
+            transform=self.data_transform['val'],
+            is_mosaic=False,
+            is_mosaic_keep_wh=False,
+            is_mosaic_fill=False,
+            is_debug=self.cfg.DEBUG,
+            cfg=self.cfg
+        )
+        _res = init_dataloader(self.cfg, dataset_train, dataset_val, is_mgpu, use_mgpu_eval=self.cfg.USE_MGPU_EVAL)
+        loader_train, loader_val_coco, train_sampler, eval_sampler = _res
+        loader_val_fmap = None
+
+        self.set_tail()  # 尾设置
+        return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 
 
 '''-----------------------voc---------------------------------'''
 
 
-def fload_voc(cfg, is_mgpu):
-    base_set(cfg)
-
-    '''样本及预处理'''
-    cfg.BATCH_SIZE = 48  # batch过小需要设置连续前传
+def cfg_voc(cfg):
+    # cfg.BATCH_SIZE = 16
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
 
-    cfg.PRINT_FREQ = 20  # 40批打印一次
-    cfg.IMAGE_SIZE = (416, 416)  # wh 预处理 统一尺寸
-    cfg.NUM_SAVE = 1
+    cfg.PRINT_FREQ = 20  # 400张图打印
 
-    cfg.IS_MOSAIC = False
-    cfg.IS_MOSAIC_KEEP_WH = False  # IS_MOSAIC 是主开关 直接拉伸
-    cfg.IS_MOSAIC_FILL = True  # IS_MOSAIC 使用 是IS_MOSAIC_KEEP_WH 副形状
+    cfg.IMAGE_SIZE = (512, 512)
+    cfg.NUM_SAVE = 1  # epoch+1
+    cfg.START_EVAL = 3  # epoch
 
-    cfg.DATA_NUM_WORKERS = 4
+    cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
+    cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
+    cfg.IS_MOSAIC_FILL = True
+
+    cfg.NUM_CLASSES = 20  # 这里要改
     cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
-
-    cfg.NUM_CLASSES = 20  # 模型分类数 人脸只有1 0 影响类别输出   -----这个要根据样本改----
-    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2012'
-    # 训练
-    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/trainval/JPEGImages'
-    # 验证
-    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/test/JPEGImages'
-    # fmap
-    cfg.PATH_EVAL_IMGS = cfg.PATH_HOST + r'/AI/datas/VOC2012/test/JPEGImages'
-    cfg.PATH_EVAL_INFO = cfg.PATH_HOST + r'/AI/datas/VOC2012/f_map'  # dt会自动创建
+    cfg.MODE_COCO_TRAIN = 'bbox'  # bbox segm keypoints caption
+    cfg.MODE_COCO_EVAL = 'bbox'  # bbox segm keypoints caption
+    cfg.DATA_NUM_WORKERS = 4
 
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_voc'
     cfg.PATH_TENSORBOARD = 'runs_voc'
 
+    # cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2012'
+    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2007'
+
+    # 训练
+    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/VOCdevkit/JPEGImages'
+    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_train.json'
+
+    # 验证
+    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_EVAL = cfg.PATH_IMG_TRAIN
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val.json'
+
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
-    data_transform = cre_transform4resize(cfg)
-
-    custom_set(cfg)
-    _res = load_od4voc(cfg, data_transform, is_mgpu, cfg.ids2classes)
-
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = _res
-
-    return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
+    cfg.ANC_SCALE = [
+        [[0.04, 0.056], [0.092, 0.104]],
+        [[0.122, 0.218], [0.254, 0.234]],
+        [[0.326, 0.462], [0.71, 0.572]],
+    ]
+    # cfg.PIC_MEAN = [0.45320560056079773, 0.43316440952455354, 0.3765994764105359]
+    # cfg.PIC_STD = [0.2196906701893696, 0.21533684244241802, 0.21516573455080967]
 
 
 '''-----------------------widerface---------------------------------'''
 
 
-def fload_widerface(cfg, is_mgpu):
-    base_set(cfg)
-
-    cfg.BATCH_SIZE = 1  # batch过小需要设置连续前传
+def cfg_widerface(cfg):
+    # cfg.BATCH_SIZE = 16
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
-    cfg.PRINT_FREQ = 40  # 400张图打印
-    cfg.IMAGE_SIZE = (512, 512)  # wh 预处理 统一尺寸
-    cfg.NUM_SAVE = 1
 
-    cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
-    cfg.IS_MOSAIC = False
-    cfg.IS_MOSAIC_KEEP_WH = False  # IS_MOSAIC 是主开关 直接拉伸
-    cfg.IS_MOSAIC_FILL = True  # IS_MOSAIC 使用 是IS_MOSAIC_KEEP_WH 副形状
+    cfg.PRINT_FREQ = 40  # 400张图打印
+
+    cfg.IMAGE_SIZE = (512, 512)
+    cfg.NUM_SAVE = 1  # epoch+1
+    cfg.START_EVAL = 3  # epoch
+
+    cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
+    cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
+    cfg.IS_MOSAIC_FILL = True
 
     cfg.NUM_CLASSES = 1
-    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/widerface/'
-    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/coco/images/train2017'
-    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/coco/images/val2017'
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_widerface'
-    cfg.PATH_TENSORBOARD = 'runs_widerface'
+    cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
+    cfg.MODE_COCO_TRAIN = 'bbox'  # bbox segm keypoints caption
+    cfg.MODE_COCO_EVAL = 'bbox'  # bbox segm keypoints caption
     cfg.DATA_NUM_WORKERS = 5
 
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_widerface'
+    cfg.PATH_TENSORBOARD = 'runs_widerface'
+
+    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/widerface'
+
+    # 训练
+    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/VOCdevkit/JPEGImages'
+    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_train2017.json'
+
+    # 验证
+    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_EVAL = cfg.PATH_IMG_TRAIN
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val2017.json'
+
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
-    data_transform = cre_transform4resize(cfg)
-
-    # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
-    if cfg.NUM_KEYPOINTS > 0:
-        mode = 'keypoints'  # keypoints  与 IS_MOSAIC 不能一起用
-        cfg.IS_MOSAIC = False
-    else:
-        mode = 'bbox'
-    dataset_train = CocoDataset(
-        path_coco_target=cfg.PATH_COCO_TARGET_TRAIN,
-        path_img=cfg.PATH_IMG_TRAIN,
-        mode=mode,
-        data_type='train2017',
-        transform=data_transform['train'],
-        is_mosaic=cfg.IS_MOSAIC,
-        is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
-        is_mosaic_fill=cfg.IS_MOSAIC_FILL,
-        is_debug=cfg.DEBUG,
-        cfg=cfg
-    )
-    dataset_val = CocoDataset(
-        path_coco_target=cfg.PATH_COCO_TARGET_EVAL,
-        path_img=cfg.PATH_IMG_EVAL,
-        # mode='keypoints',
-        mode='bbox',
-        data_type='val2017',
-        transform=data_transform['val'],
-        is_debug=cfg.DEBUG,
-        cfg=cfg
-    )
-    _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu)
-    loader_train, loader_val_coco, train_sampler, eval_sampler = _res
-    loader_val_fmap = None
-
-    custom_set(cfg)
-    return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
+    # cfg.ANC_SCALE = [
+    #     [[0.255, 0.263], [0.354, 0.317]],
+    #     [[0.389, 0.451], [0.49, 0.612]],
+    #     [[0.678, 0.532], [0.804, 0.732]],
+    # ]
+    # cfg.PIC_MEAN = [0.45320560056079773, 0.43316440952455354, 0.3765994764105359]
+    # cfg.PIC_STD = [0.2196906701893696, 0.21533684244241802, 0.21516573455080967]
 
 
 '''-----------------------raccoon---------------------------------'''
 
 
-def cfg_raccoon(cfg):
-    base_set(cfg)
-    '''样本及预处理'''
-    cfg.BATCH_SIZE = 16  # batch过小需要设置连续前传
+def cfg_raccoon(cfg, batch=40, image_size=(448, 448)):
+    cfg.BATCH_SIZE = batch
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
 
     cfg.PRINT_FREQ = 10  # 400张图打印
 
-    cfg.IMAGE_SIZE = (448, 448)  # yolov1
-    # cfg.IMAGE_SIZE = (224, 224)  # yolov1
-    cfg.NUM_SAVE = 30 - 1  # 第一次是19
-    cfg.START_EVAL = 1 - 2  # 第一个数是实际 第一次
+    cfg.IMAGE_SIZE = image_size
+    cfg.NUM_SAVE = 30  # epoch+1
+    cfg.START_EVAL = 1  # 从 cfg.START_EVAL + 1 开始，实际需要+1
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
     cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
@@ -212,113 +256,43 @@ def cfg_raccoon(cfg):
     cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
     cfg.DATA_NUM_WORKERS = 2
 
-    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/raccoon200'
-    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/VOCdevkit/JPEGImages'
-    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    # cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/coco/images/val2017'
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'raccoon200'
     cfg.PATH_TENSORBOARD = 'runs_rac'
 
+    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/raccoon200'
+
+    # 训练
+    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/VOCdevkit/JPEGImages'
+    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_train2017.json'
+
+    # 验证
+    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_EVAL = cfg.PATH_IMG_TRAIN
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val2017.json'
+
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
     cfg.ANC_SCALE = [
-        [[0.3057723641395569, 0.4176517724990845], [0.4394904375076294, 0.7138888835906982]],
-        [[0.5542857050895691, 0.8598382472991943], [0.7507279813289642, 0.6872279644012451], ],
-        [[0.6718146800994873, 0.9088607430458069], [0.865470826625824, 0.9411764740943909], ],
+        [[0.255, 0.263], [0.354, 0.317]],
+        [[0.389, 0.451], [0.49, 0.612]],
+        [[0.678, 0.532], [0.804, 0.732]],
     ]
-
-
-def fload_raccoon_train(cfg, is_mgpu):
-    '''
-
-    :param cfg:
-    :param is_mgpu:
-    :return:
-    '''
-    cfg_raccoon(cfg)
-    mode = 'bbox'  # bbox segm keypoints caption
-
-    data_transform = cre_transform4resize(cfg)
-
-    # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
-    file_json = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_train2017.json'
-    path_img = cfg.PATH_IMG_TRAIN
-    dataset_train = CustomCocoDataset(
-        file_json=file_json,
-        path_img=path_img,
-        mode=mode,
-        transform=data_transform['train'],
-        is_mosaic=cfg.IS_MOSAIC,
-        is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
-        is_mosaic_fill=cfg.IS_MOSAIC_FILL,
-        is_debug=cfg.DEBUG,
-        cfg=cfg
-    )
-
-    file_json = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val2017.json'
-    dataset_val = CustomCocoDataset(
-        file_json=file_json,
-        path_img=path_img,
-        mode=mode,
-        transform=data_transform['val'],
-        is_mosaic=False,
-        is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
-        is_mosaic_fill=cfg.IS_MOSAIC_FILL,
-        is_debug=cfg.DEBUG,
-        cfg=cfg
-    )
-    # print('dataset_train 数量', len(dataset_train))
-    # print('dataset_val 数量', len(dataset_val))
-
-    ''' --------强制使用单GPU-------- '''
-    _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu, use_mgpu_eval=cfg.USE_MGPU_EVAL)
-    loader_train, loader_val_coco, train_sampler, eval_sampler = _res
-    loader_val_fmap = None
-
-    mean = [0.45320560056079773, 0.43316440952455354, 0.3765994764105359]
-    std = [0.2196906701893696, 0.21533684244241802, 0.21516573455080967]
-
-    # json_file = open(os.path.join(cfg.PATH_DATA_ROOT, 'ids_classes.json'), 'r', encoding='utf-8')
-    # ids_classes = json.load(json_file, encoding='utf-8')  # json key是字符
-    # cfg.IDS_CLASSES = ids_classes
-
-    custom_set(cfg)
-    return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
-
-
-def fload_raccoon_eval(cfg):
-    cfg_raccoon(cfg)
-    mode = 'bbox'  # bbox segm keypoints caption
-    file_json = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val2017.json'
-    dataset_val = CustomCocoDataset(
-        file_json=file_json,
-        path_img=cfg.PATH_IMG_TRAIN,
-        mode=mode,
-        transform=None,
-        is_mosaic=False,
-        is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
-        is_mosaic_fill=cfg.IS_MOSAIC_FILL,
-        is_debug=cfg.DEBUG,
-        cfg=cfg
-    )
-    custom_set(cfg)  # 必须复制
-    return dataset_val
+    cfg.PIC_MEAN = [0.45320560056079773, 0.43316440952455354, 0.3765994764105359]
+    cfg.PIC_STD = [0.2196906701893696, 0.21533684244241802, 0.21516573455080967]
 
 
 '''-----------------------type3---------------------------------'''
 
 
-def cfg_type(cfg):
-    base_set(cfg)
-
-    '''样本及预处理'''
+def cfg_type(cfg, batch=40, image_size=(448, 448)):
+    cfg.BATCH_SIZE = batch
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
 
-    cfg.PRINT_FREQ = 5  # 400张图打印
+    cfg.PRINT_FREQ = 5  # BATCH_SIZE * PRINT_FREQ 张图片
 
-    cfg.IMAGE_SIZE = (448, 448)  # yolov1
-    cfg.NUM_SAVE = 10 - 1  # 第一次是19
-    cfg.START_EVAL = 3 - 2  # 10实际是12
+    cfg.IMAGE_SIZE = image_size
+    cfg.NUM_SAVE = 10  # 第一次是19
+    cfg.START_EVAL = 10  # 1第一轮
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
     cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
@@ -327,84 +301,41 @@ def cfg_type(cfg):
     cfg.NUM_CLASSES = 3
     cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
     cfg.DATA_NUM_WORKERS = 2
-    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2007'
+
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'type3'
     cfg.PATH_TENSORBOARD = 'runs_type3'
+
+    # cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2012'
+    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2007'
 
     # 训练
     cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
+    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_1096.json'
+
     # 验证
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_val_416.json'
+
+    # 测试
+    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_test_621.json'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
+    # cfg.ANC_SCALE = [
+    #     [[0.078, 0.076], [0.166, 0.164]],
+    #     [[0.374, 0.254], [0.288, 0.424]],
+    #     [[0.574, 0.46], [0.698, 0.668]],
+    # ]
     cfg.ANC_SCALE = [
-        [[0.052000001072883606, 0.06400000303983688], [0.1120000034570694, 0.1257496327161789]],
-        [[0.18799999356269836, 0.24533332884311676], [0.335999995470047, 0.4320000112056732], ],
-        [[0.5659999847412109, 0.6568804979324341], [0.8339999914169312, 0.8615975975990295], ],
+        [[0.05, 0.045], [0.078, 0.084], [0.142, 0.106]],
+        [[0.185, 0.2], [0.384, 0.27], [0.284, 0.426]],
+        [[0.642, 0.436], [0.48, 0.628], [0.77, 0.664]],
     ]
+    cfg.ANCHORS_CLIP = True  # 是否剔除超边界
+    cfg.NUMS_ANC = [3, 3, 3]
 
-
-def fload_type_train(cfg, is_mgpu):
-    cfg_type(cfg)  # 固定格式
-    mode = 'bbox'  # bbox segm keypoints caption
-
-    data_transform = cre_transform4resize(cfg)
-
-    # 返回数据已预处理 返回np(batch,(3,640,640))  , np(batch,(x个选框,15维))
-    file_json_train = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train.json'
-    dataset_train = CustomCocoDataset(
-        file_json=file_json_train,
-        path_img=cfg.PATH_IMG_TRAIN,
-        mode=mode,
-        transform=data_transform['train'],
-        is_mosaic=cfg.IS_MOSAIC,
-        is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
-        is_mosaic_fill=cfg.IS_MOSAIC_FILL,
-        is_debug=cfg.DEBUG,
-        cfg=cfg
-    )
-
-    file_json_test = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_val.json'
-    dataset_val = CustomCocoDataset(
-        file_json=file_json_test,
-        path_img=cfg.PATH_IMG_EVAL,
-        mode=mode,
-        transform=data_transform['val'],
-        is_mosaic=False,
-        is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
-        is_mosaic_fill=cfg.IS_MOSAIC_FILL,
-        is_debug=cfg.DEBUG,
-        cfg=cfg
-    )
-
-    ''' --------强制使用单GPU-------- '''
-    _res = init_dataloader(cfg, dataset_train, dataset_val, is_mgpu, use_mgpu_eval=cfg.USE_MGPU_EVAL)
-    loader_train, loader_val_coco, train_sampler, eval_sampler = _res
-    loader_val_fmap = None
-
-    mean = [0.44852942096873344, 0.42499869427618714, 0.3919993789920617]
-    std = [0.23994531712015926, 0.2343272957639497, 0.23674994997257454]
-
-    custom_set(cfg)  # 固定格式
-    return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
-
-
-def fload_type_eval(cfg):
-    cfg_type(cfg)
-    mode = 'bbox'  # bbox segm keypoints caption
-    file_json_test = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_val.json'
-    dataset_val = CustomCocoDataset(
-        file_json=file_json_test,
-        path_img=cfg.PATH_IMG_EVAL,
-        mode=mode,
-        transform=None,
-        is_mosaic=False,
-        is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
-        is_mosaic_fill=cfg.IS_MOSAIC_FILL,
-        is_debug=cfg.DEBUG,
-        cfg=cfg
-    )
-    custom_set(cfg)  # 必须复制
-    return dataset_val
+    cfg.PIC_MEAN = [0.44852942096873344, 0.42499869427618714, 0.3919993789920617]
+    cfg.PIC_STD = [0.23994531712015926, 0.2343272957639497, 0.23674994997257454]

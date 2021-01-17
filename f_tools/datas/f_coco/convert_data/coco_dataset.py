@@ -483,21 +483,19 @@ class CustomCocoDataset(Dataset):
             self.ids_classes[v] = k
 
 
-def load_voc(mode):
+def load_dataset_coco(mode):
+    # -------voc--------
+    # path_root = r'M:/AI/datas/VOC2012'  # 自已的数据集
+    # file_json = os.path.join(path_root, 'coco/annotations') + '/instances_type3_train.json' # 2776
     # path_root = r'M:/AI/datas/VOC2007'  # 自已的数据集
     path_root = r'/AI/datas/VOC2007'  # 自已的数据集
-    path_coco_target = os.path.join(path_root, 'coco/annotations')
+    file_json = os.path.join(path_root, 'coco/annotations') + '/instances_type3_train.json'  # 1096
     path_img = os.path.join(path_root, 'train', 'JPEGImages')
-    data_type = 'train'  # train2017 val2017 自动匹配json文件名
 
-    # path_img = os.path.join(path_root, 'test', 'JPEGImages')
-    # data_type = 'val2017'  # train2017 val2017 自动匹配json文件名
+    # -------raccoon200--------
+    # file_json = r'M:/AI/datas/raccoon200/coco/annotations/instances_train2017.json'
+    # path_img = r'M:/AI/datas/raccoon200/VOCdevkit/JPEGImages'
 
-    # s_ids_cats = [7, 12, 15]  # 汽车 1284 ,dog 1341, 人person 9583
-    s_ids_cats = None
-    # dataset = CocoDataset(path_coco_target, path_img, mode, data_type, s_ids_cats=s_ids_cats)
-
-    file_json = path_coco_target + '/instances_type3_train.json'
     dataset = CustomCocoDataset(
         file_json=file_json,
         path_img=path_img,
@@ -507,41 +505,24 @@ def load_voc(mode):
     return path_img, dataset
 
 
-def load_raccoon(mode):
-    file_json = r'M:/AI/datas/raccoon200/coco/annotations/instances_train2017.json'
-    path_img = r'M:/AI/datas/raccoon200/VOCdevkit/JPEGImages'
-    dataset = CustomCocoDataset(file_json, path_img, mode)
-
-    return path_img, dataset
-
-
-def load_cat(mode):
-    file_json = r'M:/AI/datas/VOC2012/coco/annotations/instances_cat3_train.json'
-    path_img = r'M:/AI/datas/VOC2012/trainval/JPEGImages'
-    # file_json = r'/AI/datas/VOC2012/coco/annotations/instances_cat3_train.json'
-    # path_img = r'/AI/datas/VOC2012/trainval/JPEGImages'
-    dataset = CustomCocoDataset(file_json, path_img, mode)
-
-    return path_img, dataset
-
-
 if __name__ == '__main__':
     '''
     用于测试  coco出来是 ltwh
     '''
     mode = 'bbox'  # bbox segm keypoints caption
-    # path_img, dataset = load_voc(mode)
-    path_img, dataset = load_raccoon(mode)
+    path_img, dataset = load_dataset_coco(mode)
     # path_img, dataset = load_cat(mode)
 
     print('len(dataset)', len(dataset))
     coco = dataset.coco
     # 可视化代码
-    for data in dataset:
-        print(data)
-        img_pil, target = data
-        f_show_coco_pics(coco, path_img, ids_img=[target['image_id']])
-        f_plt_box2(img_pil, target['boxes'], is_recover_size=False)  # 显示原图
+    # for data in dataset:
+    #     # coco dataset可视化
+    #     # print(data)
+    #     # img_pil, target = data
+    #     # f_show_coco_pics(coco, path_img, ids_img=[target['image_id']])
+    #     # f_plt_box2(img_pil, target['boxes'], is_recover_size=False)  # 显示原图
+    #     pass
     coco_obj = dataset.coco
 
     dataset_ = dataset[1]

@@ -327,10 +327,14 @@ class ToTensor(object):
     将PIL图像转为Tensor
     """
 
+    def __init__(self, is_box_oned=True) -> None:
+        super().__init__()
+        self.is_box_oned = is_box_oned
+
     def __call__(self, img_pil, target, cfg):
         w, h = img_pil.size  # PIL wh
         img_ts = F.to_tensor(img_pil)  # 将PIL图片hw 转tensor c,h,w 且归一化
-        if target is not None:
+        if target is not None and self.is_box_oned:
             bbox = target['boxes']
             bbox[:, [0, 2]] = bbox[:, [0, 2]] / w
             bbox[:, [1, 3]] = bbox[:, [1, 3]] / h
@@ -349,7 +353,7 @@ class Normalization4TS(object):
 
     def __init__(self, mean: object = None, std: object = None) -> object:
         if mean is None:
-            mean = [0.485, 0.456, 0.406]
+            mean = [0.485, 0.456, 0.406]  # rgb
         if std is None:
             std = [0.229, 0.224, 0.225]
         self.mean = mean

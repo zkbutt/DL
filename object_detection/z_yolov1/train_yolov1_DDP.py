@@ -2,15 +2,17 @@
 import os
 import sys
 
+from f_tools.datas.data_loader import DataLoader
+
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
-from f_tools.fits.f_fit_fun import train_eval4od, fdatas_l2
+from f_tools.fits.f_fit_fun import train_eval4od, fdatas_l2, show_train_info
 from object_detection.z_yolov1.train_yolov1 import init_model, train_eval_set
 
 from torch.utils.tensorboard import SummaryWriter
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
-from f_tools.fits.f_gpu.f_gpu_api import mgpu_init, mgpu_process0
+from f_tools.fits.f_gpu.f_gpu_api import mgpu_init, mgpu_process0_init
 
 '''解决linux导入出错 完成'''
 import torch
@@ -28,19 +30,18 @@ if __name__ == '__main__':
     if torch.cuda.is_available() is False:
         raise EnvironmentError("未发现GPU")
     cfg = CFG
-    train_eval_set(cfg)  # 这里加载配置
-    # cfg.LR0 = cfg.LR0 / 10
+    train_eval_set(cfg)
 
-    torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
-    if cfg.DEBUG or cfg.IS_FMAP_EVAL:
-        raise Exception('调试 和 IS_FMAP_EVAL 模式无法使用')
+    # cfg.LR0 = 1e-3
+    cfg.IS_FORCE_SAVE = False
+    cfg.PATH_PROJECT_ROOT = cfg.PATH_HOST + '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1'  # 这个要改
 
     args, device = mgpu_init()
 
     '''---------------数据加载及处理--------------'''
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = cfg.FUN_LOADER_DATA(cfg,
-                                                                                                      is_mgpu=True, )
-    cfg.PATH_PROJECT_ROOT = cfg.PATH_HOST + '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1'  # 这个要改
+    data_loader = DataLoader(cfg)
+    _ret = data_loader.get_train_eval_datas(is_mgpu=True)
+    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = _ret
 
     '''------------------模型定义---------------------'''
     model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=args)
@@ -48,7 +49,8 @@ if __name__ == '__main__':
     '''---------------主进程任务启动--------------'''
     tb_writer = None
     if args.rank == 0:
-        tb_writer = mgpu_process0(args, cfg, loader_train, loader_val_coco)
+        tb_writer = mgpu_process0_init(args, cfg, loader_train, loader_val_coco, model, device)
+        show_train_info(cfg, loader_train, loader_val_coco)
 
     '''---------------训练验证开始--------------'''
     train_eval4od(start_epoch=start_epoch, model=model, optimizer=optimizer,

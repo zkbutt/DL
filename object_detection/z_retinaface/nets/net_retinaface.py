@@ -9,9 +9,10 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_predictfun import label_nms4keypoints
 from f_tools.fits.f_lossfun import FocalLoss_v2, f_ohem, f_ohem_simpleness
 from f_tools.fits.f_match import pos_match_retinaface
+from f_tools.fits.fitting.f_fit_eval_base import SmoothedValue, MetricLogger
 from f_tools.fun_od.f_anc import FAnchors
 
-from f_tools.fun_od.f_boxes import fix_bbox, fix_keypoints, xywh2ltrb, diff_bbox, ltrb2xywh, diff_keypoints
+from f_tools.fun_od.f_boxes import fix_bbox, fix_keypoints, xywh2ltrb, diff_bbox, ltrb2xywh, diff_keypoints, calc_iou4ts
 from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
 from f_tools.pic.f_show import f_show_3box4pil, f_plt_box2
 
@@ -110,13 +111,15 @@ class LossRetinaface(nn.Module):
 
         '''-----------bboxs 损失处理-----------'''
         # [1, 16800, 4] ^^ [batch, 16800, 4] = [batch, 16800, 4]
-        # p_bboxs_xywh_fix = fix_bbox(self.anc_xywh.unsqueeze(dim=0), p_bboxs_xywh)
+        # p_bboxs_xywh_fix = fix_bbox(self.anc_xywh.unsqueeze(dim=0), p_locs_box)
+        # loss_bboxs = F.smooth_l1_loss(p_bboxs_xywh_fix, gbboxs_ltrb, reduction='none').sum(dim=-1)
+        # loss_bboxs = 1-calc_iou4ts(p_bboxs_xywh_fix, gbboxs_ltrb)
+
+        # 这个损失要大得多
         d_bboxs = diff_bbox(self.anc_xywh.unsqueeze(dim=0), ltrb2xywh(gbboxs_ltrb))
-        # [batch, 16800, 4] -> [batch, 16800] 得每一个特图 每一个框的损失和
-        # smooth_l1_loss 预测 与 回归系数比
         loss_bboxs = F.smooth_l1_loss(p_locs_box, d_bboxs, reduction='none').sum(dim=-1)
-        # __d = 1
-        # 正例损失过滤
+
+        # 正例框损失过滤
         loss_bboxs = (mask_pos.float() * loss_bboxs).sum(dim=1)
 
         '''-----------keypoints 损失处理-----------'''
@@ -130,7 +133,7 @@ class LossRetinaface(nn.Module):
             loss_keypoints = 0
 
         '''-----------labels 损失处理-----------'''
-        # 概率维已平均 (batch,1,anc) ^^ (batch,1) = (batch,1)
+        # softmax 概率维已平均 (batch,1,anc) ^^ (batch,1) = (batch,1)
         loss_labels = F.cross_entropy(p_labels.permute(0, 2, 1), (glabels - 1).long(), reduction='none')
         # 正例损失过滤
         loss_labels = (mask_pos.float() * loss_labels).sum(dim=1)
@@ -146,36 +149,28 @@ class LossRetinaface(nn.Module):
         '''------------------------conf 难例挖掘----------------------------------'''
         # (batch,anc)
         loss_confs = F.binary_cross_entropy_with_logits(p_confs, gconfs, reduction='none')
-        loss_confs = f_ohem_simpleness(loss_confs, self.neg_ratio * num_pos, mask_pos)
-        # p_bboxs_xywh_fix = fix_bbox(self.anc_xywh.unsqueeze(dim=0), p_bboxs_xywh)
-        # loss_confs = f_ohem(scores=loss_confs,
-        #                     nums_neg=self.neg_ratio * num_pos,
-        #                     mask_pos=mask_pos,
-        #                     boxes_ltrb=xywh2ltrb(p_bboxs_xywh_fix),
-        #                     threshold_iou=0.7)
 
-        # loss_confs = f_ohem_simpleness(scores=loss_confs,
-        #                                nums_neg=self.neg_ratio * num_pos,
-        #                                mask_pos=mask_pos,
-        #                                )
+        # loss_confs = f_ohem_simpleness(loss_confs, self.neg_ratio * num_pos, mask_pos, mash_ignore)
+
+        p_bboxs_xywh_fix = fix_bbox(self.anc_xywh.unsqueeze(dim=0), p_locs_box)
+        loss_confs = f_ohem(scores=loss_confs,
+                            nums_neg=cfg.NEG_RATIO * num_pos,
+                            mask_pos=mask_pos,
+                            mash_ignore=mash_ignore,
+                            pboxes_ltrb=xywh2ltrb(p_bboxs_xywh_fix),
+                            threshold_iou=0.7)
 
         '''-----------损失合并处理-----------'''
         # 求平均 排除有0的情况取类型最小值  pos_num是每一张图片的正例个数 eg. [15, 3, 5, 0]
         num_pos = num_pos.float().clamp(min=torch.finfo(torch.float).eps)
 
         # 每批损失/ 每批正例 /整批平均
-        loss_confs = (loss_confs / num_pos).mean(dim=0)
-        # loss_confs = loss_confs.mean(dim=0) # 批次平均
-        loss_bboxs = (loss_bboxs / num_pos).mean(dim=0)
-        # __d = 1
-        # 每批损失/ 每批正例 /整批平均
-        loss_labels = (loss_labels / num_pos).mean(dim=0)
-        loss_keypoints = (loss_keypoints / num_pos).mean(dim=0)
+        loss_bboxs = (loss_bboxs / num_pos).mean(dim=0) * self.loss_weight[0]
+        loss_confs = (loss_confs / num_pos).mean(dim=0) * self.loss_weight[1]
+        loss_labels = (loss_labels / num_pos).mean(dim=0) * self.loss_weight[2]
+        loss_keypoints = (loss_keypoints / num_pos).mean(dim=0) * self.loss_weight[3]
 
-        loss_total = self.loss_weight[0] * loss_bboxs \
-                     + self.loss_weight[1] * loss_confs \
-                     + self.loss_weight[2] * loss_labels \
-                     + self.loss_weight[3] * loss_keypoints
+        loss_total = loss_bboxs + loss_confs + loss_labels + loss_keypoints
 
         log_dict = {}
         log_dict['loss_total'] = loss_total.detach().item()
@@ -332,11 +327,7 @@ class RetinaFace(nn.Module):
                            anchors_clip=cfg.ANCHORS_CLIP, is_xymid=True, is_real_size=False,
                            device=device)
 
-        if cfg.NUM_KEYPOINTS > 0:
-            losser = LossRetinaface(anc_obj.ancs, cfg.LOSS_WEIGHT, cfg.NEG_RATIO, cfg)
-        else:
-            losser = LossRetinaface(anc_obj.ancs, cfg.LOSS_WEIGHT, cfg.NEG_RATIO, cfg)
-        self.losser = losser
+        self.losser = LossRetinaface(anc_obj.ancs, cfg.LOSS_WEIGHT, cfg.NEG_RATIO, cfg)
 
         self.cfg = cfg
         self.anc_obj = anc_obj
@@ -407,7 +398,13 @@ class RetinaFace(nn.Module):
             loss_total, log_dict = self.losser(outs, targets, x)
             return loss_total, log_dict
         else:
-            # with torch.no_grad(): # 这个没用
+            # with torch.no_grad():  # 这个没用
+            #     loss_total, log_dict = self.losser(outs, targets, x)
+            # for k, v in log_dict.items():
+            #     print(k, v)
+            # metric_logger = MetricLogger(delimiter="  ")
+            # metric_logger.update(**log_dict)
+
             ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = self.preder(outs, x)
             return ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores
 

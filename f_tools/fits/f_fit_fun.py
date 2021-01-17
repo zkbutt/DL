@@ -12,7 +12,7 @@ import socket
 
 from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_recover_gt
 from f_tools.f_torch_tools import save_weight
-from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4coco2, f_evaluate4fmap
+from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4fmap, f_evaluate4coco3
 
 
 def init_od():
@@ -30,10 +30,10 @@ def custom_set(cfg):
     flog.info('当前主机: %s 及主数据路径: %s ' % (cfg.host_name, cfg.PATH_HOST))
 
 
-def base_set(cfg):
+def base_set(cfg, id_gpu=0):
     # cfg.SAVE_FILE_NAME = os.path.basename(__file__)
     if torch.cuda.is_available():
-        device = torch.device('cuda:%s' % 0)
+        device = torch.device('cuda:%s' % id_gpu)
     else:
         device = torch.device("cpu")
         cfg.IS_MIXTURE_FIX = False
@@ -71,12 +71,27 @@ def base_set(cfg):
 def fdatas_l2(batch_data, device, cfg):
     '''
     cpu转gpu 输入模型前数据处理方法 定制
+    image = torch.nn.functional.interpolate(
+            image[None], scale_factor=scale_factor,
+            mode='bilinear', align_corners=False)[0]
+    images = torch.nn.functional.interpolate(images, size=input_size, mode='bilinear', align_corners=False)
     :param batch_data:
     :param device:
     :return:
     '''
     images, targets = batch_data
     images = images.to(device)
+
+    # 多尺度训练
+    # if iter_i % 10 == 0 and iter_i > 0 and args.multi_scale:
+    #     # randomly choose a new size
+    #     size = random.randint(10, 19) * 32
+    #     input_size = [size, size]
+    #     model.set_grid(input_size)
+    # if args.multi_scale:
+    #     # interpolate
+    #     images = torch.nn.functional.interpolate(images, size=input_size, mode='bilinear', align_corners=False)
+
     for target in targets:
         target['boxes'] = target['boxes'].to(device)
         target['labels'] = target['labels'].to(device)
@@ -92,13 +107,13 @@ def fdatas_l2(batch_data, device, cfg):
 def fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch):
     flog.info('map 最大值 %s', maps_val)
     if log_dict is not None:
-        l = log_dict['loss_total']
+        l = log_dict['l_total']
     else:
         l = None
     save_weight(
         path_save=cfg.PATH_SAVE_WEIGHT,
         model=model,
-        name=cfg.SAVE_FILE_NAME,
+        name=cfg.SAVE_FILE_NAME + 'c%s' % cfg.THRESHOLD_PREDICT_CONF,
         loss=l,
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
@@ -139,23 +154,36 @@ def train_eval4od(start_epoch, model, optimizer,
         else:
             log_dict = None
 
-        if model.cfg.IS_COCO_EVAL and epoch > cfg.START_EVAL:
+        if model.cfg.IS_COCO_EVAL and (epoch + 1) > cfg.START_EVAL and (epoch + 1) % cfg.EVAL_INTERVAL == 0:
             flog.info('COCO 验证开始 %s', epoch + 1)
             model.eval()
             # with torch.no_grad():
-            mode = 'bbox'
+            ann_type = 'bbox'
             res_eval = []
-            maps_val = f_evaluate4coco2(
+            # maps_val = f_evaluate4coco2(
+            #     model=model,
+            #     fun_datas_l2=fun_datas_l2,
+            #     data_loader=loader_val_coco,
+            #     epoch=epoch,
+            #     tb_writer=tb_writer,
+            #     res_eval=res_eval,
+            #     ann_type=ann_type,
+            #     device=device,
+            #     eval_sampler=eval_sampler,
+            #     is_keep=cfg.IS_KEEP_SCALE
+            # )
+
+            maps_val = f_evaluate4coco3(
                 model=model,
                 fun_datas_l2=fun_datas_l2,
                 data_loader=loader_val_coco,
                 epoch=epoch,
                 tb_writer=tb_writer,
                 res_eval=res_eval,
-                mode=mode,
+                ann_type=ann_type,
                 device=device,
                 eval_sampler=eval_sampler,
-                is_keeep=cfg.IS_KEEP_SCALE
+                is_keep=cfg.IS_KEEP_SCALE
             )
 
             if maps_val is not None:
@@ -179,6 +207,17 @@ def train_eval4od(start_epoch, model, optimizer,
             )
 
             return
+
+
+def show_train_info(cfg, loader_train, loader_val_coco):
+    if loader_train is not None:
+        flog.debug('%s dataset_train 数量: %s' % (cfg.PATH_TENSORBOARD, len(loader_train.dataset)))
+        print('类型 ', loader_train.dataset.ids_classes)
+    if loader_val_coco is not None:
+        flog.debug('%s dataset_val 数量: %s' % (cfg.PATH_TENSORBOARD, len(loader_val_coco.dataset)))
+        print('类型 ', loader_val_coco.dataset.ids_classes)
+    print('cfg.BATCH_SIZE---', cfg.BATCH_SIZE)
+    print('cfg.LOSS_WEIGHT---', cfg.LOSS_WEIGHT)
 
 
 if __name__ == '__main__':

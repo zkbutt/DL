@@ -4,9 +4,10 @@ import xml.etree.ElementTree as ET
 
 import cv2
 import numpy as np
+import torch
 from tqdm import tqdm
 
-from f_tools.datas.f_coco.convert_data.coco_dataset import load_voc, load_raccoon
+from f_tools.datas.f_coco.convert_data.coco_dataset import load_dataset_coco
 from f_tools.f_general import show_time
 from f_tools.fun_od.f_boxes import ltrb2xywh
 from f_tools.fun_od.kmeans_anc.kmeans import kmeans, avg_iou
@@ -39,15 +40,15 @@ def load_voc_boxes():
     return np.array(boxes_wh)
 
 
-def load_coco_boxes():
+def load_coco_boxes(keep=False):
     '''
     读取将所有框按ltrb 归一化成框组合
     :param path:
     :return:
     '''
     mode = 'bbox'  # bbox segm keypoints caption
-    # path_img, dataset = load_voc(mode)
-    path_img, dataset = load_raccoon(mode)
+    path_img, dataset = load_dataset_coco(mode)
+    # path_img, dataset = load_raccoon(mode)
     print('len(dataset)', len(dataset))
     coco = dataset.coco
 
@@ -57,23 +58,27 @@ def load_coco_boxes():
         img_pil, target = data
         boxes_ltrb = target['boxes']
         boxes_xywh = ltrb2xywh(boxes_ltrb)
-        bb = (boxes_xywh[:, 2:] / target['size'][None]).tolist()
+        if not keep:
+            wh_ = target['size'].max().repeat(2)[None]
+        else:
+            wh_ = target['size'][None]
+        bb = (boxes_xywh[:, 2:] / wh_).tolist()
         for b in bb:
             boxes_wh.append(b)
     calc_pic_mean(path_img)
     return np.array(boxes_wh)
 
 
-def calc_anc_size(data, clusters):
+def calc_anc_size(data, clusters, size_in):
     out_np = kmeans(data, k=clusters)  # 输出5,2
     print("Accuracy: {:.2f}%".format(avg_iou(data, out_np) * 100))
     # 计算尺寸大小排序后的索引
-    a = out_np[:, 0] + out_np[:, 1]
+    a = out_np[:, 0] * out_np[:, 1]
     indexs = np.argsort(a)  # 默认升序
     # indexs = np.argsort(-a)  # 降序
-    print("Boxes:\n {}".format(out_np[indexs].tolist()))
+    print("Boxes:\n {}".format(out_np.round(3)[indexs].tolist()))
     print("Boxes:\n {}".format(out_np[indexs]))
-    print("size:\n {}".format((out_np * size)[indexs]))
+    print("size:\n {}".format((out_np * size_in)[indexs]))
     ratios = np.around(out_np[:, 0] / out_np[:, 1], decimals=2).tolist()
     print("Ratios:\n {}".format(sorted(ratios)))
 
@@ -102,11 +107,12 @@ if __name__ == '__main__':
     VOC2012 17125 18 Accuracy: 75.18%
     输出anc的归一化比例
     '''
-    clusters = 6
-    size = [416, 416]
+    clusters = 9
+    size_in = [416, 416]
+    # size_in = [512, 512]
 
     '''-------------加载box--------------'''
-    # data = load_voc_boxes()
-    data = load_coco_boxes()
+    # data = load_voc_boxes() # voc直接计算,类型数据
+    data = load_coco_boxes(keep=False)  # 基本用这个 coco_dataset
     # 计算anc尺寸 和图片均值
-    show_time(calc_anc_size, data, clusters)
+    show_time(calc_anc_size, data, clusters, size_in)

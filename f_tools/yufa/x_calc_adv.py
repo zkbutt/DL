@@ -77,9 +77,9 @@ def x_select_max_num(labels_neg):
     loss_labels = (loss_labels * (mask_z)).sum(dim=1)
 
 
-def mershgrid():
-    a = torch.arange(3)  # 3行 4列
-    b = torch.arange(4)
+def f_mershgrid(row, col, is_rowcol=True):
+    a = torch.arange(row)  # 3行 4列
+    b = torch.arange(col)
     x, y = torch.meshgrid(a, b)  # row=3 col=5
     '''
     x ([[0, 0, 0, 0, 0],
@@ -93,18 +93,21 @@ def mershgrid():
     # for i in range(3):
     #     for j in range(4):
     # print("(", x[i, j], ",", y[i, j], ")")
-    print(x)
-    print(y)
+    # print(x)
+    # print(y)
 
-    # print(torch.stack((x, y), 2))
-    stack = torch.stack((x, y), dim=2)
-    # print(stack.view(-1,2))  # 升维
+    if is_rowcol:
+        stack = torch.stack((x, y), dim=2)
+    else:
+        stack = torch.stack((y, x), dim=2)
+    stack = stack.view(-1, 2)
+    return stack
 
 
 if __name__ == '__main__':
     # x_select_1()
     # x_select_2()
-    mershgrid()
+    print(f_mershgrid(3, 4))
     # a = torch.arange(5)
     # b = torch.arange(5, 10)
     # print(torch.stack([a, b], dim=1))  # 升级连接

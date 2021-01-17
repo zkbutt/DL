@@ -1,26 +1,33 @@
 import os
+import tempfile
 from collections import OrderedDict
 
 import torch
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.fits.f_gpu.f_gpu_api import fis_mgpu, is_main_process
 
 
 def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=torch.device('cpu'), is_mgpu=False):
     start_epoch = 0
 
+    # 只匹配需要的
     # model_dict = model.state_dict() # 获取模型每层的参数阵
-    # if True:
-    #     model_dict = model.state_dict()
-    #     pretrained_dict = torch.load(file_weight, map_location=device)
-    #     dd = {}
-    #     for k, v in pretrained_dict.items():
-    #         if model_dict[k].shape == v.shape:
+    # checkpoint = torch.load(file_weight, map_location=device)
+    # pretrained_dict = checkpoint['model']
+    # dd = {}
+    # for k, v in pretrained_dict.items():
+    #     if k in model_dict:
+    #         shape_1 = model_dict[k].shape
+    #         shape_2 = pretrained_dict[k].shape
+    #         if shape_1 == shape_2:
     #             dd[k] = v
-    #     model_dict.update(dd)
-    #     model.load_state_dict(model_dict)
-    #     flog.warning('手动加载完成:%s',file_weight)
-    #     return start_epoch
+    #         else:
+    #             print('shape mismatch in %s. shape_1=%s, while shape_2=%s.' % (k, shape_1, shape_2))
+    # model_dict.update(dd)
+    # model.load_state_dict(model_dict)
+    # flog.warning('手动加载完成:%s',file_weight)
+    # return start_epoch
 
     if file_weight and os.path.exists(file_weight):
         checkpoint = torch.load(file_weight, map_location=device)
@@ -70,6 +77,16 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=to
     else:
         # raise Exception(' 未加载 feadre权重文件 ')
         flog.error(' 未加载 feadre权重文件 %s', file_weight)
+        if fis_mgpu():
+            path = os.path.join(tempfile.gettempdir(), "_init_weights_tmp.pt")
+            checkpoint_path = path
+            if is_main_process():
+                torch.save(model.state_dict(), checkpoint_path)
+
+            # import torch.distributed as dist
+            torch.distributed.barrier()  # 多GPU阻塞
+            model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+            flog.error('已默认加载临时文件 %s', path)
     return start_epoch
 
 
@@ -99,8 +116,8 @@ def save_weight(path_save, model, name, loss=None, optimizer=None, lr_scheduler=
             file_weight = os.path.join(path_save, (name + '-{}_{}_{}_{}.pth')
                                        .format(epoch + 1,
                                                l,
-                                               'p' + str(round(maps_val[0]*100, 1)),
-                                               'r' + str(round(maps_val[1]*100, 1)),
+                                               'p' + str(round(maps_val[0] * 100, 1)),
+                                               'r' + str(round(maps_val[1] * 100, 1)),
                                                ))
         else:
             file_weight = os.path.join(path_save, (name + '-{}_{}.pth').format(epoch + 1, round(loss, 3)))

@@ -341,6 +341,56 @@ def fmatch4yolov1_2(boxes_ltrb, labels, num_bbox, num_class, grid, device=None, 
     return p_yolo_one
 
 
+def fmatch4yolov1_3(boxes_ltrb, labels, grid, size_in, device=None, img_ts=None):
+    '''
+    匹配 gyolo 如果需要计算IOU 需在这里生成
+    :param boxes_ltrb: ltrb
+    :param labels:
+    :param grid: 13
+    :param size_in:
+    :param device:
+    :return:
+    '''
+    # conf-1,cls-1,box-4,weight-1
+    p_yolo_one = torch.zeros((grid, grid, 1 + 1 + 4 + 1), device=device)
+
+    # ltrb -> xywh
+    boxes_xywh = ltrb2xywh(boxes_ltrb)
+    whs = boxes_xywh[:, 2:]
+    cxys = boxes_xywh[:, :2]
+
+    grids_ts = torch.tensor([grid] * 2, device=device, dtype=torch.int16)
+    '''xy与 row col相反'''
+    colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xys = torch.true_divide(colrows_index, grid)  # 网络index 对应归一化的实距
+    txys = (cxys - offset_xys) * grids_ts  # 归一尺寸 - 归一实距 / 网格数 = 相对一格左上角的偏移
+    # txys = cxys * grids_ts-colrows_index
+
+    # 遍历格子
+    for i, (col, row) in enumerate(colrows_index):
+        if torch.any(whs[i] < 1e-4):  # 宽高太小的不要
+            continue
+        '''wh 恢复至 416 log'''
+        _wh_s = whs[i] * torch.tensor(size_in, device=device)
+        if torch.any(_wh_s < 1.):  # 实际宽高小于1不要
+            continue
+        _twh = (_wh_s).log()  # 缩小wh
+
+        '''wh 直接预测'''
+        # _twh = whs[i]
+
+        txywh_g = torch.cat([txys[i], _twh], dim=0)  # 只支持是二维
+        # 正例的conf
+        conf = torch.tensor([1], device=device, dtype=torch.int16)
+        weight = 2.0 - torch.prod(whs[i])  # 1~2 小目标加成
+
+        # labels恢复至1
+        t = torch.cat([conf, labels[i][None] - 1, txywh_g, weight[None]], dim=0)
+        p_yolo_one[row, col] = t
+
+    return p_yolo_one
+
+
 def fmatch4yolo1_v2(boxes_ltrb, labels, num_bbox, num_class, grid, device=None, img_ts=None):
     '''
 
@@ -413,7 +463,7 @@ def match4center(boxes_xywh, labels, fsize, target_center, num_keypoints=0, keyp
     # 输入归一化 尺寸
     xys = boxes_xywh_f[:, :2]
     whs = boxes_xywh_f[:, 2:4]
-    # # 限定为特图格子偏移
+    # 限定为特图格子偏移 与yolo相同
     xys_int = xys.type(torch.int32)
     xys_offset = xys - xys_int  # 这个是偏置在 0~1 之间
 
@@ -429,6 +479,7 @@ def match4center(boxes_xywh, labels, fsize, target_center, num_keypoints=0, keyp
     labels_ = labels - 1
     # 根据中心点 和 半径生成 及labels 生成高斯图
     for i in range(len(labels_)):
+        # 高斯叠加
         draw_gaussian(target_center[:, :, labels_[i]], xys_int[i], radiuses_wh[i])
         target_center[xys_int[i][1], xys_int[i][0], -4:-2] = xys_offset[i]  # 限定为特图格子偏移
         # target_center[xys_int[i][1], xys_int[i][0], -2:] = boxes_xywh[i][2:4] * fsize  # 按输入归一化

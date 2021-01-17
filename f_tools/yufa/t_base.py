@@ -1,5 +1,7 @@
 class T001:
-    pass
+    def _custom_loss(self, x):
+        # 定义接口
+        raise NotImplementedError
 
 
 if __name__ == '__main__':

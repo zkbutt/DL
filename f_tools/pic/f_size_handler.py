@@ -1,6 +1,7 @@
 import cv2
 import torch
 import numpy as np
+import torchvision
 from PIL import Image
 
 from f_tools.GLOBAL_LOG import flog

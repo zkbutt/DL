@@ -21,6 +21,19 @@ def f_lr_cos(optimizer, start_epoch, end_epoch, lrf_scale):
     return scheduler
 
 
+def f_lr_linearwarmup(num_iter, base_lr=0.0001, start_factor=0., steps=4000):
+    k = (1.0 - start_factor) / steps
+    factor = start_factor + k * num_iter
+    return base_lr * factor
+
+
+def f_lr_piecewiseDecay(num_iter, base_lr=0.0001):
+    # 分段减变  未完成
+    if num_iter >= milestones:
+        return base_lr * gamma ** i
+    return base_lr
+
+
 def lr_example(optimizer):
     lr = 1e-3
     '''
@@ -68,8 +81,9 @@ def lr_example(optimizer):
 def op_example():
     lr0 = 1e-3
     optimizer = optim.Adam(model.parameters(), lr=lr0, weight_decay=5e-4)  # 权重衰减(如L2惩罚)(默认: 0)
-    optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.937, weight_decay=0.0005, nesterov=True)
-    optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.9, weight_decay=0.005)
+    optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.937, weight_decay=5e-4, nesterov=True)
+    optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.9, weight_decay=5e-3)
+    optimizer = optim.SGD(model.parameters(), lr=lr0, momentum=0.9, weight_decay=5e-4)
 
 
 def f_show_scheduler(scheduler, epochs):

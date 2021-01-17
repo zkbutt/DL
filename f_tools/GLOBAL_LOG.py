@@ -34,8 +34,9 @@ def get_logger(name='root'):
     # formatter = logging.Formatter(fmt)
     # black, red, green, yellow, blue, purple, cyan and white {color}，fg_ {color}，bg_ {color}：前景色和背景色
     log_colors_config = {
-        'DEBUG': 'cyan',  # 蓝色
-        'INFO': 'green',  # 绿色
+        'DEBUG': 'blue',  # 蓝色
+        # 'INFO': 'green',  # 绿色
+        'INFO': 'cyan',  # 蓝绿
         'WARNING': 'yellow',
         'ERROR': 'red',
         'CRITICAL': 'red,bg_white',
@@ -90,6 +91,8 @@ flog = get_logger(__name__)  # 返回一个叫__name__ 的obj，并应用默认�
 if __name__ == '__main__':
     # flog.debug('一个连接只需一个 %s', get_path_root)
     flog.debug('多个连接无需   %s%s', [1, 2, {123}], get_path_root())
-    flog.debug('多个连接无需   %s%s', [1, 2, {123}], get_path_root())
-    # flog.critical(123)
+    flog.info(123)
+    flog.warning('多个连接无需   %s%s', [1, 2, {123}], get_path_root())
+    flog.error(123)
+    flog.critical(123)
     pass

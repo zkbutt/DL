@@ -326,39 +326,6 @@ def show_od4np(img_np, bboxs, scores):
     cv2.waitKey(0)
 
 
-# def show_bbox4pil(img_pil, boxes_ltrb, labels=None):
-#     '''
-#     https://blog.csdn.net/qq_36834959/article/details/79921152?utm_medium=distribute.pc_aggpage_search_result.none-task-blog-2~all~first_rank_v2~rank_v25-1-79921152.nonecase&utm_term=imagedraw%E7%94%BB%E7%82%B9%E7%9A%84%E5%A4%A7%E5%B0%8F%20pil&spm=1000.2123.3001.4430
-#     :param img_np: tensor 或 img_pil
-#     :param boxes_ltrb: 2维 tensor ltrb
-#     :return:
-#     '''
-#     if labels is not None:
-#         flog.info('%s', labels)
-#     pil_copy = img_pil.copy()
-#     draw = ImageDraw.Draw(pil_copy)
-#     # im_width, im_height = pil_copy.size
-#     # print(im_width, im_height)
-#     if isinstance(boxes_ltrb, torch.Tensor):
-#         boxes_ltrb = boxes_ltrb.numpy()
-#     for i, box in enumerate(boxes_ltrb):
-#         l, t, r, b = box.astype(np.int)
-#         # 创建一个正方形。 [x1,x2,y1,y2]或者[(x1,x2),(y1,y2)]  fill代表的为颜色
-#         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=2,
-#                   fill=STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)],
-#                   # fill='White',
-#                   )
-#         # __draw_text(draw, labels[i], box, l, r, t, b, STANDARD_COLORS)
-#     pil_copy.show()
-#     # plt.imshow(img_pil)
-#     # plt.show()
-#
-#
-# def show_bbox4ts(img_ts, boxs, labels=None):
-#     img_pil = transforms.ToPILImage(mode="RGB")(img_ts)
-#     show_bbox4pil(img_pil, boxs.numpy(), labels)
-
-
 def show_anc4pil(img_pil, anc, size=(1, 1)):
     '''
     这个不安全
@@ -734,9 +701,9 @@ def _draw_box_circle4pil(draw, gboxes, color=None, width=4, is_draw_circle=False
     :return:
     '''
     from f_tools.fun_od.f_boxes import ltrb2xywh
-    boxes_ltrb = ltrb2xywh(gboxes)
+    boxes_xywh = ltrb2xywh(gboxes)
     if is_draw_circle:
-        for c in boxes_ltrb:
+        for c in boxes_xywh:
             if color is None:
                 _color = COLORS_ImageDraw[random.randint(0, len(COLORS_ImageDraw) - 1)]
             else:
@@ -764,7 +731,8 @@ def _draw_box_circle4pil(draw, gboxes, color=None, width=4, is_draw_circle=False
     return draw
 
 
-def f_show_3box4pil(img_pil, g_boxes=None, boxes1=None, boxes2=None, boxes3=None, grids=None, is_safe=True):
+def f_show_3box4pil(img_pil, g_boxes=None, boxes1=None, boxes2=None, boxes3=None, grids=None, is_safe=True,
+                    is_oned=True):
     '''
     默认安全
     :param img_pil:
@@ -784,20 +752,29 @@ def f_show_3box4pil(img_pil, g_boxes=None, boxes1=None, boxes2=None, boxes3=None
     if grids is not None:
         _draw_grid4pil(draw, img_pil.size, grids)
     if g_boxes is not None:
-        _gbox = g_boxes.clone()
-        _gbox = _gbox * whwh
+        if isinstance(g_boxes, np.ndarray):
+            _gbox = g_boxes.copy()
+        elif isinstance(g_boxes, torch.Tensor):
+            _gbox = g_boxes.clone()
+        else:
+            raise Exception('类型错误', type(g_boxes))
+        if is_oned:
+            _gbox = _gbox * whwh
         _draw_box_circle4pil(draw, _gbox, color='Yellow', is_draw_circle=True)  # 黄色
     if boxes1 is not None:
         _box1 = boxes1.clone().detach()
-        _box1 = _box1 * whwh
+        if is_oned:
+            _box1 = _box1 * whwh
         _draw_box_circle4pil(draw, _box1, color='Chartreuse', width=2, is_draw_circle=True)  # 绿色
     if boxes2 is not None:
         _box2 = boxes2.clone()
-        _box2 = _box2 * whwh
+        if is_oned:
+            _box2 = _box2 * whwh
         _draw_box_circle4pil(draw, _box2, color='BurlyWood', width=2, is_draw_circle=True)  # 橙色
     if boxes3 is not None:
         _box3 = boxes3.clone()
-        _box3 = _box3 * whwh
+        if is_oned:
+            _box3 = _box3 * whwh
         _draw_box_circle4pil(draw, _box3, color='Aqua', width=2, is_draw_circle=True)  #
     pil_copy.show()
 
@@ -826,18 +803,46 @@ def f_show_grid4pil(img_pil, grids=(7, 7)):
     pil_copy.show()
 
 
-def f_plt_od(img_pil, boxes_ltrb_f, ids2classes=None, labels=None, scores=None):
+def f_plt_od(img_pil, boxes_ltrb_f, g_boxes_ltrb=None, ids2classes=None,
+             labels=None, scores=None,
+             is_recover_size=True):
+    '''
+    f coco使用
+    :param img_pil:
+    :param boxes_ltrb_f:
+    :param g_boxes_ltrb:
+    :param ids2classes:
+    :param labels:
+    :param scores:
+    :param is_recover_size:
+    :return:
+    '''
+    whwh = np.array(img_pil.size).repeat(2, axis=0)
     plt.imshow(img_pil, alpha=0.7)
     current_axis = plt.gca()
+    if g_boxes_ltrb is not None:
+        if is_recover_size:
+            g_boxes_ltrb = g_boxes_ltrb * whwh
+        for box in g_boxes_ltrb:
+            l, t, r, b = box
+            plt_rectangle = plt.Rectangle((l, t), r - l, b - t, color='lightcyan', fill=False, linewidth=3)
+            current_axis.add_patch(plt_rectangle)
+            # x, y = c[:2]
+            # r = 4
+            # # 空心
+            # # draw.arc((x - r, y - r, x + r, y + r), 0, 360, fill=color)
+            # # 实心
+            # draw.chord((x - r, y - r, x + r, y + r), 0, 360, fill=_color)
+
     for i, box_ltrb_f in enumerate(boxes_ltrb_f):
         l, t, r, b = box_ltrb_f
         # ltwh
         current_axis.add_patch(plt.Rectangle((l, t), r - l, b - t, color='green', fill=False, linewidth=2))
         if labels is not None:
             # labels : tensor -> int
-            show_text = ids2classes[int(labels[i])] + str(scores[i])
+            show_text = ids2classes[int(labels[i])] + str(round(scores[i], 2))
             current_axis.text(l, t - 2, show_text, size=8, color='white',
-                              bbox={'facecolor': 'green', 'alpha': 0.6})
+                              bbox={'facecolor': 'green', 'alpha': 0.3})
     plt.show()
 
 
@@ -893,6 +898,91 @@ def f_plt_od_f(img_ts, boxes_ltrb):
 
 def f_plt_show_pil(img_pil):
     plt.imshow(img_pil)
+    plt.show()
+
+
+def _f_draw_box_pil(current_axis, box, color='red', fill=False, linewidth=1, is_show_xy=True):
+    l, t, r, b = box
+    w = r - l
+    h = b - t
+    rectangle = plt.Rectangle((l, t), w, h, color=color, fill=fill, linewidth=linewidth)
+    current_axis.add_patch(rectangle)
+
+    if is_show_xy:
+        x = l + w / 2
+        y = t + h / 2
+        plt.scatter(x, y, marker='x', color=color, s=40, label='First')
+
+
+def _f_draw_grid_plt(size, grids):
+    '''
+
+    :param size:
+    :param grids:
+    :return:
+    '''
+    # colors_ = STANDARD_COLORS[random.randint(0, len(STANDARD_COLORS) - 1)]
+    colors_ = 'Pink'
+    w, h = size
+    xys = np.array([w, h]) / grids
+    off_x = np.arange(1, grids[0])
+    off_y = np.arange(1, grids[1])
+    xx = off_x * xys[0]
+    yy = off_y * xys[1]
+
+    for x_ in xx:
+        # 画列
+        plt.plot([x_, x_], [0, h], color=colors_, linewidth=1., alpha=0.3)
+    for y_ in yy:
+        # 画列
+        plt.plot([0, w], [y_, y_], color=colors_, linewidth=1., alpha=0.3)
+
+
+def _f_draw_od_cv_plt(current_axis, boxes_ltrb, is_show_xy=True, labels_text=None,
+                      color='lightcyan', fill=False, linewidth=1):
+    '''新版本'''
+    # color = 'lightcyan'  # 白色
+    # color = COLORS_plt[list(COLORS_plt.keys())[random.randint(0, len(COLORS_plt) - 1)]]
+    # color = 'red'  # 白色
+
+    for i, box in enumerate(boxes_ltrb):
+        l, t, r, b = box
+        _f_draw_box_pil(current_axis, box, color=color, fill=fill, linewidth=linewidth, is_show_xy=is_show_xy)
+
+        if labels_text is not None:
+            # labels : tensor -> int
+            # show_text = ids2classes[int(labels[i])] + str(round(scores[i], 2))
+            current_axis.text(l, t - 2, labels_text[i], size=8, color='white',
+                              bbox={'facecolor': 'green', 'alpha': 0.3})
+
+
+def f_plt_show_cv(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False, labels_text=None, grids=None):
+    '''新版本'''
+    current_axis = plt.gca()
+    img_np_rgb = cv2.cvtColor(img_np_bgr, cv2.COLOR_BGR2RGB)
+    plt.imshow(img_np_rgb)
+    gboxes_ltrb = gboxes_ltrb.cpu()
+
+    wh = img_np_rgb.shape[:2][::-1]  # 标题
+    plt.title(wh)
+    if grids is not None:
+        _f_draw_grid_plt(wh, grids)
+
+    if gboxes_ltrb is not None:
+        if is_recover_size:
+            whwh = np.tile(np.array(wh), 2)  # 单体复制 tile
+            gboxes_ltrb = gboxes_ltrb * whwh
+        _f_draw_od_cv_plt(current_axis, gboxes_ltrb, is_show_xy=True, color='red',
+                          labels_text=labels_text, linewidth=3)
+
+    if pboxes_ltrb is not None:
+        if is_recover_size:
+            whwh = np.tile(np.array(wh), 2)  # 单体复制 tile
+            pboxes_ltrb = pboxes_ltrb * whwh
+        _f_draw_od_cv_plt(current_axis, pboxes_ltrb, is_show_xy=True, color='lightcyan',
+                          labels_text=labels_text,
+                          linewidth=1)
+
     plt.show()
 
 

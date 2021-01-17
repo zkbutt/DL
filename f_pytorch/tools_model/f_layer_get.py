@@ -61,9 +61,52 @@ class ModelOutsUtils(nn.Module):
 
     def forward(self, inputs):
         out = self.layer_out(inputs)
-        out = list(out.values())
+        out = list(out.outs())
         # torch.Size([1, 1024, 26, 26])
         return out
+
+
+class ModelOuts4Resnet(nn.Module):
+
+    def __init__(self, model, dims_out=(512, 1024, 2048)):
+        super().__init__()
+        self.dims_out = dims_out
+
+        self.model_hook = model
+        self.model_hook._forward_impl = types.MethodType(self.foverwrite, model)
+        # self.model_hook.classifier = NoneLayer()  # 直接输出层
+        self.model_hook.layer3[0].conv1.register_forward_hook(self.fun_layer1)
+        self.model_hook.layer4[0].conv1.register_forward_hook(self.fun_layer2)
+        # model.features[18][2].register_forward_hook(self.fun_layer3)
+
+        self.dims_out = dims_out
+        self.out_layout1, self.out_layout2 = [0] * 2
+
+    def foverwrite(self, model, x):
+        # 重写流程 model 替换self
+        x = model.conv1(x)
+        x = model.bn1(x)
+        x = model.relu(x)
+        x = model.maxpool(x)
+
+        x = model.layer1(x)
+        x = model.layer2(x)
+        x = model.layer3(x)
+        x = model.layer4(x)
+        return x
+
+    def fun_layer1(self, module, input, output):
+        '''input是默认tuple '''
+        self.out_layout1 = input[0]
+
+    def fun_layer2(self, module, input, output):
+        self.out_layout2 = input[0]
+
+    def forward(self, inputs):
+        outs = self.model_hook(inputs)
+        # torch.Size([10, 192, 52, 52]))  torch.Size([10, 576, 26, 26]) torch.Size([10, 1280, 13, 13])
+        return self.out_layout1, self.out_layout2, outs
+        # return hook
 
 
 class ModelOuts4Densenet121(nn.Module):
@@ -72,7 +115,7 @@ class ModelOuts4Densenet121(nn.Module):
         super().__init__()
         submodule = backbone._modules[layer_name]
         self.outs_model = ModelOutsUtils(submodule, ret_name_dict)
-        self.dims_out =dims_out
+        self.dims_out = dims_out
 
     def forward(self, inputs):
         out1, out2, out3 = self.outs_model(inputs)
@@ -228,25 +271,25 @@ if __name__ == '__main__':
     # dims_out = [192, 576, 1280]
     # f_look_model(model, input=(1, 3, 416, 416))
 
-    model = models.resnet18(pretrained=True)
-    f_look_model(model, input=(1, 3, 416, 416))
-
-    '''通过 只支持顶层 _utils.IntermediateLayerGetter(backbone, return_layers) 提取'''
-
+    # model = models.resnet50(pretrained=True)
     model = models.resnext50_32x4d(pretrained=True)
-    model = models.densenet161(pretrained=True)
-    ret_name_dict = {'layer2': 1, 'layer3': 2, 'layer4': 3}
-    model = Output4Return(model, return_layers)
+    dims_out = (512, 1024, 2048)
+    # model = models.resnet18(pretrained=True)
+    # dims_out = (128, 256, 512)
+    model = ModelOuts4Resnet(model, dims_out)
+    # f_look_model(model, input=(1, 3, 416, 416))
 
+    x = torch.zeros((1, 3, 416, 416))
+    outs = model(x)
+    print(outs)
+
+    # model = models.resnext50_32x4d(pretrained=True)
+    # model = models.densenet161(pretrained=True)
+    # ret_name_dict = {'layer2': 1, 'layer3': 2, 'layer4': 3}
+    # model = Output4Return(model, return_layers)
 
     # dims_out = [512, 1024, 2048]
     # f_look(model, input=(1, 3, 416, 416))
-
-    def fun1(module, input, output):
-        print(module, input, output)
-        print(input[0])  # hook1_obj hook2_obj
-        print(output)  # hook1
-
 
     # model = models.resnet50(pretrained=True)
     # model = models.wide_resnet50_2(pretrained=True)
@@ -279,5 +322,5 @@ if __name__ == '__main__':
     # del model.classifier
     # ModelOut4Mnasnet1_0(model,)
     # print(hook_obj)
-    f_look_model(model, input=(10, 3, 416, 416))
+    # f_look_model(model, input=(10, 3, 416, 416))
     pass

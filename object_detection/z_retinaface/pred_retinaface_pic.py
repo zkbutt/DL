@@ -1,10 +1,9 @@
-import json
 import os
 
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_loader import cre_transform4resize
+from f_tools.datas.data_loader import cre_transform4resize, DataLoader, cfg_raccoon
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4keypoints, f_prod_pic
 from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
 from object_detection.z_retinaface.train_retinaface import init_model, train_eval_set
@@ -15,13 +14,16 @@ if __name__ == '__main__':
     '''
     '''------------------系统配置---------------------'''
     cfg = CFG
-    train_eval_set(cfg)
+    train_eval_set(cfg)  # 自带数据 cfg_raccoon(cfg)
+    index_start = 40
 
     device = torch.device('cpu')
     flog.info('模型当前设备 %s', device)
 
-    # 这里是原图
-    dataset_val = cfg.FUN_EVAL_DATA(cfg)
+    # 加载数据
+    data_loader = DataLoader(cfg)
+
+    dataset_val = data_loader.get_test_dataset()
     ids_classes = dataset_val.ids_classes
     labels_lsit = list(ids_classes.values())  # index 从 1开始 前面随便加一个空
     labels_lsit.insert(0, None)  # index 从 1开始 前面随便加一个空
@@ -34,7 +36,8 @@ if __name__ == '__main__':
     data_transform = cre_transform4resize(cfg)
 
     # 这里是原图
-    for img, _ in dataset_val:
+    for i in range(index_start, len(dataset_val), 1):
+        img, _ = dataset_val[i]
         f_prod_pic(img, model, labels_lsit, data_transform)
 
     # for name in file_names:

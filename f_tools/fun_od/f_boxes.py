@@ -49,8 +49,10 @@ def ltrb2ltwh(bboxs):
 
     if dim == 3:
         bboxs_[:, :, 2:] = bboxs[:, :, 2:] - bboxs[:, :, :2]  # wh = rb - lt
+        bboxs_[:, :, :2] = bboxs[:, :, :2]
     elif dim == 2:
         bboxs_[:, 2:] = bboxs[:, 2:] - bboxs[:, :2]
+        bboxs_[:, :2] = bboxs[:, :2]
     else:
         raise Exception('维度错误', bboxs_.shape)
     return bboxs_
@@ -280,7 +282,7 @@ def bbox_iou4one(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
     # 并的面积
     area1 = box_area(box1)  # 降维 n
     area2 = box_area(box2)  # 降维 m
-    union_area = area1 + area2 - inter_area + torch.finfo(torch.float32).eps  # 升维n m
+    union_area = area1 + area2 - inter_area + torch.finfo(torch.float16).eps  # 升维n m
 
     iou = inter_area / union_area
 
@@ -292,11 +294,11 @@ def bbox_iou4one(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
         max_rb = torch.max(box1[:, 2:], box2[:, 2:])
         max_wh = max_rb - min_lt
         if is_giou:
-            max_area = max_wh[:, 0] * max_wh[:, 1] + torch.finfo(torch.float32).eps  # 降维运算
+            max_area = max_wh[:, 0] * max_wh[:, 1] + torch.finfo(torch.float16).eps  # 降维运算
             giou = iou - (max_area - union_area) / max_area
             return giou
 
-        c2 = max_wh[:, 0] ** 2 + max_wh[:, 1] ** 2 + torch.finfo(torch.float32).eps  # 最大矩形的矩离的平方
+        c2 = max_wh[:, 0] ** 2 + max_wh[:, 1] ** 2 + torch.finfo(torch.float16).eps  # 最大矩形的矩离的平方
         box1_xywh = ltrb2xywh(box1)
         box2_xywh = ltrb2xywh(box2)
         xw2_xh2 = torch.pow(box1_xywh[:, :2] - box2_xywh[:, :2], 2)  # 中心点距离的平方
@@ -341,7 +343,7 @@ def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
     # 并的面积
     area1 = box_area(box1)  # 降维 n
     area2 = box_area(box2)  # 降维 m
-    union_area = area1[:, None] + area2 - inter_area + torch.finfo(torch.float32).eps  # 升维n m
+    union_area = area1[:, None] + area2 - inter_area + torch.finfo(torch.float16).eps  # 升维n m
 
     iou = inter_area / union_area
 
@@ -353,11 +355,11 @@ def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
         max_rb = torch.max(box1[:, None, 2:], box2[:, 2:])
         max_wh = max_rb - min_lt
         if is_giou:
-            max_area = max_wh[:, :, 0] * max_wh[:, :, 1] + torch.finfo(torch.float32).eps  # 降维运算
+            max_area = max_wh[:, :, 0] * max_wh[:, :, 1] + torch.finfo(torch.float16).eps  # 降维运算
             giou = iou - (max_area - union_area) / max_area
             return giou
 
-        c2 = max_wh[:, :, 0] ** 2 + max_wh[:, :, 1] ** 2 + torch.finfo(torch.float32).eps  # 最大矩形的矩离的平方
+        c2 = max_wh[:, :, 0] ** 2 + max_wh[:, :, 1] ** 2 + torch.finfo(torch.float16).eps  # 最大矩形的矩离的平方
         box1_xywh = ltrb2xywh(box1)
         box2_xywh = ltrb2xywh(box2)
         xw2_xh2 = torch.pow(box1_xywh[:, None, :2] - box2_xywh[:, :2], 2)  # 中心点距离的平方
