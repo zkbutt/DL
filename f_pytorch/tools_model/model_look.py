@@ -83,13 +83,13 @@ def other():
     # y = model(x)
 
 
-def f_look_model(model, input=(1, 3, 416, 416)):
+def f_look_model(model, input=(1, 3, 416, 416), name='model_look'):
     import tensorwatch as tw
 
     # 用这个即可---查看网络的统计结果---
     args_pd = tw.model_stats(model, input)
-    args_pd.to_excel('model_look.xlsx')
-    flog.info('文件生成成功')
+    args_pd.to_excel(name + '.xlsx')
+    flog.info('文件生成成功 %s', name + '.xlsx')
 
 
 def f_look2(model, input=(3, 416, 416)):

@@ -3,12 +3,17 @@ import socket
 
 class CfgBase:
     START_EVAL = 10
-    EVAL_INTERVAL = 3
+    END_EVAL = 50  # 结束每轮验证
+    EVAL_INTERVAL = 3  # 间隙
     MAPS_VAL = [0.1, 0.1]
     LR0 = 1e-3
     USE_MGPU_EVAL = True
+
+    '''----TB_WRITER设备-----'''
     TB_WRITER = True
     DEL_TB = False
+    LOSS_EPOCH = True  # False表示iter
+
     MODE_COCO_TRAIN = 'bbox'  # bbox segm keypoints caption
     MODE_COCO_EVAL = 'bbox'  # bbox segm keypoints caption
 

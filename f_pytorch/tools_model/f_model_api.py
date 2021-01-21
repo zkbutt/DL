@@ -1,9 +1,17 @@
+from math import log
+
 import torch
 import torch.nn as nn
 
 from collections import OrderedDict
 
 '''-----------------模型方法区-----------------------'''
+
+
+def finit_conf_bias(model, num_tolal, num_pos, num_classes):
+    # pi = num_pos / num_tolal / cfg.NUM_CLASSES
+    b = -log(num_tolal / num_pos * num_classes - 1)
+    model.bias.data += b
 
 
 def finit_weights(model):

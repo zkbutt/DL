@@ -5,9 +5,9 @@ class CFG(CfgBase):
     DEBUG = False
     IS_FORCE_SAVE = False
     IS_LOCK_BACKBONE_WEIGHT = False  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
-    END_EPOCH = 160
+    END_EPOCH = 300
 
-    IS_TRAIN = True
+    IS_TRAIN = False
     IS_COCO_EVAL = True
     IS_VISUAL = False
     IS_TRAIN_DEBUG = True
@@ -23,12 +23,12 @@ class CFG(CfgBase):
     
     '''
     #  conf_pos conf_neg cls loss_txty  loss_twth
-    LOSS_WEIGHT = [5., 1, 1, 1, 1]
+    LOSS_WEIGHT = [1., 1, 1, 1, 1]
 
-    THRESHOLD_PREDICT_CONF = 0.4  # 用于预测的阀值
-    THRESHOLD_PREDICT_NMS = 0.3  # 用于预测的阀值
+    THRESHOLD_PREDICT_CONF = 0.01  # 用于预测的阀值
+    THRESHOLD_PREDICT_NMS = 0.5  # 用于预测的阀值
 
     '''模型参数'''
-    NUM_GRID = 7  # 输出网格
+    NUM_GRID = 13  # 输出网格
     NUM_BBOX = 2
     SAVE_FILE_NAME = 't_yolo1_'

@@ -154,24 +154,15 @@ def train_eval4od(start_epoch, model, optimizer,
         else:
             log_dict = None
 
-        if model.cfg.IS_COCO_EVAL and (epoch + 1) > cfg.START_EVAL and (epoch + 1) % cfg.EVAL_INTERVAL == 0:
+        if model.cfg.IS_COCO_EVAL \
+                and (epoch + 1) > cfg.START_EVAL \
+                and (epoch + 1) % cfg.EVAL_INTERVAL == 0 \
+                or (epoch + 1) > cfg.END_EVAL:
             flog.info('COCO 验证开始 %s', epoch + 1)
             model.eval()
             # with torch.no_grad():
             ann_type = 'bbox'
             res_eval = []
-            # maps_val = f_evaluate4coco2(
-            #     model=model,
-            #     fun_datas_l2=fun_datas_l2,
-            #     data_loader=loader_val_coco,
-            #     epoch=epoch,
-            #     tb_writer=tb_writer,
-            #     res_eval=res_eval,
-            #     ann_type=ann_type,
-            #     device=device,
-            #     eval_sampler=eval_sampler,
-            #     is_keep=cfg.IS_KEEP_SCALE
-            # )
 
             maps_val = f_evaluate4coco3(
                 model=model,

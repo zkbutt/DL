@@ -8,13 +8,11 @@ sys.path.append(os.path.split(rootPath)[0])
 from torch import optim
 from f_tools.datas.data_loader import cfg_raccoon, DataLoader, cfg_type
 
-from f_pytorch.tools_model.backbones.mobilenetv3 import f_get_mv3
-from object_detection.z_yolov1.nets.net import ResNetYolov1, resnet50
 from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2, ModelOut4Resnet18, ModelOut4Mobilenet_v3, \
     ModelOut4Resnet50
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init, mgpu_process0_init
-from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1, Yolo_v1_1
+from object_detection.z_yolov1.nets.net_yolov1 import Yolo_v1_1
 
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
 
@@ -56,18 +54,14 @@ def init_model(cfg, device, id_gpu=None):
     model = ModelOut4Resnet18(model)
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_res18'
 
+    '''这个训不动'''
     # model = models.resnet50(pretrained=True)
     # model = ModelOut4Resnet50(model)
     # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_res50'
 
-    # model = Yolo_v1(backbone=model, dim_in=model.dim_out, cfg=cfg)
     model = Yolo_v1_1(backbone=model, cfg=cfg)
 
     # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))
-
-    # model = resnet50(cfg)
-    # model = Yolo_v1_1(backbone=model, grid=cfg.NUM_GRID,
-    #                   num_classes=cfg.NUM_CLASSES, num_bbox=cfg.NUM_BBOX, cfg=cfg)
 
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         for name, param in model.backbone.named_parameters():
@@ -80,15 +74,16 @@ def init_model(cfg, device, id_gpu=None):
 
     # ------------------------自定义backbone完成-------------------------------
     pg = model.parameters()
-    # optimizer = optim.Adam(pg, cfg.LR0)
+    optimizer = optim.Adam(pg, cfg.LR0)
     # optimizer = optim.Adam(pg, cfg.LR0, weight_decay=5e-4)
     # optimizer = optim.SGD(pg, lr=cfg.LR0, momentum=0.937, weight_decay=5e-4, nesterov=True)
-    optimizer = optim.SGD(pg, lr=cfg.LR0, momentum=0.9, weight_decay=5e-4)
+    # optimizer = optim.SGD(pg, lr=cfg.LR0, momentum=0.9, weight_decay=5e-4)
     # 两次不上升，降低一半
-    lr_scheduler = None
+    # lr_scheduler = None
+    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [60, 90], 0.1)
     # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=1, verbose=True)
     start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
-    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
+    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg
     return model, optimizer, lr_scheduler, start_epoch
@@ -98,7 +93,7 @@ def train_eval_set(cfg):
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
     # batch = 20  # raccoon
-    batch = 96  # type
+    batch = 32  # type
     # batch = 5  # type
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 3
@@ -108,8 +103,14 @@ def train_eval_set(cfg):
     size = (416, 416)  # type
     cfg_type(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_raccoon(cfg, batch=batch, image_size=size)  # 加载数据基础参数
-    cfg.START_EVAL = 10  # 1第一轮
+    cfg.START_EVAL = 10  # cfg.START_EVAL=10 and EVAL_INTERVAL=3 实际是12
+    cfg.END_EVAL = 60  # cfg.START_EVAL=10 and EVAL_INTERVAL=3 实际是12
     cfg.EVAL_INTERVAL = 3
+    # cfg.NUM_SAVE_INTERVAL = 100
+    cfg.match_str = 'log'  # 'log' 'whoned'
+    cfg.loss_conf_str = 'mse'  # 'mse' 'foc' 迭代400次开始收敛
+    cfg.arg_focalloss_alpha = 0.75
+    cfg.IS_MIXTURE_FIX = False
 
     # raccoon mobilenet_v2
     # cfg.FILE_NAME_WEIGHT = 'zz/train_yolo1_raccoon200_mv2-base' + '.pth'  # 初始resnet
@@ -127,17 +128,15 @@ def train_eval_set(cfg):
     # cfg.MAPS_VAL = [0.60, 0.24]
 
     # type3 resnet18 0:00:29
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-40_7.655' + '.pth'
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-10_8.659' + '.pth'
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-30_3.892' + '.pth'
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-130_3.432' + '.pth'
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-150_5.568' + '.pth'
-    # cfg.MAPS_VAL = [1.00, 0.201]
-    # cfg.MAPS_VAL = [0.60, 0.60]
+    cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18c0.01-47_3.1_p50.2_r31.7' + '.pth'
+    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18c0.01-47_3.1_p50.2_r31.7' + '.pth'
+    '''cls455收  wh550收'''
+    cfg.MAPS_VAL = [0.544, 0.316]
 
     cfg.LR0 = 1e-3
     cfg.TB_WRITER = True
     cfg.DEL_TB = True
+    cfg.LOSS_EPOCH = False
     cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
 
 

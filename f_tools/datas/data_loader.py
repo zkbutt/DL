@@ -148,7 +148,7 @@ def cfg_voc(cfg):
     cfg.PRINT_FREQ = 20  # 400张图打印
 
     cfg.IMAGE_SIZE = (512, 512)
-    cfg.NUM_SAVE = 1  # epoch+1
+    cfg.NUM_SAVE_INTERVAL = 1  # epoch+1
     cfg.START_EVAL = 3  # epoch
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
@@ -197,7 +197,7 @@ def cfg_widerface(cfg):
     cfg.PRINT_FREQ = 40  # 400张图打印
 
     cfg.IMAGE_SIZE = (512, 512)
-    cfg.NUM_SAVE = 1  # epoch+1
+    cfg.NUM_SAVE_INTERVAL = 1  # epoch+1
     cfg.START_EVAL = 3  # epoch
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
@@ -245,7 +245,7 @@ def cfg_raccoon(cfg, batch=40, image_size=(448, 448)):
     cfg.PRINT_FREQ = 10  # 400张图打印
 
     cfg.IMAGE_SIZE = image_size
-    cfg.NUM_SAVE = 30  # epoch+1
+    cfg.NUM_SAVE_INTERVAL = 30  # epoch+1
     cfg.START_EVAL = 1  # 从 cfg.START_EVAL + 1 开始，实际需要+1
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
@@ -291,7 +291,7 @@ def cfg_type(cfg, batch=40, image_size=(448, 448)):
     cfg.PRINT_FREQ = 5  # BATCH_SIZE * PRINT_FREQ 张图片
 
     cfg.IMAGE_SIZE = image_size
-    cfg.NUM_SAVE = 10  # 第一次是19
+    cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
     cfg.START_EVAL = 10  # 1第一轮
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸

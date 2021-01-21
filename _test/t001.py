@@ -25,9 +25,5 @@ from tqdm import trange
 # a = torch.tensor(1)
 # print(a / 3 * 2)
 # print((a / 3) * 2)
-import matplotlib.pyplot as plt
 
-plt.plot([1, 2], [4, 4], color='red', linewidth=2.)
-plt.plot(3, 3, '-', color='red', linewidth=2.)
-plt.plot([1, 2, 3], [1, 2, 3], 'go-', label='line 1', linewidth=2)
-plt.show()
+print(str(datetime.timedelta(seconds=5.44444)))

@@ -17,14 +17,16 @@ import matplotlib.pyplot as plt
 torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
 
 
-def x_bce(i, o):
+def f_bce(pconf, gconf, weight=1.):
     '''
     同维
-    :param i: 值必须为0~1之间 float
-    :param o: 值为 float
+    :param pconf: 值必须为0~1之间 float
+    :param gconf: 值为 float
     :return:
     '''
-    return np.round(-(o * np.log(i) + (1 - o) * np.log(1 - i)), 4)
+    # loss = np.round(-(gconf * np.log(pconf) + (1 - gconf) * np.log(1 - pconf)), 4)
+    loss = -(torch.log(pconf) * gconf + torch.log(1 - pconf) * (1 - gconf)) * weight
+    return loss
 
 
 def cneg_loss(preds, targets):
@@ -178,8 +180,8 @@ def f_二值交叉熵2():
         [0, 1.],
     ], dtype=torch.float)
 
-    loss1 = F.binary_cross_entropy(torch.sigmoid(input), target, reduction='none')  # 独立的
-    # loss1 = F.binary_cross_entropy(input, target, reduction='none')  # 独立的
+    # loss1 = F.binary_cross_entropy(torch.sigmoid(input), target, reduction='none')  # 独立的
+    loss1 = F.binary_cross_entropy(input, target, reduction='none')  # 独立的
     print(loss1)
 
     # bce_loss = torch.nn.BCELoss(reduction='none')
@@ -193,7 +195,8 @@ def f_二值交叉熵2():
 
     # loss = F.binary_cross_entropy(F.softmax(input, dim=-1), target, reduction='none')  # input不为1要报错
     # loss = F.cross_entropy(input, target, reduction='none')  # 二维需要拉平
-    # print(loss)
+    loss3 = f_bce(input, target)
+    print(loss3)
 
     # loss.backward()
     pass
@@ -262,7 +265,7 @@ def focal_loss4center2(pconf, gconf, reduction='none', a=2., b=4., ratio=1.):
         return loss
 
 
-def focal_loss4center3(pconf, gconf, reduction='none', a=2., b=4., ratio=1.):
+def focal_loss4center3(pconf, gconf, reduction='none', a=2.):
     '''a=3'''
     eps = torch.finfo(torch.float).eps
     pconf = pconf.clamp(min=eps, max=1 - eps)
@@ -298,20 +301,24 @@ class FocalLoss4Center(nn.Module):
         return loss
 
 
-def focalloss_v2(pconf, gconf, alpha=0.25, gamma=1.5, reduction='none'):
+def focalloss_v2(pconf, gconf, alpha=0.25, gamma=2, reduction='none', is_merge=True):
     '''
-
+    这个与公式相同,正式版本 适用于GT=1的情况
     :param pconf:
-    :param gconf:
+    :param gconf: 这个必须归一化
     :param alpha: 正反例比例  0.25/0.75 正反例比 1/3
     :param gamma: 越小 是弧度向上
     :param reduction:
     :return:
     '''
-    eps = torch.finfo(torch.float).eps
+    # eps = torch.finfo(torch.float).eps
+    eps = 1e-6
     pconf = pconf.clamp(min=eps, max=1 - eps)
-    mask_pos = gconf == 1
+    # mask_pos = gconf == 1  # 可以直接用gconf 这里确定正反例 >0
+    mask_pos = gconf > 0
     mask_neg = torch.logical_not(mask_pos)
+    # mask_pos = gconf
+    # mask_neg = 1 - gconf
 
     w_pos = alpha * torch.pow((1 - pconf), gamma)
     l_pos = mask_pos * w_pos * torch.log(pconf)  # 正例
@@ -319,7 +326,51 @@ def focalloss_v2(pconf, gconf, alpha=0.25, gamma=1.5, reduction='none'):
     w_neg = (1 - alpha) * torch.pow(pconf, gamma)
     l_neg = mask_neg * w_neg * torch.log(1 - pconf)  # 反例
 
-    loss = -(l_pos + l_neg)
+    if reduction == 'none' and not is_merge:  # 分离返回
+        return -l_pos, -l_neg
+
+    loss = l_pos + l_neg
+    if reduction == 'mean':
+        return loss.mean(-1)
+    elif reduction == 'sum':
+        return loss.sum()
+    else:  # 'none'
+        return loss
+
+
+def focalloss_v3(pconf, gconf, alpha=0.25, gamma=2, reduction='none', is_merge=True):
+    '''
+    这个与公式相同,正式版本 适用于GT=任意的情况
+    :param pconf:
+    :param gconf: 这个必须归一化
+    :param alpha: 正反例比例  0.25/0.75 正反例比 1/3
+    :param gamma: 越小 是弧度向上
+    :param reduction:
+    :return:
+    '''
+
+    # mask_pos = gconf == 1  # 可以直接用gconf 这里确定正反例 >0
+    mask_pos = gconf > 0
+    mask_neg = torch.logical_not(mask_pos)
+    # mask_pos = gconf
+    # mask_neg = 1 - gconf
+
+    abs_val = torch.abs(gconf - pconf)
+    # eps = torch.finfo(torch.float).eps
+    eps = 1e-6
+    abs_val = abs_val.clamp(min=eps, max=1 - eps)
+    val_log = -1 / torch.log(abs_val)
+
+    sc_ = torch.pow(abs_val, gamma)  # 差距越大 难例加成
+    w_pos = alpha * sc_  # 正例比例
+    l_pos = mask_pos * w_pos * val_log  # 正例
+
+    w_neg = (1 - alpha) * sc_
+    l_neg = mask_neg * w_neg * val_log  # 反例
+    if reduction == 'none' and not is_merge:  # 分离返回
+        return l_pos, l_neg
+
+    loss = l_pos + l_neg
     if reduction == 'mean':
         return loss.mean(-1)
     elif reduction == 'sum':
@@ -354,11 +405,10 @@ class FocalLoss_v2(nn.Module):
         '''
         if self.is_oned:
             _pconf = pconf
-            logp = F.binary_cross_entropy_with_logits(pconf, gconf, reduction='none')
         else:
             _pconf = torch.sigmoid(pconf)
-            logp = F.binary_cross_entropy_with_logits(pconf, gconf, reduction='none')
-        pt = gconf * _pconf + (1 - gconf) * (1 - _pconf)
+        logp = F.binary_cross_entropy_with_logits(pconf, gconf, reduction='none')
+        pt = gconf * _pconf + (1 - gconf) * (1 - _pconf)  # >0正例
         modulating_factor = (1.0 - pt) ** self.gamma
         # tensor([0.25000, 0.75000, 0.25000, 0.75000])
         alpha_t = gconf * self.alpha + (1 - gconf) * (1 - self.alpha)
@@ -601,7 +651,7 @@ class GHMC_Loss(GHM_Loss_Base):
         return torch.abs(pconf.detach() - gconf)
 
     def i_loss_fun(self, pconf, gconf, weight):
-        return F.binary_cross_entropy_with_logits(pconf, gconf, weight, reduction=self.reduction)
+        return f_bce(pconf, gconf, weight)
 
 
 class GHMR_Loss(GHM_Loss_Base):
@@ -626,12 +676,15 @@ def t_ghm():
     pconf = torch.arange(1.0, -0.01, -0.1)
     gconf = torch.zeros_like(pconf)
 
-    print('--------------- 1-0.05,  1-0.5,  1-0.8,  0.6-0.56, 0.5-0.05, 0.1-0.9, 0-0.95,0-0.5, 0-0.2,  0-0.1')
-    gconf = torch.tensor([1, 1, 1., 0.6, 0.5, 0.1, 0, 0, 0, 0, 0])
-    pconf = torch.tensor([0.05, 0.5, 0.8, 0.56, 0.05, 0.9, 0.95, 0.5, 0.2, 0.1, 0.99])
+    # print('--------------- 1-0.05,  1-0.5,  1-0.8,  0.5-0.56, 0.5-0.05, 0.1-0.9, 0-0.95,0-0.5, 0-0.2,  0-0.1')
+    # print('--------------- 大,  中,  小,  0.5超小, 0.5小, 0.1超大, 中,小中, 小,  大')
 
-    input_1 = torch.torch.Tensor([[0.05, 0.25, .5], [0.15, 0.65, .75]])
-    target_1 = torch.Tensor([[1.0, 0.0, 1.], [0.0, 1.0, 1.]])
+    print('--------------- 超小,  中,  大,  超大')
+    input_1 = torch.tensor([0.56, 0.05, 0.9, 0.05, 0.5, 0.8, 0.95, 0.5, 0.2, 0.1, 0.99])
+    target_1 = torch.tensor([0.5, 0.5, 0.1, 1, 1, 1., 0, 0, 0, 0, 0])
+
+    # input_1 = torch.torch.Tensor([[0.05, 0.25, .5], [0.15, 0.65, .75]])
+    # target_1 = torch.Tensor([[1.0, 0.0, 1.], [0.0, 1.0, 1.]])
 
     input_2 = torch.Tensor([[0.75, 0.65], [0.85, 0.05]])
     target_2 = torch.Tensor([[1.0, 0.0], [0.0, 0.0]])
@@ -643,8 +696,19 @@ def t_ghm():
     ghmc_v2 = GHMC_Loss(num_bins=10, momentum=0.75)
     print('GHMC_Loss', ghmc_v2(input_1, target_1))
     print('bce', F.binary_cross_entropy(input_1, target_1, reduction='none'))
-    obj_FocalLoss_v2 = FocalLoss_v2()
-    print('obj_FocalLoss_v2', obj_FocalLoss_v2(input_1, target_1))
+    # obj_FocalLoss_v2 = FocalLoss_v2()
+    print('focalloss_v2', focalloss_v2(input_1, target_1))
+    v_ = focalloss_v3(input_1, target_1)
+    # print('focalloss_v3', v_)
+    show_res(v_, input_1, target_1, 'f_v3')
+
+
+def show_res(v_, input, target, name):
+    s = []
+    for i in range(len(v_)):
+        _t = '{:.4f}({:.2f},{:.2f})'.format(v_[i], input[i], target[i])
+        s.append(_t)
+    print(name, '\t'.join(s))
 
 
 if __name__ == '__main__':
