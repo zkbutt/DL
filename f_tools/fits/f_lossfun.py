@@ -255,7 +255,7 @@ def focal_loss4center2(pconf, gconf, reduction='none', a=2., b=4., ratio=1.):
     l_neg = ratio * mask_neg * neg_weights * torch.pow(pconf, a) * torch.log(1 - pconf)  # 反例
     loss = -(l_pos + l_neg)
 
-    show_distribution(pconf)
+    # show_distribution(pconf)
 
     if reduction == 'mean':
         return loss.mean()
@@ -415,7 +415,7 @@ class FocalLoss_v2(nn.Module):
         weight = alpha_t * modulating_factor
         loss = logp * weight
 
-        show_distribution(pconf)
+        # show_distribution(pconf)
 
         if self.reduction == 'mean':
             return loss.mean(-1)
@@ -629,8 +629,8 @@ class GHM_Loss_Base(nn.Module):
 
         n = mask.sum().item()  # 总样本数
         '''------调试代码--------'''
-        flog.debug('GHM_Loss:%s', [round(d.item(), 2) for d in nums_edges])  # 梯度分布
-        show_distribution(pconf)  # 在 pconf 分布
+        # flog.debug('GHM_Loss:%s', [round(d.item(), 2) for d in nums_edges])  # 梯度分布
+        # show_distribution(pconf)  # 在 pconf 分布
         # 统计有值的区间个数
         num_bins = (nums_edges > 0).sum().item()
 

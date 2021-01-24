@@ -6,7 +6,7 @@ curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 from torch import optim
-from f_tools.datas.data_loader import cfg_raccoon, DataLoader, cfg_type, cfg_type2, DataLoader2
+from f_tools.datas.data_loader import cfg_raccoon, cfg_type, cfg_type2, DataLoader2
 
 from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2, ModelOut4Resnet18, ModelOut4Mobilenet_v3, \
     ModelOut4Resnet50
@@ -24,21 +24,21 @@ from f_tools.fits.f_fit_fun import init_od, base_set, train_eval4od, fdatas_l2, 
 linux用这个   python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/train_yolov1.py
 tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_type3
 
-目标~~~
+差不多100轮收敛
 [ obj 2.33 || cls 0.33 || bbox 3.70 || total 6.36 ]
 
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.316
- Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.676
- Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.263
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.003
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.105
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.401
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.345
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.427
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.431
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.004
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.204
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.516
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.365
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.724
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.314
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.008
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.127
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.438
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.387
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.462
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.467
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.012
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.225
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.537
 '''
 from torchvision import models
 
@@ -113,12 +113,13 @@ def train_eval_set(cfg):
     # cfg.NUM_SAVE_INTERVAL = 100
     cfg.loss_args = {
         's_match': 'log_g',  # 'log' 'whoned' 'log_g'
-        's_conf': 'mse',  # 'mse' 'foc'
+        's_conf': 'foc',  # 'mse' 'foc'
         's_cls': 'bce',  # 'bce'  'ce'
     }
 
-    cfg.arg_focalloss_alpha = 0.75
+    cfg.arg_focalloss_alpha = 0.65
     cfg.IS_MIXTURE_FIX = True
+    cfg.NUM_ANC = 1
 
     # raccoon mobilenet_v2
 
@@ -126,12 +127,9 @@ def train_eval_set(cfg):
 
     # raccoon mobilenet_v3
 
-    # type3 resnet18 0:00:29
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18c0.01-80__p55.8_r38.3' + '.pth'  # focloss conf 0.05 nms=0.7
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18c0.05-80__p55.7_r37.6' + '.pth'  # 57_34_
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-110_0.076' + '.pth'
-    '''cls455收  wh550收'''
-    cfg.MAPS_VAL = [0.589, 0.365]
+    # type3 resnet18
+    cfg.FILE_NAME_WEIGHT = '/zz/t_yolo1_type3_res18c0.01-110_4.47_p72.4_r46.2' + '.pth'  # conf-0.01 nms-0.5
+    cfg.MAPS_VAL = [0.724, 0.462]
 
     cfg.LR0 = 1e-3
     cfg.TB_WRITER = True

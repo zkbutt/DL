@@ -1,13 +1,13 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from PIL import Image
 from f_pytorch.tools_model.f_model_api import finit_weights, CBL, finit_conf_bias
 from f_pytorch.tools_model.fmodels.model_modules import BottleneckCSP, SAM, SPP, SPPv2
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fits.f_lossfun import f_ghmc_v3, GHMC_Loss, focalloss_v2, FocalLoss_v2, focal_loss4center2, \
     show_distribution, focalloss_v3, f_bce
+from f_tools.fits.f_match import boxes_encode4yolo, boxes_decode4yolo
 from f_tools.fits.f_predictfun import label_nms
 from f_tools.fun_od.f_boxes import offxy2xy, xywh2ltrb, calc_iou4ts, calc_iou4some_dim, ltrb2xywh
 from f_tools.pic.f_show import f_plt_show_cv
@@ -32,64 +32,6 @@ class FMSELoss(nn.Module):
             return pos_loss, neg_loss
 
 
-def boxes_decode4yolo1(ptxywh, grid_h, grid_w, cfg):
-    '''
-    解码
-    :param ptxywh:
-    :param grid_h:
-    :param grid_w:
-    :param cfg:
-    :return: 原图归一化
-    '''
-    device = ptxywh.device
-    _xy_grid = torch.sigmoid(ptxywh[:, :, :2]) + f_mershgrid(grid_h, grid_w, is_rowcol=False).to(device)
-    hw_ts = torch.tensor((grid_h, grid_w), device=device)  # /13
-    ptxywh[:, :, :2] = torch.true_divide(_xy_grid, hw_ts)  # 原图归一化
-
-    if cfg.loss_args['s_match'] == 'whoned':
-        ptxywh[:, :, 2:4] = torch.sigmoid(ptxywh[:, :, 2:])
-    elif cfg.loss_args['s_match'] == 'log':
-        ptxywh[:, :, 2:4] = torch.exp(ptxywh[:, :, 2:]) / cfg.IMAGE_SIZE[0]  # wh log-exp
-    elif cfg.loss_args['s_match'] == 'log_g':
-        ptxywh[:, :, 2:4] = torch.exp(ptxywh[:, :, 2:]) / grid_h  # 原图归一化
-    else:
-        raise Exception('类型错误')
-    # return ptxywh
-
-
-def boxes_encode4yolo1(boxes_ltrb, grid_h, grid_w, size_in, device, cfg):
-    '''
-    编码
-    :param boxes_ltrb: 归一化尺寸
-    :param grid_h:
-    :param grid_w:
-    :param size_in:
-    :param device:
-    :return: 特图尺寸
-    '''
-    # ltrb -> xywh
-    boxes_xywh = ltrb2xywh(boxes_ltrb)
-    whs = boxes_xywh[:, 2:]
-    cxys = boxes_xywh[:, :2]
-    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
-
-    colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
-    offset_xys = torch.true_divide(colrows_index, grid_h)  # 网络index 对应归一化的实距
-    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
-
-    if cfg.loss_args['s_match'] == 'log':
-        twhs = (whs * torch.tensor(size_in, device=device)).log()
-    elif cfg.loss_args['s_match'] == 'log_g':
-        twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
-    else:
-        raise Exception("cfg.loss_args['s_match'] 类型错误 %s" % cfg.loss_args['s_match'])
-
-    txywhs_g = torch.cat([txys, twhs], dim=-1)
-    # 正例的conf
-    weights = 2.0 - torch.prod(whs, dim=-1)
-    return txywhs_g, weights, colrows_index
-
-
 def fmatch4yolov1(boxes_ltrb, labels, grid, size_in, device, cfg, img_ts=None):
     '''
     匹配 gyolo 如果需要计算IOU 需在这里生成
@@ -101,7 +43,7 @@ def fmatch4yolov1(boxes_ltrb, labels, grid, size_in, device, cfg, img_ts=None):
     :return:
     '''
     # 需要在dataset时验证标注有效性
-    txywhs_g, weights, colrows_index = boxes_encode4yolo1(boxes_ltrb, grid, grid, size_in, device, cfg)
+    txywhs_g, weights, colrows_index = boxes_encode4yolo(boxes_ltrb, grid, grid, device, cfg)
 
     if cfg.loss_args['s_cls'] == 'ce':  # 多值交叉熵匹配
         # conf-1,cls-1,box-4,weight-1
@@ -231,7 +173,8 @@ class LossYOLO_v1(nn.Module):
             gcls = gyolos[:, :, 1].long()  # torch.Size([5, 169])
 
             '''-----------这两个只是正例  正例计算损失,按批量----------'''
-            loss_cls = (F.cross_entropy(pcls, gcls, reduction="none") * gconf).sum(-1).mean() * cfg.LOSS_WEIGHT[2]
+            _loss_val = F.cross_entropy(pcls, gcls, reduction="none")
+            loss_cls = (_loss_val * gconf).sum(-1).mean() * cfg.LOSS_WEIGHT[2]
             _dim = 1 + 1
 
         elif cfg.loss_args['s_cls'] == 'bce':  # 二值交叉熵匹配
@@ -276,47 +219,38 @@ class LossYOLO_v1(nn.Module):
             # loss_conf_pos = (_loss_val * gconf).sum(-1).mean() * cfg.LOSS_WEIGHT[0]
             # loss_conf_neg = (_loss_val * torch.logical_not(gconf)).sum(-1).mean() * cfg.LOSS_WEIGHT[1]
         elif cfg.loss_args['s_conf'] == 'mse':
-            fmse_loss = FMSELoss(reduction='mean')
-            loss_conf_pos, loss_conf_neg = fmse_loss(pconf, gconf)
-            loss_conf_pos = loss_conf_pos * 5.
-            loss_conf_neg = loss_conf_neg * 1.
+            # fmse_loss = FMSELoss(reduction='mean')
+            # loss_conf_pos, loss_conf_neg = fmse_loss(pconf, gconf)
+            # loss_conf_pos = loss_conf_pos * 5.
+            # loss_conf_neg = loss_conf_neg * 1.
 
-            # _loss_val = F.mse_loss(pconf, gconf, reduction="none")
+            _loss_val = F.mse_loss(pconf, gconf, reduction="none")
             # _loss_val = F.binary_cross_entropy_with_logits(pconf, gconf, reduction="none")
-            # loss_conf_pos = (_loss_val * gconf).sum(-1).mean() * 5.
-            # loss_conf_neg = (_loss_val * torch.logical_not(gconf)).sum(-1).mean() * 1.
+            loss_conf_pos = (_loss_val * gconf).sum(-1).mean() * 5.
+            loss_conf_neg = (_loss_val * torch.logical_not(gconf)).sum(-1).mean() * 1.
             # loss_conf = loss_conf_pos + loss_conf_neg
         else:
             raise Exception('类型错误')
-
-        # loss_conf = (self.ghmc_loss(pconf, gconf)).sum(-1).mean()
-        # loss_conf, _ = f_ghmc_v3(pconf, gconf)
-        # loss_conf = loss_conf.sum(-1).mean()
-        # f_focalloss_v2 = FocalLoss_v2(alpha=0.25, is_oned=True)
-        # loss_conf = (f_focalloss_v2(pconf, gconf)).sum(-1).mean()
-        # loss_conf = (focal_loss4center2(pconf, gconf)).sum() / gconf.sum()
-
-        # _loss_val = F.binary_cross_entropy_with_logits(pbox, gbox, reduction="none")
-        # loss_box = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
 
         if cfg.loss_args['s_match'] == 'whoned':
             # loss_box = (F.binary_cross_entropy_with_logits(pbox, gbox, reduction="none").sum(-1) * gconf * weight) \
             #     .sum(-1).mean()
             # loss_total = loss_conf_pos + loss_conf_neg + loss_cls + loss_box
             # log_dict['l_box'] = loss_box.item()
-            loss_txty = (F.binary_cross_entropy_with_logits(ptxty, gtxty, reduction="none").sum(-1)
-                         * gconf * weight).sum(-1).mean()
-            loss_twth = (F.binary_cross_entropy_with_logits(ptwth, gtwth, reduction="none").sum(-1)
-                         * gconf * weight).sum(-1).mean()
+            _loss_val = F.binary_cross_entropy_with_logits(ptxty, gtxty, reduction="none")
+            loss_txty = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
+            _loss_val = F.binary_cross_entropy_with_logits(ptwth, gtwth, reduction="none")
+            loss_twth = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
             # loss_twth = (torch.abs(ptwth - gtwth).sum(-1) * gconf * weight).sum(-1).mean()
         elif cfg.loss_args['s_match'] == 'log' or cfg.loss_args['s_match'] == 'log_g':
             # bce
             # ptxty = ptxty.sigmoid()
             # loss_txty = (f_bce(ptxty, gtxty).sum(-1) * gconf * weight).sum(-1).mean()
-            loss_txty = (F.binary_cross_entropy_with_logits(ptxty, gtxty, reduction="none").sum(-1) * gconf * weight) \
-                .sum(-1).mean()
+            _loss_val = F.binary_cross_entropy_with_logits(ptxty, gtxty, reduction="none")
+            loss_txty = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
             # loss_txty = (F.mse_loss(ptxty, gtxty, reduction="none").sum(-1) * gconf * weight).sum(-1).mean()
-            loss_twth = (F.mse_loss(ptwth, gtwth, reduction="none").sum(-1) * gconf * weight).sum(-1).mean()
+            _loss_val = F.mse_loss(ptwth, gtwth, reduction="none")
+            loss_twth = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
         else:
             raise Exception('类型错误')
 
@@ -385,7 +319,7 @@ class PredictYolo_v1(nn.Module):
         ptxywh = pyolos[:, :, 1 + cfg.NUM_CLASSES:]
 
         ''' 预测 这里是修复是 xywh'''
-        boxes_decode4yolo1(ptxywh, h, w, cfg)
+        boxes_decode4yolo(ptxywh, h, w, cfg)
 
         pboxes_ltrb1 = xywh2ltrb(ptxywh)[mask_pos]
         pboxes_ltrb1 = torch.clamp(pboxes_ltrb1, min=0., max=1.)

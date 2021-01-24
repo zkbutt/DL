@@ -1,79 +1,17 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from PIL import Image
 from f_pytorch.tools_model.backbones.darknet import darknet19
 from f_pytorch.tools_model.f_layer_get import ModelOuts4DarkNet
 from f_pytorch.tools_model.f_model_api import finit_weights, CBL, finit_conf_bias, ReorgLayer
-from f_pytorch.tools_model.fmodels.model_modules import BottleneckCSP, SAM, SPP, SPPv2
-from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fits.f_lossfun import f_ghmc_v3, GHMC_Loss, focalloss_v2, FocalLoss_v2, focal_loss4center2, \
     show_distribution, focalloss_v3, f_bce
+from f_tools.fits.f_match import boxes_encode4yolo, boxes_decode4yolo
 from f_tools.fits.f_predictfun import label_nms
 from f_tools.fun_od.f_boxes import offxy2xy, xywh2ltrb, calc_iou4ts, calc_iou4some_dim, ltrb2xywh, bbox_iou4one
 from f_tools.pic.f_show import f_plt_show_cv
 from f_tools.yufa.x_calc_adv import f_mershgrid
-
-
-def boxes_decode4yolo2(ptxywh, grid_h, grid_w, cfg):
-    '''
-    编码
-    :param ptxywh: 预测的是在特图的 偏移 和 缩放比例
-    :param grid_h:
-    :param grid_w:
-    :param cfg:
-    :return: 输出归一化
-    '''
-    device = ptxywh.device
-    _xy_grid = torch.sigmoid(ptxywh[:, :, :2]) \
-               + f_mershgrid(grid_h, grid_w, is_rowcol=False, num_repeat=cfg.NUM_ANC).to(device)
-    hw_ts = torch.tensor((grid_h, grid_w), device=device)  # /13
-    ptxywh[:, :, :2] = torch.true_divide(_xy_grid, hw_ts)  # 原图归一化
-
-    if cfg.loss_args['s_match'] == 'whoned':
-        ptxywh[:, :, 2:4] = torch.sigmoid(ptxywh[:, :, 2:])
-    elif cfg.loss_args['s_match'] == 'log':
-        ptxywh[:, :, 2:4] = torch.exp(ptxywh[:, :, 2:]) / cfg.IMAGE_SIZE[0]  # wh log-exp
-    elif cfg.loss_args['s_match'] == 'log_g':
-        ptxywh[:, :, 2:4] = torch.exp(ptxywh[:, :, 2:]) / grid_h  # 原图归一化
-    else:
-        raise Exception('类型错误')
-    # return ptxywh
-
-
-def boxes_encode4yolo2(boxes_ltrb, grid_h, grid_w, device, cfg):
-    '''
-    解码
-    :param boxes_ltrb: 归一化尺寸
-    :param grid_h:
-    :param grid_w:
-    :param device:
-    :param cfg:
-    :return:
-    '''
-    # ltrb -> xywh
-    boxes_xywh = ltrb2xywh(boxes_ltrb)
-    whs = boxes_xywh[:, 2:]
-    cxys = boxes_xywh[:, :2]
-    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
-
-    colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
-    offset_xys = torch.true_divide(colrows_index, grid_h)  # 网络index 对应归一化的实距
-    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
-
-    if cfg.loss_args['s_match'] == 'log':
-        # twhs = (whs * torch.tensor(size_in, device=device)).log()
-        pass
-    elif cfg.loss_args['s_match'] == 'log_g':
-        twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
-    else:
-        raise Exception("cfg.loss_args['s_match'] 类型错误 %s" % cfg.loss_args['s_match'])
-
-    txywhs_g = torch.cat([txys, twhs], dim=-1)
-    # 正例的conf
-    weights = 2.0 - torch.prod(whs, dim=-1)
-    return txywhs_g, weights, colrows_index
 
 
 def fmatch4yolov2(gboxes_ltrb, labels, grid, dim, device, cfg, img_ts=None):
@@ -99,7 +37,7 @@ def fmatch4yolov2(gboxes_ltrb, labels, grid, dim, device, cfg, img_ts=None):
     iou2 = calc_iou4ts(xywh2ltrb(giou_boxes_xywh), xywh2ltrb(anciou_xywh))
     mask = iou2 > 0.5
 
-    txywhs_g, weights, colrows_index = boxes_encode4yolo2(gboxes_ltrb, grid, grid, device, cfg)
+    txywhs_g, weights, colrows_index = boxes_encode4yolo(gboxes_ltrb, grid, grid, device, cfg)
     # conf-1, cls-3, tbox-4, weight-1, gbox-4   torch.Size([13, 13, 13])
     p_yolo_one = torch.zeros((grid, grid, cfg.NUM_ANC, dim), device=device)
 
@@ -205,29 +143,29 @@ class LossYOLO_v2(nn.Module):
         gyolos = gyolos.view(batch, -1, dim)  # torch.Size([3, 845, 13])
         '''--------------pred提取---------------'''
         # [3, 40, 13, 13] -> [3, 8, 5, 13*13] -> [3, 169, 5, 8]
-        pyolos = pyolos.view(batch, 1 + cfg.NUM_CLASSES + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1)
-        pyolos = pyolos.view(batch, -1, 1 + cfg.NUM_CLASSES + 4).contiguous()  # torch.Size([3, 169, 8])
+        pyolos = pyolos.view(batch, 1 + cfg.NUM_CLASSES + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
+        pyolos = pyolos.view(batch, -1, 1 + cfg.NUM_CLASSES + 4)  # torch.Size([3, 169, 8])
 
-        # conf损失
+        # ----------------conf损失----------------
         pconf = pyolos[:, :, 0].sigmoid()  # torch.Size([3, 845])
         gconf = gyolos[:, :, 0]
-        weight = gyolos
+        weight = gyolos[:, :, 8]
         mask_pos = gconf == 1  # 忽略的-1不计
         mask_neg = gconf == 0
         _loss_val = F.mse_loss(pconf, gconf, reduction="none")
         loss_conf_pos = (_loss_val * mask_pos).sum(-1).mean() * 5.
         loss_conf_neg = (_loss_val * mask_neg).sum(-1).mean() * 1.
 
-        # cls损失
+        # ----------------cls损失----------------
         s_ = 1 + cfg.NUM_CLASSES
         pcls = pyolos[:, :, 1:s_][mask_pos]
         gcls = gyolos[:, :, 1:s_][mask_pos]
         _loss_val = F.binary_cross_entropy_with_logits(pcls, gcls, reduction="none")
         loss_cls = _loss_val.sum(-1).mean()
 
-        # box损失
+        # ----------------box损失-----------------
         ptxty = pyolos[:, :, s_:s_ + 2]
-        ptwth = pyolos[:, :, s_ + 2:s_ + 4]  # 这里不需要归一
+        ptwth = pyolos[:, :, s_ + 2:s_ + 4]
         gtxty = gyolos[:, :, s_:s_ + 2]
         gtwth = gyolos[:, :, s_ + 2:s_ + 4]
         _loss_val = F.binary_cross_entropy_with_logits(ptxty, gtxty, reduction="none")
@@ -293,7 +231,7 @@ class PredictYOLO_v2(nn.Module):
         ptxywh = pyolos[:, :, 1 + cfg.NUM_CLASSES:]
 
         ''' 预测 这里是修复是 xywh   torch.Size([3, 845, 4])'''
-        boxes_decode4yolo2(ptxywh, h, w, cfg)
+        boxes_decode4yolo(ptxywh, h, w, cfg)
 
         pboxes_ltrb1 = xywh2ltrb(ptxywh)[mask_pos]
         pboxes_ltrb1 = torch.clamp(pboxes_ltrb1, min=0., max=1.)

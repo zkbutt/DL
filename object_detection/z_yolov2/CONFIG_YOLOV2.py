@@ -7,7 +7,7 @@ class CFG(CfgBase):
     IS_LOCK_BACKBONE_WEIGHT = False  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
     END_EPOCH = 300
 
-    IS_TRAIN = False
+    IS_TRAIN = True
     IS_COCO_EVAL = True
     IS_VISUAL = False
     IS_TRAIN_DEBUG = True
@@ -29,5 +29,4 @@ class CFG(CfgBase):
     THRESHOLD_PREDICT_NMS = 0.5  # 用于预测的阀值
 
     '''模型参数'''
-    NUM_BBOX = 2
     SAVE_FILE_NAME = 't_yolo2_'  # 这里要改

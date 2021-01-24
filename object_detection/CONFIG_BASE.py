@@ -39,6 +39,7 @@ class CfgBase:
 
     IS_MIXTURE_FIX = True  # 这个不要动 半精度训练
     EPOCH_WARMUP = 2
+    FORWARD_COUNT = 1  # 多次迭代再反向
 
     # import getpass
     # # 获取当前系统用户名

@@ -7,21 +7,20 @@ rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 '''解决linux导入出错 完成'''
 from f_tools.datas.data_loader import DataLoader2
+from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
+from object_detection.z_yolov2.train_yolov2 import train_eval_set, init_model
 from f_tools.fits.f_fit_fun import train_eval4od, fdatas_l2, show_train_info
-from object_detection.z_yolov1.train_yolov1 import init_model, train_eval_set
-from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
 from f_tools.fits.f_gpu.f_gpu_api import mgpu_init, mgpu_process0_init
 import torch
 from f_tools.GLOBAL_LOG import flog
 
 '''
 \home\feadre\.conda\pkgs\pytorch-1.6.0-py3.7_cuda10.2.89_cudnn7.6.5_0\lib\python3.7\site-packages\torch\distributed\launch.py
-pycharm用这个 --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/train_yolov1_DDP.py
+pycharm用这个 --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_yolov2/train_yolov2_DDP.py
 linux用这个   
-python -m torch.distributed.launch --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/train_yolov1_DDP.py
+python -m torch.distributed.launch --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_yolov2/train_yolov2_DDP.py
 
-tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_type3
-tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_type3_ap724_462
+tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2/runs_type3
 '''
 
 if __name__ == '__main__':
@@ -32,7 +31,7 @@ if __name__ == '__main__':
 
     # cfg.LR0 = 1e-3
     cfg.IS_FORCE_SAVE = False
-    cfg.PATH_PROJECT_ROOT = cfg.PATH_HOST + '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1'  # 这个要改
+    cfg.PATH_PROJECT_ROOT = cfg.PATH_HOST + '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2'  # 这个要改
 
     args, device = mgpu_init()
 

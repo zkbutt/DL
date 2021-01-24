@@ -3,8 +3,68 @@ import torch
 
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fun_od.f_boxes import ltrb2xywh, xy2offxy, xywh2ltrb, calc_iou4ts, offxy2xy, calc_iou4some_dim
-from f_tools.pic.f_show import f_plt_od_f
+from f_tools.yufa.x_calc_adv import f_mershgrid
 from object_detection.z_center.utils import gaussian_radius, draw_gaussian
+
+
+def boxes_decode4yolo(ptxywh, grid_h, grid_w, cfg):
+    '''
+    编码
+    :param ptxywh: 预测的是在特图的 偏移 和 缩放比例
+    :param grid_h:
+    :param grid_w:
+    :param cfg:
+    :return: 输出归一化
+    '''
+    device = ptxywh.device
+    _xy_grid = torch.sigmoid(ptxywh[:, :, :2]) \
+               + f_mershgrid(grid_h, grid_w, is_rowcol=False, num_repeat=cfg.NUM_ANC).to(device)
+    hw_ts = torch.tensor((grid_h, grid_w), device=device)  # /13
+    ptxywh[:, :, :2] = torch.true_divide(_xy_grid, hw_ts)  # 原图归一化
+
+    if cfg.loss_args['s_match'] == 'whoned':
+        ptxywh[:, :, 2:4] = torch.sigmoid(ptxywh[:, :, 2:])
+    elif cfg.loss_args['s_match'] == 'log':
+        ptxywh[:, :, 2:4] = torch.exp(ptxywh[:, :, 2:]) / cfg.IMAGE_SIZE[0]  # wh log-exp
+    elif cfg.loss_args['s_match'] == 'log_g':
+        ptxywh[:, :, 2:4] = torch.exp(ptxywh[:, :, 2:]) / grid_h  # 原图归一化
+    else:
+        raise Exception('类型错误')
+    # return ptxywh
+
+
+def boxes_encode4yolo(boxes_ltrb, grid_h, grid_w, device, cfg):
+    '''
+    解码
+    :param boxes_ltrb: 归一化尺寸
+    :param grid_h:
+    :param grid_w:
+    :param device:
+    :param cfg:
+    :return:
+    '''
+    # ltrb -> xywh
+    boxes_xywh = ltrb2xywh(boxes_ltrb)
+    whs = boxes_xywh[:, 2:]
+    cxys = boxes_xywh[:, :2]
+    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
+
+    colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xys = torch.true_divide(colrows_index, grid_h)  # 网络index 对应归一化的实距
+    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
+
+    if cfg.loss_args['s_match'] == 'log':
+        # twhs = (whs * torch.tensor(size_in, device=device)).log()
+        pass
+    elif cfg.loss_args['s_match'] == 'log_g':
+        twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
+    else:
+        raise Exception("cfg.loss_args['s_match'] 类型错误 %s" % cfg.loss_args['s_match'])
+
+    txywhs_g = torch.cat([txys, twhs], dim=-1)
+    # 正例的conf
+    weights = 2.0 - torch.prod(whs, dim=-1)
+    return txywhs_g, weights, colrows_index
 
 
 @torch.no_grad()

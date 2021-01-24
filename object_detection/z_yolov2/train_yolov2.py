@@ -10,7 +10,7 @@ from object_detection.z_yolov2.nets.net_yolov2 import Yolo_v2
 from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
 from f_pytorch.tools_model.backbones.darknet import darknet19
 from torch import optim
-from f_tools.datas.data_loader import cfg_raccoon, DataLoader, cfg_type, cfg_type2, DataLoader2
+from f_tools.datas.data_loader import cfg_raccoon, cfg_type, cfg_type2, DataLoader2
 
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init, mgpu_process0_init
@@ -20,24 +20,9 @@ from f_tools.fits.f_fit_fun import init_od, base_set, train_eval4od, fdatas_l2, 
 
 '''
 
-linux用这个   python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/train_yolov1.py
-tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_type3
+linux用这个   python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov2/train_yolov2.py
+tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2/runs_type3
 
-目标~~~
-[ obj 2.33 || cls 0.33 || bbox 3.70 || total 6.36 ]
-
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.316
- Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.676
- Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.263
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.003
- Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.105
- Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.401
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.345
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.427
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.431
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.004
- Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.204
- Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.516
 '''
 
 
@@ -79,8 +64,8 @@ def train_eval_set(cfg):
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
     # batch = 20  # raccoon
-    # batch = 32  # type
-    batch = 3  # type
+    batch = 32  # type
+    # batch = 3  # type
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 3
         cfg.IS_COCO_EVAL = False
@@ -99,19 +84,16 @@ def train_eval_set(cfg):
     # cfg.NUM_SAVE_INTERVAL = 100
     cfg.loss_args = {
         's_match': 'log_g',  # 'log' 'whoned' 'log_g'
-        's_conf': 'foc',  # 'mse' 'foc'
-        's_cls': 'bce',  # 'bce'  'ce'
+        's_conf': 'mse',  # 'mse' 'foc'
     }
+    print(cfg.loss_args)
 
     cfg.arg_focalloss_alpha = 0.75
     cfg.IS_MIXTURE_FIX = True
 
-    # type3 resnet18 0:00:29
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18c0.01-80__p55.8_r38.3' + '.pth'  # focloss conf 0.05 nms=0.7
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18c0.05-80__p55.7_r37.6' + '.pth'  # 57_34_
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-50_3.307' + '.pth'
-    '''cls455收  wh550收'''
-    cfg.MAPS_VAL = [0.568, 0.341]
+    # type3 dark19
+    cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # conf-0.01 nms-0.5
+    cfg.MAPS_VAL = [0.724, 0.463]
 
     cfg.LR0 = 1e-3
     cfg.TB_WRITER = True
