@@ -27,6 +27,9 @@ PIL九种模型为1，L，P，RGB，RGBA，CMYK，YCbCr，I，F
 
 
 def f转换():
+    img_np = cv2.imread(file_img)
+    img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+
     # --------tensor2PIL---------
     # img_tensor = torch.randint(0, 255, (3, 400, 300))  # c,h,w
     # img_tensor = F.to_tensor(img_tensor)
@@ -69,7 +72,7 @@ def f转换():
 if __name__ == '__main__':
     # f转换()
     file_img = r'D:\tb\tb\ai_code\DL\_test_pic\2007_000042.jpg'  # 500 335
-    img_pil = Image.open(file_img).convert('RGB') #
+    img_pil = Image.open(file_img).convert('RGB')  #
     img_tensor = F.to_tensor(img_pil)  # c,h,w == c,row,col
     print(img_tensor.shape)
     print(img_pil.size)

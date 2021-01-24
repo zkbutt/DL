@@ -17,31 +17,31 @@ def f布尔同维1():
 
 
 def t_axis():
-    a = np.arange(1, 5).reshape(2, 2)
-    b = torch.tensor(a)
-    print(a)
+    a_np = np.arange(1, 5).reshape(2, 2)
+    b_ts = torch.tensor(a_np)
+    print(a_np)
     print('单体复制')
-    print(np.repeat(a, 2))
-    print(torch.repeat_interleave(b.view(-1), 2, dim=0))
-    print(np.repeat(a, 2, axis=0))
-    print(torch.repeat_interleave(b, 2, dim=0))  # 默认dim=0
-    print(np.repeat(a, 2, axis=1))
-    print(torch.repeat_interleave(b, 2, dim=1))
-    print(np.repeat(a, [2, 3], axis=0))
-    print(torch.repeat_interleave(b, [2, 3], dim=0))  # 不支持数组
+    print(np.repeat(a_np, 2))
+    print(torch.repeat_interleave(b_ts.view(-1), 2, dim=0))
+    print(np.repeat(a_np, 2, axis=0))
+    print(torch.repeat_interleave(b_ts, 2, dim=0))  # 默认dim=0
+    print(np.repeat(a_np, 2, axis=1))
+    print(torch.repeat_interleave(b_ts, 2, dim=1))
+    print(np.repeat(a_np, [2, 3], axis=0))
+    print(torch.repeat_interleave(b_ts, [2, 3], dim=0))  # 不支持数组
 
     print('整体复制')
-    print(np.tile(a, (2, 1)))
-    print(b.repeat(2, 1))
+    print(np.tile(a_np, (2, 1)))
+    print(b_ts.repeat(2, 1))
 
     print('其它')
-    print(np.concatenate([a, a], axis=0))  # 看着整体扩展,默认为 axis=0
-    print(np.concatenate([a, a], axis=1))  # 看着整体
+    print(np.concatenate([a_np, a_np], axis=0))  # 看着整体扩展,默认为 axis=0
+    print(np.concatenate([a_np, a_np], axis=1))  # 看着整体
 
-    print(b.repeat(1, 2))  # 看着整体扩展
-    print(torch.cat([b, b], dim=0))  # 与上面等价,看着整体扩展 默认为 dim=0
-    print(torch.cat([b, b], dim=1))  # 与上面等价,看着整体扩展
-    print(torch.cat([b[:, :1].repeat(1, 2), b[:, 1:2].repeat(1, 3)], dim=1))  # 交替扩展
+    print(b_ts.repeat(1, 2))  # 看着整体扩展
+    print(torch.cat([b_ts, b_ts], dim=0))  # 与上面等价,看着整体扩展 默认为 dim=0
+    print(torch.cat([b_ts, b_ts], dim=1))  # 与上面等价,看着整体扩展
+    print(torch.cat([b_ts[:, :1].repeat(1, 2), b_ts[:, 1:2].repeat(1, 3)], dim=1))  # 交替扩展
 
 
 # torch.repeat ~~~ np.tile  np.repeat ~~~ torch.repeat_interleave

@@ -136,7 +136,7 @@ def train_eval4od(start_epoch, model, optimizer,
 
         if cfg.IS_TRAIN:
             model.train()
-            flog.info('训练开始 %s', epoch + 1)
+            flog.info('训练开始 %s  半精度训练 %s' % (epoch + 1, cfg.IS_MIXTURE_FIX))
             log_dict = f_train_one_epoch4(
                 model=model,
                 fun_datas_l2=fun_datas_l2,
@@ -208,7 +208,7 @@ def show_train_info(cfg, loader_train, loader_val_coco):
         flog.debug('%s dataset_val 数量: %s' % (cfg.PATH_TENSORBOARD, len(loader_val_coco.dataset)))
         print('类型 ', loader_val_coco.dataset.ids_classes)
     print('cfg.BATCH_SIZE---', cfg.BATCH_SIZE)
-    print('cfg.LOSS_WEIGHT---', cfg.LOSS_WEIGHT)
+    flog.warning('cfg.LOSS_WEIGHT--- %s' % cfg.LOSS_WEIGHT)
 
 
 if __name__ == '__main__':

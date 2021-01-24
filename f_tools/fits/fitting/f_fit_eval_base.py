@@ -17,6 +17,7 @@ from tqdm import tqdm
 import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
+from f_tools.datas.f_coco.coco_api import f_show_coco_pics
 from f_tools.datas.f_coco.coco_eval import CocoEvaluator
 from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_fix_txt, f_recover_gt
 from f_tools.datas.f_map.map_go import f_do_fmap
@@ -25,9 +26,8 @@ import torch.distributed as dist
 
 from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank, fis_mgpu, is_main_process
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
-from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
-from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od, \
-    f_plt_show_pil, show_pic_ts
+from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od_pil, \
+    f_plt_show_pil, show_pic_ts, f_plt_od_np
 
 
 def calc_average_loss(value, log_dict):
@@ -70,9 +70,6 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
     if fis_mgpu():
         # flog.debug('get_rank %s 这里等待', get_rank())
         torch.distributed.barrier()  # 等待GPU
-
-    if cfg.IS_MIXTURE_FIX:
-        flog.warning('半精度训练%s', cfg.IS_MIXTURE_FIX)
 
     metric_logger = MetricLogger(is_show_log=True, delimiter=" ")  # 日志记录器
     # if is_main_process():  # 多gpu主进程 这里要报错
@@ -144,15 +141,15 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
     for k, v in log_dict.items():
         log_dict_avg[k] = metric_logger.meters[k].avg
 
-    if fis_mgpu() and not is_main_process():
-        # 只有0进程才需要保存
-        return log_dict_avg
-
     if lr_scheduler is not None:
         # 每批的LR更新
         # flog.warning('更新 lr_scheduler loss:%s', log_dict['l_total'])
         # lr_scheduler.step(log_dict['l_total'])  # 更新学习
         lr_scheduler.step(epoch)  # 更新学习
+
+    if fis_mgpu() and not is_main_process():
+        # 只有0进程才需要保存
+        return log_dict_avg
 
     # if epoch in cfg.lr_scheduler:
     #     cfg.LR0 = cfg.LR0 * 0.1
@@ -228,6 +225,10 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
             else:
                 _sizes.append(torch.tensor(_s))  # tnesor
 
+            # if cfg.IS_VISUAL:
+            #     coco_gt = data_loader.dataset.coco
+            #     f_show_coco_pics(coco_gt, data_loader.dataset.path_img, ids_img=[target['image_id']])
+
         ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4, g_targets)
         if p_labels is None or len(p_labels) == 0:
             num_no_pos += len(data_loader)
@@ -247,20 +248,41 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
                 if cfg.IS_VISUAL:
                     img_ts = img_ts4[i]
                     # flog.debug('nms后 预测共有多少个目标: %s' % p_boxes_ltrb[mask].shape[0])
-                    from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
-                    img_ts = f_recover_normalization4ts(img_ts)
-                    from torchvision.transforms import functional as transformsF
-                    img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
-                    # 处理完后尺寸
+                    # from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
+                    # img_ts = f_recover_normalization4ts(img_ts)
+                    # from torchvision.transforms import functional as transformsF
+                    # img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
+                    # # 处理完后尺寸
+                    # _size = torch.tensor(cfg.IMAGE_SIZE * 2)
+                    # p_boxes_ltrb_f = p_boxes_ltrb[mask].cpu() * _size
+                    # f_plt_od(img_pil, p_boxes_ltrb_f,
+                    #          g_boxes_ltrb=targets[i]['boxes'].cpu(),  # gbox 默认不归一化
+                    #          ids2classes=data_loader.dataset.ids_classes,
+                    #          labels=p_labels[mask],
+                    #          scores=p_scores[mask].tolist(),
+                    #          is_recover_size=False
+                    #          )
+
                     _size = torch.tensor(cfg.IMAGE_SIZE * 2)
-                    p_boxes_ltrb_f = p_boxes_ltrb[mask].cpu() * _size
-                    f_plt_od(img_pil, p_boxes_ltrb_f,
-                             g_boxes_ltrb=targets[i]['boxes'].cpu(),  # gbox 默认不归一化
-                             ids2classes=data_loader.dataset.ids_classes,
-                             labels=p_labels[mask],
-                             scores=p_scores[mask].tolist(),
-                             is_recover_size=False
-                             )
+                    coco = data_loader.dataset.coco
+                    img_info = coco.loadImgs([image_id])
+                    file_img = os.path.join(data_loader.dataset.path_img, img_info[0]['file_name'])
+
+                    img_np = cv2.imread(file_img)
+                    img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+                    # import skimage.io as io
+                    # h,w,c
+                    # img_np = io.imread(file_img)
+                    whwh = np.tile(np.array(img_np.shape[:2][::-1]), 2)
+
+                    p_boxes_ltrb_f = p_boxes_ltrb[mask].cpu() * whwh
+                    f_plt_od_np(img_np, p_boxes_ltrb_f,
+                                g_boxes_ltrb=targets[i]['boxes'].cpu() / _size * whwh,  # gbox 默认不归一化
+                                ids2classes=data_loader.dataset.ids_classes,
+                                labels=p_labels[mask],
+                                scores=p_scores[mask].tolist(),
+                                is_recover_size=False
+                                )
 
                 # 恢复真实尺寸(原装未处理) coco需要 ltwh
                 boxes_ltwh = ltrb2ltwh(p_boxes_ltrb[mask] * size.repeat(2)[None])

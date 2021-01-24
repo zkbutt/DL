@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_loader import cre_transform4resize
+from f_tools.datas.data_loader import cre_transform_resize4pil
 from f_tools.f_general import get_path_root
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic
 from f_tools.pic.f_show import f_plot_od4pil, f_show_od4pil
@@ -40,7 +40,7 @@ if __name__ == '__main__':
     model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=None)
     model.eval()
 
-    data_transform = cre_transform4resize(cfg)
+    data_transform = cre_transform_resize4pil(cfg)
 
     # 这里是原图
     for img, _ in dataset_val:

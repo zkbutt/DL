@@ -13,6 +13,7 @@ def rand(a=0., b=1.):
 
 
 def get_path_root():
+    '''os.path.dirname(os.path.abspath(__file__))'''
     debug_vars = dict((a, b) for a, b in os.environ.items() if a.find('IPYTHONENABLE') >= 0)
     # 根据不同场景获取根目录
     if len(debug_vars) > 0:
@@ -105,7 +106,7 @@ def labels2onehot4ts(labels, num_class):
     # labels = labels - 1
     batch = labels.shape[0]
     labels.resize_(batch, 1)  # labels[:,None]
-    zeros = torch.zeros(batch, num_class, device=labels.device,dtype=torch.int64)
+    zeros = torch.zeros(batch, num_class, device=labels.device, dtype=torch.int64)
     return zeros.scatter_(1, labels, 1)  # dim,index,value 数组索引
 
 

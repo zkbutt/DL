@@ -169,8 +169,8 @@ class _Bottleneck(nn.Module):
     def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
         super(_Bottleneck, self).__init__()
         c_ = int(c2 * e)  # hidden channels
-        self.cv1 = CBL(c1, c_, k=1)
-        self.cv2 = CBL(c_, c2, k=3, p=1, g=g)
+        self.cv1 = CBL(c1, c_, ksize=1)
+        self.cv2 = CBL(c_, c2, ksize=3, padding=1, groups=g)
         self.add = shortcut and c1 == c2
 
     def forward(self, x):
@@ -182,10 +182,10 @@ class BottleneckCSP(nn.Module):
     def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
         super(BottleneckCSP, self).__init__()
         c_ = int(c2 * e)  # hidden channels
-        self.cv1 = CBL(c1, c_, k=1)
+        self.cv1 = CBL(c1, c_, ksize=1)
         self.cv2 = nn.Conv2d(c1, c_, kernel_size=1, bias=False)
         self.cv3 = nn.Conv2d(c_, c_, kernel_size=1, bias=False)
-        self.cv4 = CBL(2 * c_, c2, k=1)
+        self.cv4 = CBL(2 * c_, c2, ksize=1)
         self.bn = nn.BatchNorm2d(2 * c_)  # applied to cat(cv2, cv3)
         self.act = nn.LeakyReLU(0.1, inplace=True)
         self.m = nn.Sequential(*[_Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)])

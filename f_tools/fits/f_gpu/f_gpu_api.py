@@ -210,7 +210,7 @@ def mgpu_init():
 def mgpu_process0_init(args, cfg, loader_train, loader_val_coco, model, device):
     '''支持 add_graph'''
     # 主进程任务
-    flog.info(args)
+    flog.info('多GPU参数: %s' % args)
     if not os.path.exists(cfg.PATH_SAVE_WEIGHT):
         try:
             os.makedirs(cfg.PATH_SAVE_WEIGHT)

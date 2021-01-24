@@ -803,9 +803,9 @@ def f_show_grid4pil(img_pil, grids=(7, 7)):
     pil_copy.show()
 
 
-def f_plt_od(img_pil, boxes_ltrb_f, g_boxes_ltrb=None, ids2classes=None,
-             labels=None, scores=None,
-             is_recover_size=True):
+def f_plt_od_pil(img_pil, boxes_ltrb_f, g_boxes_ltrb=None, ids2classes=None,
+                 labels=None, scores=None,
+                 is_recover_size=True):
     '''
     f coco使用
     :param img_pil:
@@ -819,6 +819,54 @@ def f_plt_od(img_pil, boxes_ltrb_f, g_boxes_ltrb=None, ids2classes=None,
     '''
     whwh = np.array(img_pil.size).repeat(2, axis=0)
     plt.imshow(img_pil, alpha=0.7)
+    current_axis = plt.gca()
+    if g_boxes_ltrb is not None:
+        if is_recover_size:
+            g_boxes_ltrb = g_boxes_ltrb * whwh
+        for box in g_boxes_ltrb:
+            l, t, r, b = box
+            plt_rectangle = plt.Rectangle((l, t), r - l, b - t, color='lightcyan', fill=False, linewidth=3)
+            current_axis.add_patch(plt_rectangle)
+            # x, y = c[:2]
+            # r = 4
+            # # 空心
+            # # draw.arc((x - r, y - r, x + r, y + r), 0, 360, fill=color)
+            # # 实心
+            # draw.chord((x - r, y - r, x + r, y + r), 0, 360, fill=_color)
+
+    for i, box_ltrb_f in enumerate(boxes_ltrb_f):
+        l, t, r, b = box_ltrb_f
+        # ltwh
+        current_axis.add_patch(plt.Rectangle((l, t), r - l, b - t, color='green', fill=False, linewidth=2))
+        if labels is not None:
+            # labels : tensor -> int
+            show_text = ids2classes[int(labels[i])] + str(round(scores[i], 2))
+            current_axis.text(l, t - 2, show_text, size=8, color='white',
+                              bbox={'facecolor': 'green', 'alpha': 0.3})
+    plt.show()
+
+
+def f_plt_od_np(img_np, boxes_ltrb_f, g_boxes_ltrb=None, ids2classes=None,
+                labels=None, scores=None,
+                is_recover_size=True):
+    '''
+    f coco使用
+    :param img_np:
+    :param boxes_ltrb_f:
+    :param g_boxes_ltrb:
+    :param ids2classes:
+    :param labels:
+    :param scores:
+    :param is_recover_size:
+    :return:
+    '''
+    # import matplotlib.pyplot as plt
+    plt.title('%s x %s' % (str(img_np.shape[1]), str(img_np.shape[0])))
+    # plt.imshow(img_np)
+    # plt.show()
+    whwh = np.tile(np.array(img_np.shape[:2][::-1]), 2)  # 整体复制
+    # plt.figure(whwh)  #要报错
+    plt.imshow(img_np, alpha=0.7)
     current_axis = plt.gca()
     if g_boxes_ltrb is not None:
         if is_recover_size:
@@ -893,7 +941,7 @@ def f_plt_od_f(img_ts, boxes_ltrb):
     img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
     _size = img_pil.size
     boxes_ltrb_f = boxes_ltrb.cpu() * torch.tensor(_size).repeat(2)
-    f_plt_od(img_pil, boxes_ltrb_f)
+    f_plt_od_pil(img_pil, boxes_ltrb_f)
 
 
 def f_plt_show_pil(img_pil):
@@ -957,33 +1005,48 @@ def _f_draw_od_cv_plt(current_axis, boxes_ltrb, is_show_xy=True, labels_text=Non
 
 
 def f_plt_show_cv(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False, labels_text=None, grids=None):
-    '''新版本'''
+    '''
+
+    :param img_np_bgr: 转换rgb
+    :param gboxes_ltrb: tensors
+    :param pboxes_ltrb:
+    :param is_recover_size:
+    :param labels_text:
+    :param grids:
+    :return:
+    '''
     current_axis = plt.gca()
     img_np_rgb = cv2.cvtColor(img_np_bgr, cv2.COLOR_BGR2RGB)
     plt.imshow(img_np_rgb)
-    gboxes_ltrb = gboxes_ltrb.cpu()
 
-    wh = img_np_rgb.shape[:2][::-1]  # 标题
+    wh = img_np_rgb.shape[:2][::-1]  # npwh
     plt.title(wh)
     if grids is not None:
         _f_draw_grid_plt(wh, grids)
 
     if gboxes_ltrb is not None:
+        gboxes_ltrb = gboxes_ltrb.cpu()
         if is_recover_size:
-            whwh = np.tile(np.array(wh), 2)  # 单体复制 tile
+            whwh = np.tile(np.array(wh), 2)  # 整体复制 tile
             gboxes_ltrb = gboxes_ltrb * whwh
         _f_draw_od_cv_plt(current_axis, gboxes_ltrb, is_show_xy=True, color='red',
                           labels_text=labels_text, linewidth=3)
 
     if pboxes_ltrb is not None:
         if is_recover_size:
-            whwh = np.tile(np.array(wh), 2)  # 单体复制 tile
+            whwh = np.tile(np.array(wh), 2)  # 整体复制 tile
             pboxes_ltrb = pboxes_ltrb * whwh
         _f_draw_od_cv_plt(current_axis, pboxes_ltrb, is_show_xy=True, color='lightcyan',
                           labels_text=labels_text,
                           linewidth=1)
 
     plt.show()
+
+
+def f_plt_show_ts(img_ts, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False, labels_text=None, grids=None):
+    img_np_rgb = img_ts.cpu().numpy().astype(np.float32).transpose((1, 2, 0))
+    img_np_bgr = cv2.cvtColor(img_np_rgb, cv2.COLOR_RGB2BGR)
+    f_plt_show_cv(img_np_bgr, gboxes_ltrb, pboxes_ltrb, is_recover_size, labels_text, grids)
 
 
 if __name__ == '__main__':

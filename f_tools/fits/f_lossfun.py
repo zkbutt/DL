@@ -10,7 +10,6 @@ from f_tools.fits.f_match import fmatch_OHEM, pos_match_retinaface
 from f_tools.fits.f_predictfun import batched_nms_auto
 from f_tools.fun_od.f_boxes import xywh2ltrb, ltrb2ltwh, diff_bbox, diff_keypoints, ltrb2xywh, calc_iou4ts, \
     bbox_iou4one, xy2offxy, offxy2xy, get_boxes_colrow_index, fix_boxes4yolo3
-from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
 from f_tools.pic.f_show import f_show_3box4pil, show_anc4pil
 import matplotlib.pyplot as plt
 
@@ -19,11 +18,12 @@ torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long
 
 def f_bce(pconf, gconf, weight=1.):
     '''
-    同维
+    只支持二维
     :param pconf: 值必须为0~1之间 float
     :param gconf: 值为 float
     :return:
     '''
+    torch.clamp(pconf, min=1e-6, max=1 - 1e-6)
     # loss = np.round(-(gconf * np.log(pconf) + (1 - gconf) * np.log(1 - pconf)), 4)
     loss = -(torch.log(pconf) * gconf + torch.log(1 - pconf) * (1 - gconf)) * weight
     return loss

@@ -341,8 +341,6 @@ def fmatch4yolov1_2(boxes_ltrb, labels, num_bbox, num_class, grid, device=None, 
     return p_yolo_one
 
 
-
-
 def fmatch4yolo1_v2(boxes_ltrb, labels, num_bbox, num_class, grid, device=None, img_ts=None):
     '''
 

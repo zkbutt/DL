@@ -1,5 +1,6 @@
 import os
 
+import cv2
 from PIL import Image
 from pycocotools.coco import COCO
 import numpy as np
@@ -52,7 +53,8 @@ def f_show_coco_pics(coco, path_img, ids_img=None):
     for id in ids:
         img_info = coco.loadImgs([id])  # 这里原始返回list
         # 本地加载 h,w,c
-        img = io.imread(os.path.join(path_img, img_info[0]['file_name']))
+        # img = io.imread(os.path.join(path_img, img_info[0]['file_name']))
+        img = cv2.imread(os.path.join(path_img, img_info[0]['file_name']))
         # 加载图片基本信息 h w id filename
         # 获取该图片的所有标注的id
         annIds = coco.getAnnIds(imgIds=img_info[0]['id'])
@@ -65,7 +67,7 @@ def f_show_coco_pics(coco, path_img, ids_img=None):
         #     box_ltrb = ltwh2ltrb(box_ltwh)
         #     show_anc4pil(img_pil, box_ltrb)
 
-        print('宽高', img.shape[1], img.shape[0])
+        flog.warning('宽高:%s x %s' % (img.shape[1], img.shape[0]))
         plt.axis('off')
         plt.imshow(img)
         coco.showAnns(anns)  # 显示标注

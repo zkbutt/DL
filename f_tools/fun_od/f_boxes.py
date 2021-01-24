@@ -269,7 +269,7 @@ def bbox_iou4np(bbox_a, bbox_b):
 
 def bbox_iou4one(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
     '''
-    返回一个数
+    这个是一一对应  box1  box2
     :param bbox_a: 多个预测框 (n,4)
     :param bbox_b: 多个标定框 (n,4)
     :return: n
@@ -380,15 +380,6 @@ def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
                 alpha = v / (1 - iou + v)
             ciou = iou - (dxy + v * alpha)
             return ciou
-
-
-def calc_iou_wh4ts(wh1, wh2):
-    wh2 = wh2.t()
-    w1, h1 = wh1[0], wh1[1]
-    w2, h2 = wh2[0], wh2[1]
-    inter_area = torch.min(w1, w2) * torch.min(h1, h2)
-    union_area = (w1 * h1 + 1e-16) + w2 * h2 - inter_area
-    return inter_area / union_area
 
 
 def calc_iou4some_dim(box1, box2):

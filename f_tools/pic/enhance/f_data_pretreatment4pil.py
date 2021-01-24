@@ -12,6 +12,40 @@ from f_tools.pic.f_show import show_bbox_keypoints4pil
 from f_tools.pic.f_size_handler import resize_np_keep
 
 
+def cre_transform_resize4pil(cfg):
+    if cfg.IS_MOSAIC:
+        data_transform = {
+            "train": Compose([
+                # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+                # Resize(cfg.IMAGE_SIZE),
+                ColorJitter(),
+                ToTensor(is_box_oned=True),
+                RandomHorizontalFlip4TS(0.5),
+                Normalization4TS(),
+            ], cfg),
+        }
+    else:
+        data_transform = {
+            "train": Compose([
+                # ResizeKeep(cfg.IMAGE_SIZE),  # 这个有边界需要修正
+                Resize(cfg.IMAGE_SIZE),
+                ColorJitter(),
+                ToTensor(is_box_oned=True),
+                RandomHorizontalFlip4TS(0.5),
+                Normalization4TS(),
+            ], cfg),
+        }
+    data_transform["val"] = Compose([
+        # ResizeKeep(cfg.IMAGE_SIZE),  # (h,w)
+        Resize(cfg.IMAGE_SIZE),
+        # ToTensor(is_box_oned=True),
+        ToTensor(is_box_oned=False),
+        Normalization4TS(),
+    ], cfg)
+
+    return data_transform
+
+
 def _show(img_ts, target, cfg, name):
     flog.debug('%s 后', name)
     img_pil = transforms.ToPILImage('RGB')(img_ts)
@@ -47,7 +81,7 @@ class BasePretreatment:
 class Compose(BasePretreatment):
     """组合多个transform函数"""
 
-    def __init__(self, transforms, cfg):
+    def __init__(self, transforms, cfg=None):
         super(Compose, self).__init__(cfg)
         self.transforms = transforms
 

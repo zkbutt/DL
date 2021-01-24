@@ -3,7 +3,7 @@ import os
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_loader import cre_transform4resize, DataLoader, cfg_raccoon
+from f_tools.datas.data_loader import cre_transform_resize4pil, DataLoader, cfg_raccoon
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4keypoints, f_prod_pic
 from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
 from object_detection.z_retinaface.train_retinaface import init_model, train_eval_set
@@ -33,7 +33,7 @@ if __name__ == '__main__':
     model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=None)
     model.eval()
 
-    data_transform = cre_transform4resize(cfg)
+    data_transform = cre_transform_resize4pil(cfg)
 
     # 这里是原图
     for i in range(index_start, len(dataset_val), 1):

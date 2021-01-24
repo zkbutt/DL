@@ -87,16 +87,19 @@ def conv_bn1X1(inp, oup, stride, leaky=0):
 class CBL(nn.Module):
     '''基础层'''
 
-    def __init__(self, c1, c2, k, s=1, p=0, d=1, g=1, leaky=True):
+    def __init__(self, in_channels, out_channels, ksize, stride=1, padding=0, dilation=1, groups=1, leakyReLU=True):
         super(CBL, self).__init__()
         self.convs = nn.Sequential(
-            nn.Conv2d(c1, c2, k, stride=s, padding=p, dilation=d, groups=g),
-            nn.BatchNorm2d(c2),
-            nn.LeakyReLU(0.1, inplace=True) if leaky else nn.Identity()
+            nn.Conv2d(in_channels, out_channels, ksize, stride=stride, padding=padding, dilation=dilation,
+                      groups=groups),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(0.1, inplace=True) if leakyReLU else nn.ReLU(inplace=True)
         )
 
     def forward(self, x):
         return self.convs(x)
+
+
 
 
 class NoneLayer(nn.Module):
@@ -166,6 +169,23 @@ class FeatureConcat(nn.Module):
 
     def forward(self, x, outputs):
         return torch.cat([outputs[i] for i in self.layers], 1) if self.multiple else outputs[self.layers[0]]
+
+
+class ReorgLayer(nn.Module):
+    def __init__(self, stride):
+        super(ReorgLayer, self).__init__()
+        self.stride = stride
+
+    def forward(self, x):
+        batch_size, channels, height, width = x.size()
+        _height, _width = height // self.stride, width // self.stride
+
+        x = x.view(batch_size, channels, _height, self.stride, _width, self.stride).transpose(3, 4).contiguous()
+        x = x.view(batch_size, channels, _height * _width, self.stride * self.stride).transpose(2, 3).contiguous()
+        x = x.view(batch_size, channels, self.stride * self.stride, _height, _width).transpose(1, 2).contiguous()
+        x = x.view(batch_size, -1, _height, _width)
+
+        return x
 
 
 if __name__ == '__main__':

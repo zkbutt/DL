@@ -154,6 +154,29 @@ class ModelOuts4Mobilenet_v2(nn.Module):
         # return hook
 
 
+class ModelOuts4DarkNet(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        del model.conv_7
+        del model.avgpool
+        self.model_hook = model
+        self.model_hook._forward_impl = types.MethodType(self.foverwrite, model)
+        self.dims_out = [256, 512, 1024]
+
+    def foverwrite(self, model, x):
+        x = model.conv_1(x)
+        x = model.conv_2(x)
+        x = model.conv_3(x)
+        ceng1 = model.conv_4(x)
+        ceng2 = model.conv_5(model.maxpool_4(ceng1))
+        ceng3 = model.conv_6(model.maxpool_5(ceng2))
+        return ceng1, ceng2, ceng3
+
+    def forward(self, inputs):
+        outs = self.model_hook(inputs)
+        return outs
+
+
 '''-----------------单输出---------------------'''
 
 
