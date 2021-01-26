@@ -241,6 +241,7 @@ def cfg_voc(cfg):
         [[0.122, 0.218], [0.254, 0.234]],
         [[0.326, 0.462], [0.71, 0.572]],
     ]
+
     # cfg.PIC_MEAN = [0.45320560056079773, 0.43316440952455354, 0.3765994764105359]
     # cfg.PIC_STD = [0.2196906701893696, 0.21533684244241802, 0.21516573455080967]
 
@@ -340,64 +341,6 @@ def cfg_raccoon(cfg, batch=40, image_size=(448, 448)):
 
 
 '''-----------------------type3---------------------------------'''
-
-
-def cfg_type(cfg, batch=40, image_size=(448, 448)):
-    cfg.BATCH_SIZE = batch
-    cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
-
-    cfg.PRINT_FREQ = 5  # BATCH_SIZE * PRINT_FREQ 张图片
-
-    cfg.IMAGE_SIZE = image_size
-    cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
-    cfg.START_EVAL = 10  # 1第一轮
-
-    cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
-    cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
-    cfg.IS_MOSAIC_FILL = True
-
-    cfg.NUM_CLASSES = 3
-    cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
-    cfg.DATA_NUM_WORKERS = 2
-
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'type3'
-    cfg.PATH_TENSORBOARD = 'runs_type3'
-
-    # cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2012'
-    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2007'
-
-    # 训练
-    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
-    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_1096.json'
-
-    # 验证
-    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_val_416.json'
-
-    # 测试
-    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_test_621.json'
-
-    cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
-    # cfg.ANC_SCALE = [
-    #     [[0.078, 0.076], [0.166, 0.164]],
-    #     [[0.374, 0.254], [0.288, 0.424]],
-    #     [[0.574, 0.46], [0.698, 0.668]],
-    # ]
-    cfg.ANC_SCALE = [
-        [[0.05, 0.045], [0.078, 0.084], [0.142, 0.106]],
-        [[0.185, 0.2], [0.384, 0.27], [0.284, 0.426]],
-        [[0.642, 0.436], [0.48, 0.628], [0.77, 0.664]],
-    ]
-    cfg.ANCHORS_CLIP = True  # 是否剔除超边界
-    cfg.NUMS_ANC = [3, 3, 3]
-    cfg.NUM_ANC = np.array(cfg.NUMS_ANC).prod()
-
-    cfg.PIC_MEAN = [0.44852942096873344, 0.42499869427618714, 0.3919993789920617]
-    cfg.PIC_STD = [0.23994531712015926, 0.2343272957639497, 0.23674994997257454]
 
 
 def cfg_type2(cfg, batch=40, image_size=(448, 448)):

@@ -7,9 +7,9 @@ from f_tools.yufa.x_calc_adv import f_mershgrid
 from object_detection.z_center.utils import gaussian_radius, draw_gaussian
 
 
-def boxes_decode4yolo(ptxywh, grid_h, grid_w, cfg):
+def boxes_decode4yolo1(ptxywh, grid_h, grid_w, cfg):
     '''
-    编码
+    解码
     :param ptxywh: 预测的是在特图的 偏移 和 缩放比例
     :param grid_h:
     :param grid_w:
@@ -33,22 +33,22 @@ def boxes_decode4yolo(ptxywh, grid_h, grid_w, cfg):
     # return ptxywh
 
 
-def boxes_encode4yolo(boxes_ltrb, grid_h, grid_w, device, cfg):
+def boxes_encode4yolo1(gboxes_ltrb, grid_h, grid_w, device, cfg):
     '''
-    解码
-    :param boxes_ltrb: 归一化尺寸
+    编码GT
+    :param gboxes_ltrb: 归一化尺寸
     :param grid_h:
     :param grid_w:
     :param device:
     :param cfg:
     :return:
     '''
-    # ltrb -> xywh
-    boxes_xywh = ltrb2xywh(boxes_ltrb)
-    whs = boxes_xywh[:, 2:]
-    cxys = boxes_xywh[:, :2]
-    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
+    # ltrb -> xywh 原图归一化   编码xy与yolo2一样的
+    gboxes_xywh = ltrb2xywh(gboxes_ltrb)
+    whs = gboxes_xywh[:, 2:]
 
+    cxys = gboxes_xywh[:, :2]
+    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
     colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
     offset_xys = torch.true_divide(colrows_index, grid_h)  # 网络index 对应归一化的实距
     txys = (cxys - offset_xys) * grids_ts  # 特图偏移
@@ -57,9 +57,71 @@ def boxes_encode4yolo(boxes_ltrb, grid_h, grid_w, device, cfg):
         # twhs = (whs * torch.tensor(size_in, device=device)).log()
         pass
     elif cfg.loss_args['s_match'] == 'log_g':
+        # 编码wh 与yolo2不一样  这里是特图 yolo2是比例
         twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
     else:
         raise Exception("cfg.loss_args['s_match'] 类型错误 %s" % cfg.loss_args['s_match'])
+
+    txywhs_g = torch.cat([txys, twhs], dim=-1)
+    # 正例的conf
+    weights = 2.0 - torch.prod(whs, dim=-1)
+    return txywhs_g, weights, colrows_index
+
+
+def boxes_decode4yolo2(ptxywh, grid_h, grid_w, cfg):
+    '''
+    解码  4维 -> 3维
+    用于计算 iou得conf   及 预测
+    :param ptxywh: torch.Size([32, 169, 5, 4]) -> [3, 169*5, 4]
+    :param grid_h:
+    :param grid_w:
+    :param cfg:
+    :return: 输出原图归一化 [3, 169*5, 4]
+    '''
+    device = ptxywh.device
+    # 特图xy -> 原图
+    pxy = torch.sigmoid(ptxywh[:, :, :, :2]) \
+          + f_mershgrid(grid_h, grid_w, is_rowcol=False, num_repeat=cfg.NUM_ANC) \
+              .to(device).reshape(-1, cfg.NUM_ANC, 2)
+    pxy = pxy / grid_h
+
+    # 特图wh比例 -> 原图
+    ancs_wh_ts = torch.tensor(cfg.ANC_SIZE, device=device)
+    # 比例 ( 比例不需要转换 ) * 特图anc_wh
+    pwh = torch.exp(ptxywh[:, :, :, 2:4]) * ancs_wh_ts  # torch.Size([3, 361, 5, 2])
+    # fdebug 可视化匹配的anc
+    # pwh = ancs_ts.view(1, 1, *ancs_ts.shape).repeat(*ptxywh[:, :, :, 2:4].shape[:2], 1, 1)
+
+    pxywh = torch.cat([pxy, pwh], -1)  # torch.Size([3, 169, 5, 4])
+    pxywh = pxywh.view(ptxywh.shape[0], -1, 4)  # 原图归一化 [3, 169, 5, 4] -> [3, 169*5, 4]
+    pltrb = xywh2ltrb(pxywh)
+    return pltrb
+
+
+def boxes_encode4yolo2(gboxes_ltrb, grid_h, grid_w, device, cfg):
+    '''
+    编码GT
+    :param gboxes_ltrb: 归一化尺寸
+    :param grid_h:
+    :param grid_w:
+    :param device:
+    :param cfg:
+    :return:
+    '''
+    # ltrb -> xywh 原图归一化  编码xy与yolo1一样的
+    gboxes_xywh = ltrb2xywh(gboxes_ltrb)
+    whs = gboxes_xywh[:, 2:]
+
+    cxys = gboxes_xywh[:, :2]
+    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
+    colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xys = torch.true_divide(colrows_index, grid_h)  # 网络index 对应归一化的实距
+    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
+
+    # twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
+    ancs_wh_ts = torch.tensor(cfg.ANC_SIZE, device=device)
+    # torch.Size([1, 2]) ^ torch.Size([5, 2]) = [5,2]
+    twhs = (whs / ancs_wh_ts).log()  # 特图长宽 log减小差距
 
     txywhs_g = torch.cat([txys, twhs], dim=-1)
     # 正例的conf

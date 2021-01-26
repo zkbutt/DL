@@ -202,6 +202,8 @@ class RandomHue(object):
 
 
 class RandomLightingNoise(object):
+    '''随机颜色打乱'''
+
     def __init__(self):
         self.perms = ((0, 1, 2), (0, 2, 1),
                       (1, 0, 2), (1, 2, 0),
@@ -443,7 +445,9 @@ class RandomMirror(object):
 
 
 class SwapChannels(object):
-    """Transforms a tensorized image by swapping the channels in the order
+    """
+    随机 RGB 打乱
+    Transforms a tensorized image by swapping the channels in the order
      specified in the swap tuple.
     Args:
         swaps (int triple): final order of channels
@@ -496,6 +500,8 @@ class PhotometricDistort(object):
 
 
 class SSDAugmentation(object):
+    '''打包启动程序'''
+
     def __init__(self, size=416, mean=(0.406, 0.456, 0.485), std=(0.225, 0.224, 0.229)):
         self.mean = mean
         self.size = size

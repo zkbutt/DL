@@ -21,6 +21,8 @@ linux用这个
 python -m torch.distributed.launch --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/object_detection/z_yolov2/train_yolov2_DDP.py
 
 tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2/runs_type3
+
+Total time: 0:00:19
 '''
 
 if __name__ == '__main__':

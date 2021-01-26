@@ -6,7 +6,7 @@ curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 from torch import optim
-from f_tools.datas.data_loader import cfg_raccoon, cfg_type, cfg_type2, DataLoader2
+from f_tools.datas.data_loader import cfg_raccoon, cfg_type2, DataLoader2
 
 from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2, ModelOut4Resnet18, ModelOut4Mobilenet_v3, \
     ModelOut4Resnet50
@@ -24,8 +24,6 @@ from f_tools.fits.f_fit_fun import init_od, base_set, train_eval4od, fdatas_l2, 
 linux用这个   python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/train_yolov1.py
 tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_type3
 
-差不多100轮收敛
-[ obj 2.33 || cls 0.33 || bbox 3.70 || total 6.36 ]
 
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.365
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.724

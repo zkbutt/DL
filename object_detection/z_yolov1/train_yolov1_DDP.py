@@ -22,6 +22,8 @@ python -m torch.distributed.launch --nproc_per_node=2 /AI/temp/tmp_pycharm/DL/ob
 
 tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_type3
 tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_type3_ap724_462
+
+Total time: 0:00:12 (0.7001 s / it)
 '''
 
 if __name__ == '__main__':

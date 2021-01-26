@@ -7,29 +7,11 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fits.f_lossfun import f_ghmc_v3, GHMC_Loss, focalloss_v2, FocalLoss_v2, focal_loss4center2, \
     show_distribution, focalloss_v3, f_bce
-from f_tools.fits.f_match import boxes_encode4yolo, boxes_decode4yolo
+from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1
 from f_tools.fits.f_predictfun import label_nms
 from f_tools.fun_od.f_boxes import offxy2xy, xywh2ltrb, calc_iou4ts, calc_iou4some_dim, ltrb2xywh
 from f_tools.pic.f_show import f_plt_show_cv
 from f_tools.yufa.x_calc_adv import f_mershgrid
-
-
-class FMSELoss(nn.Module):
-    def __init__(self, reduction='mean'):
-        super(FMSELoss, self).__init__()
-        self.reduction = reduction
-
-    def forward(self, inputs, targets):
-        pos_id = (targets == 1.0).float()
-        neg_id = (targets == 0.0).float()
-        pos_loss = pos_id * (inputs - targets) ** 2
-        neg_loss = neg_id * (inputs) ** 2
-        if self.reduction == 'mean':
-            pos_loss = torch.mean(torch.sum(pos_loss, 1))
-            neg_loss = torch.mean(torch.sum(neg_loss, 1))
-            return pos_loss, neg_loss
-        else:
-            return pos_loss, neg_loss
 
 
 def fmatch4yolov1(boxes_ltrb, labels, grid, size_in, device, cfg, img_ts=None):
@@ -43,7 +25,7 @@ def fmatch4yolov1(boxes_ltrb, labels, grid, size_in, device, cfg, img_ts=None):
     :return:
     '''
     # 需要在dataset时验证标注有效性
-    txywhs_g, weights, colrows_index = boxes_encode4yolo(boxes_ltrb, grid, grid, device, cfg)
+    txywhs_g, weights, colrows_index = boxes_encode4yolo1(boxes_ltrb, grid, grid, device, cfg)
 
     if cfg.loss_args['s_cls'] == 'ce':  # 多值交叉熵匹配
         # conf-1,cls-1,box-4,weight-1
@@ -168,6 +150,7 @@ class LossYOLO_v1(nn.Module):
         gyolos = gyolos.view(batch, -1, dim)  # b,hw,7
         gconf = gyolos[:, :, 0]  # torch.Size([5, 169])
 
+        # ----------------cls损失----------------
         if cfg.loss_args['s_cls'] == 'ce':
             pcls = pyolos[:, :, 1:s_].permute(0, 2, 1)  # 自动ce
             gcls = gyolos[:, :, 1].long()  # torch.Size([5, 169])
@@ -182,11 +165,6 @@ class LossYOLO_v1(nn.Module):
             gcls = gyolos[:, :, 1:s_][gconf.type(torch.bool)]
             _loss_val = F.binary_cross_entropy_with_logits(pcls, gcls, reduction="none")
             loss_cls = _loss_val.sum(-1).mean() * cfg.LOSS_WEIGHT[2]
-
-            # gconf_bool = gconf.type(torch.bool)
-            # pcls = pyolos[:, :, 1:s_].sigmoid()[gconf_bool]
-            # gcls = gyolos[:, :, 1:s_][gconf_bool]
-            # loss_cls = f_bce(pcls, gcls).sum(-1).mean() * cfg.LOSS_WEIGHT[2]
 
             _dim = 1 + cfg.NUM_CLASSES
         else:
@@ -203,52 +181,35 @@ class LossYOLO_v1(nn.Module):
 
         log_dict = {}
 
-        '''-----------conf 正反例损失----------'''
+        # ----------------conf损失----------------
         pconf = pyolos[:, :, 0].sigmoid()  # -0.6~0.7
         if cfg.loss_args['s_conf'] == 'foc':
             # ghmc_loss = GHMC_Loss()  # 训不了
             # loss_conf = ghmc_loss(pconf, gconf).sum(-1).mean()
-            # loss_conf_pos = loss_conf
-            # loss_conf_neg = loss_conf
             l_pos, l_neg = focalloss_v2(pconf, gconf, alpha=cfg.arg_focalloss_alpha, is_merge=False)
             # l_pos, l_neg = focalloss_v3(pconf, gconf, alpha=0.25, is_merge=False)
             loss_conf_pos = l_pos.sum(-1).mean()
             loss_conf_neg = l_neg.sum(-1).mean()
-            # _loss_val = F.binary_cross_entropy(pconf, gconf, reduction="none")
-            # _loss_val = f_bce(pconf, gconf)
-            # loss_conf_pos = (_loss_val * gconf).sum(-1).mean() * cfg.LOSS_WEIGHT[0]
-            # loss_conf_neg = (_loss_val * torch.logical_not(gconf)).sum(-1).mean() * cfg.LOSS_WEIGHT[1]
         elif cfg.loss_args['s_conf'] == 'mse':
-            # fmse_loss = FMSELoss(reduction='mean')
-            # loss_conf_pos, loss_conf_neg = fmse_loss(pconf, gconf)
-            # loss_conf_pos = loss_conf_pos * 5.
-            # loss_conf_neg = loss_conf_neg * 1.
-
-            _loss_val = F.mse_loss(pconf, gconf, reduction="none")
+            _loss_val = F.mse_loss(pconf, gconf, reduction="none")  # 这个强
             # _loss_val = F.binary_cross_entropy_with_logits(pconf, gconf, reduction="none")
-            loss_conf_pos = (_loss_val * gconf).sum(-1).mean() * 5.
-            loss_conf_neg = (_loss_val * torch.logical_not(gconf)).sum(-1).mean() * 1.
+            loss_conf_pos = (_loss_val * gconf).sum(-1).mean() * cfg.LOSS_WEIGHT[0]
+            loss_conf_neg = (_loss_val * torch.logical_not(gconf)).sum(-1).mean() * cfg.LOSS_WEIGHT[1]
             # loss_conf = loss_conf_pos + loss_conf_neg
         else:
             raise Exception('类型错误')
 
+        # ----------------box损失-----------------
         if cfg.loss_args['s_match'] == 'whoned':
-            # loss_box = (F.binary_cross_entropy_with_logits(pbox, gbox, reduction="none").sum(-1) * gconf * weight) \
-            #     .sum(-1).mean()
-            # loss_total = loss_conf_pos + loss_conf_neg + loss_cls + loss_box
-            # log_dict['l_box'] = loss_box.item()
-            _loss_val = F.binary_cross_entropy_with_logits(ptxty, gtxty, reduction="none")
-            loss_txty = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
-            _loss_val = F.binary_cross_entropy_with_logits(ptwth, gtwth, reduction="none")
-            loss_twth = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
-            # loss_twth = (torch.abs(ptwth - gtwth).sum(-1) * gconf * weight).sum(-1).mean()
+            # _loss_val = F.binary_cross_entropy_with_logits(ptxty, gtxty, reduction="none")
+            # loss_txty = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
+            # _loss_val = F.binary_cross_entropy_with_logits(ptwth, gtwth, reduction="none")
+            # loss_twth = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
+            pass
         elif cfg.loss_args['s_match'] == 'log' or cfg.loss_args['s_match'] == 'log_g':
-            # bce
-            # ptxty = ptxty.sigmoid()
-            # loss_txty = (f_bce(ptxty, gtxty).sum(-1) * gconf * weight).sum(-1).mean()
             _loss_val = F.binary_cross_entropy_with_logits(ptxty, gtxty, reduction="none")
+            # _loss_val = F.mse_loss(ptxty, gtxty, reduction="none")
             loss_txty = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
-            # loss_txty = (F.mse_loss(ptxty, gtxty, reduction="none").sum(-1) * gconf * weight).sum(-1).mean()
             _loss_val = F.mse_loss(ptwth, gtwth, reduction="none")
             loss_twth = (_loss_val.sum(-1) * gconf * weight).sum(-1).mean()
         else:
@@ -319,7 +280,7 @@ class PredictYolo_v1(nn.Module):
         ptxywh = pyolos[:, :, 1 + cfg.NUM_CLASSES:]
 
         ''' 预测 这里是修复是 xywh'''
-        boxes_decode4yolo(ptxywh, h, w, cfg)
+        boxes_decode4yolo1(ptxywh, h, w, cfg)
 
         pboxes_ltrb1 = xywh2ltrb(ptxywh)[mask_pos]
         pboxes_ltrb1 = torch.clamp(pboxes_ltrb1, min=0., max=1.)

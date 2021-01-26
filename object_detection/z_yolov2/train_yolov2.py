@@ -10,7 +10,7 @@ from object_detection.z_yolov2.nets.net_yolov2 import Yolo_v2
 from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
 from f_pytorch.tools_model.backbones.darknet import darknet19
 from torch import optim
-from f_tools.datas.data_loader import cfg_raccoon, cfg_type, cfg_type2, DataLoader2
+from f_tools.datas.data_loader import cfg_raccoon, cfg_type2, DataLoader2
 
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init, mgpu_process0_init
@@ -72,8 +72,11 @@ def train_eval_set(cfg):
 
     # batch = 10  # type
     size = (416, 416)  # type
+    # size = (608, 608)  # type
     cfg_type2(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # anc重写
+
+    import numpy as np
     cfg.ANC_SIZE = [[0.074, 0.074], [0.162, 0.146], [0.314, 0.3], [0.452, 0.506], [0.729, 0.635]]
     cfg.NUM_ANC = len(cfg.ANC_SIZE)
 
@@ -82,22 +85,18 @@ def train_eval_set(cfg):
     cfg.END_EVAL = 100  # 结束间隙验证
     cfg.EVAL_INTERVAL = 3  #
     # cfg.NUM_SAVE_INTERVAL = 100
-    cfg.loss_args = {
-        's_match': 'log_g',  # 'log' 'whoned' 'log_g'
-        's_conf': 'mse',  # 'mse' 'foc'
-    }
-    print(cfg.loss_args)
 
     cfg.arg_focalloss_alpha = 0.75
     cfg.IS_MIXTURE_FIX = True
 
     # type3 dark19
-    cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # conf-0.01 nms-0.5
-    cfg.MAPS_VAL = [0.724, 0.463]
+    cfg.FILE_NAME_WEIGHT = 't_yolo2_type3_dark19-140_4.006' + '.pth'  # conf-0.01 nms-0.5
+    # cfg.FILE_NAME_WEIGHT = 't_yolo2_type3_dark19-20_4.112' + '.pth'  # conf-0.01 nms-0.5
+    cfg.MAPS_VAL = [0.735, 0.502]  # 最高
 
     cfg.LR0 = 1e-3
     cfg.TB_WRITER = True
-    cfg.DEL_TB = True
+    cfg.DEL_TB = False
     cfg.LOSS_EPOCH = False
     cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
 

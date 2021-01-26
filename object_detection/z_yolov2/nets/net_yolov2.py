@@ -4,13 +4,15 @@ import torch.nn.functional as F
 from f_pytorch.tools_model.backbones.darknet import darknet19
 from f_pytorch.tools_model.f_layer_get import ModelOuts4DarkNet
 from f_pytorch.tools_model.f_model_api import finit_weights, CBL, finit_conf_bias, ReorgLayer
+from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fits.f_lossfun import f_ghmc_v3, GHMC_Loss, focalloss_v2, FocalLoss_v2, focal_loss4center2, \
     show_distribution, focalloss_v3, f_bce
-from f_tools.fits.f_match import boxes_encode4yolo, boxes_decode4yolo
+from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1, boxes_decode4yolo2, boxes_encode4yolo2
 from f_tools.fits.f_predictfun import label_nms
-from f_tools.fun_od.f_boxes import offxy2xy, xywh2ltrb, calc_iou4ts, calc_iou4some_dim, ltrb2xywh, bbox_iou4one
-from f_tools.pic.f_show import f_plt_show_cv
+from f_tools.fun_od.f_boxes import offxy2xy, xywh2ltrb, calc_iou4ts, calc_iou4some_dim, ltrb2xywh, bbox_iou4one, \
+    bbox_iou4one2
+from f_tools.pic.f_show import f_plt_show_cv, f_plt_show_ts
 from f_tools.yufa.x_calc_adv import f_mershgrid
 
 
@@ -22,26 +24,37 @@ def fmatch4yolov2(gboxes_ltrb, labels, grid, dim, device, cfg, img_ts=None):
     :param grid: 13
     :param dim:
     :param device:
-    :return:
+    :return: [13, 13, 5, 13]
     '''
-    # 提取wh用于iou计算  --需要在dataset时验证标注有效性 脏数据
+    # 提取[0,0,w,h]用于iou计算  --强制xy为0
     gboxes_xywh = ltrb2xywh(gboxes_ltrb)
     giou_boxes_xywh = torch.zeros_like(gboxes_xywh, device=device)
-    giou_boxes_xywh[:, 2:] = gboxes_xywh[:, 2:]
+    giou_boxes_xywh[:, 2:] = gboxes_xywh[:, 2:]  # gwh 赋值 原图归一化用于与anc比较IOU
 
     anc_wh = torch.tensor(cfg.ANC_SIZE, device=device)
     anciou_xywh = torch.zeros((len(cfg.ANC_SIZE), 4), device=device)
     anciou_xywh[:, 2:] = anc_wh
 
-    # 匹配一个最大的  iou>0.5 忽略
+    # 匹配一个最大的 用于获取iou index  iou>0.5 忽略
     iou2 = calc_iou4ts(xywh2ltrb(giou_boxes_xywh), xywh2ltrb(anciou_xywh))
     mask = iou2 > 0.5
 
-    txywhs_g, weights, colrows_index = boxes_encode4yolo(gboxes_ltrb, grid, grid, device, cfg)
+    # 编码GT
+    gboxes_xywh = ltrb2xywh(gboxes_ltrb)
+    whs = gboxes_xywh[:, 2:]
+
+    # 编码xy
+    cxys = gboxes_xywh[:, :2]
+    grids_ts = torch.tensor([grid, grid], device=device, dtype=torch.int16)
+    colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xys = torch.true_divide(colrows_index, grid)  # 网络index 对应归一化的实距
+    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
+
     # conf-1, cls-3, tbox-4, weight-1, gbox-4   torch.Size([13, 13, 13])
     p_yolo_one = torch.zeros((grid, grid, cfg.NUM_ANC, dim), device=device)
 
     labels = labels2onehot4ts(labels - 1, cfg.NUM_CLASSES)
+    ancs_wh_ts = torch.tensor(cfg.ANC_SIZE, device=device)
 
     # 遍历格子
     for i, (col, row) in enumerate(colrows_index):
@@ -53,10 +66,13 @@ def fmatch4yolov2(gboxes_ltrb, labels, grid, dim, device, cfg, img_ts=None):
             p_yolo_one[row, col, j, 0] = -1.
             p_yolo_one[row, col, j, 1 + cfg.NUM_CLASSES + 4] = -1.
 
-        txywh_g = txywhs_g[i]
+        # 编码 wh 这个获取的是比例故可以用原图尺寸
+        twh_g = (whs[i] / ancs_wh_ts[index_max]).log()  # 这个是比例 [2]
+        txy_g = txys[i]  # [2]
+        txywh_g = torch.cat([txy_g, twh_g], dim=-1)  # [4]
         # 正例的conf
         conf = torch.tensor([1], device=device)
-        weight = weights[i]  # 1~2 小目标加成
+        weight = 2.0 - torch.prod(whs[i], dim=-1)  # 1~2 小目标加成 这个不是数组
         _labels = labels[i]
 
         # labels恢复至1
@@ -66,12 +82,46 @@ def fmatch4yolov2(gboxes_ltrb, labels, grid, dim, device, cfg, img_ts=None):
     return p_yolo_one
 
 
+def calc_iou(ptxywh, gbox_p, batch, grid_h, grid_w, cfg, mask_pos_2, imgs_ts=None):
+    '''
+
+    :param ptxywh: torch.Size([3, 169, 5, 4])
+    :param gbox_p: [-1,4]
+    :param grid_h:
+    :param grid_w:
+    :param cfg:
+    :param mask_pos_2:  [3,xx]
+    :param img_ts:
+    :return:
+    '''
+    # 解码 可debug 原anc
+    pltrb = boxes_decode4yolo2(ptxywh, grid_h, grid_w, cfg)
+
+    if cfg.IS_VISUAL:
+        d0, d1 = torch.where(mask_pos_2)  # [3,845]
+        for i in range(batch):
+            from f_tools.pic.enhance.f_data_pretreatment4pil import f_recover_normalization4ts
+            img_ts = f_recover_normalization4ts(imgs_ts[i])
+            mask_ = d0 == i
+            _pltrb = pltrb[d0[mask_], d1[mask_]]
+            _gbox_p = gbox_p[d0[mask_], d1[mask_]]
+
+            iou = bbox_iou4one2(_pltrb, _gbox_p)
+            flog.debug('iou %s', iou)
+            f_plt_show_ts(img_ts, gboxes_ltrb=_gbox_p, pboxes_ltrb=_pltrb,
+                          is_recover_size=True, grids=(grid_h, grid_w))
+
+    pltrb = pltrb.view(-1, 4)
+    gbox_p = gbox_p.view(-1, 4)
+    iou = bbox_iou4one2(pltrb, gbox_p)
+    return iou
+
+
 class LossYOLO_v2(nn.Module):
 
     def __init__(self, cfg=None):
         super(LossYOLO_v2, self).__init__()
         self.cfg = cfg
-        self.ghmc_loss = GHMC_Loss(momentum=0.25)
 
     def forward(self, pyolos, targets, imgs_ts=None):
         '''
@@ -94,6 +144,7 @@ class LossYOLO_v2(nn.Module):
             boxes_ltrb_one = target['boxes']  # ltrb
             labels_one = target['labels']
 
+            # conf-1, cls-3, tbox-4, weight-1, gbox-4  = 13
             gyolos[i] = fmatch4yolov2(
                 gboxes_ltrb=boxes_ltrb_one,
                 labels=labels_one,
@@ -106,12 +157,12 @@ class LossYOLO_v2(nn.Module):
 
             '''可视化验证'''
             if cfg.IS_VISUAL:
-                # conf-1, cls-1, box-4, weight-1
+                # conf-1, cls-3, box-4, weight-1
                 gyolo_test = gyolos[i].clone()  # torch.Size([32, 13, 13, 9])
                 gyolo_test = gyolo_test.view(-1, dim)
                 gconf_one = gyolo_test[:, 0]
-                mask_pos = torch.logical_or(gconf_one == 1, gconf_one == -1)
-                # mask_pos = gconf_one == 1
+                # mask_pos = torch.logical_or(gconf_one == 1, gconf_one == -1)
+                mask_pos = gconf_one == 1
 
                 gtxywh = gyolo_test[:, 1 + cfg.NUM_CLASSES:1 + cfg.NUM_CLASSES + 4]
                 # 这里是修复是 xy
@@ -140,31 +191,47 @@ class LossYOLO_v2(nn.Module):
                               , pboxes_ltrb=xywh2ltrb(gtxywh.cpu()), is_recover_size=True,
                               grids=(h, w))
 
-        gyolos = gyolos.view(batch, -1, dim)  # torch.Size([3, 845, 13])
-        '''--------------pred提取---------------'''
+        # pbox解码计算 匹配的iou 作为正例conf
+        s_ = 1 + cfg.NUM_CLASSES
         # [3, 40, 13, 13] -> [3, 8, 5, 13*13] -> [3, 169, 5, 8]
-        pyolos = pyolos.view(batch, 1 + cfg.NUM_CLASSES + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
+        pyolos = pyolos.view(batch, s_ + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
+
+        # 计算预测与 GT 的 iou 作为 gconf
+        with torch.no_grad():  # torch.Size([3, 40, 13, 13])
+            ptxywh = pyolos[:, :, :, s_:s_ + 4]  # torch.Size([32, 169, 5, 4])
+
+            gyolos = gyolos.view(batch, -1, dim)  # [3, 13, 13, 5, 13] -> [3, 169*5, 13]
+            mask_pos_2 = gyolos[:, :, 0] == 1  # 前面已匹配，降维运算 [3, xx, 13] -> [3, xx]
+            gbox_p = gyolos[:, :, -4:]  # [3, 169*5, 13] ->  [3, 169*5, 4]
+
+            iou_p = calc_iou(ptxywh, gbox_p, batch, h, w, cfg, mask_pos_2, imgs_ts)
+            iou_p = iou_p.view(batch, -1)
+
+        gyolos = gyolos.view(batch, -1, dim)  # torch.Size([3, 845, 13])
+
+        # [32, 169, 5, 8] -> [32, 845, 8]
         pyolos = pyolos.view(batch, -1, 1 + cfg.NUM_CLASSES + 4)  # torch.Size([3, 169, 8])
 
-        # ----------------conf损失----------------
+        # ----------------conf损失  mes+倍数----------------
         pconf = pyolos[:, :, 0].sigmoid()  # torch.Size([3, 845])
-        gconf = gyolos[:, :, 0]
-        weight = gyolos[:, :, 8]
-        mask_pos = gconf == 1  # 忽略的-1不计
+        # gconf = gyolos[:, :, 0]
+        gconf = iou_p  # iou赋值
+        weight = gyolos[:, :, s_ + 4]
+        mask_pos = gconf > 0  # 忽略的-1不计
         mask_neg = gconf == 0
         _loss_val = F.mse_loss(pconf, gconf, reduction="none")
-        loss_conf_pos = (_loss_val * mask_pos).sum(-1).mean() * 5.
-        loss_conf_neg = (_loss_val * mask_neg).sum(-1).mean() * 1.
+        # _loss_val = F.binary_cross_entropy_with_logits(pconf, gconf, reduction="none")
+        loss_conf_pos = (_loss_val * mask_pos).sum(-1).mean() * cfg.LOSS_WEIGHT[0]
+        loss_conf_neg = (_loss_val * mask_neg).sum(-1).mean() * cfg.LOSS_WEIGHT[1]
 
-        # ----------------cls损失----------------
-        s_ = 1 + cfg.NUM_CLASSES
+        # ----------------cls损失  采用bce----------------
         pcls = pyolos[:, :, 1:s_][mask_pos]
         gcls = gyolos[:, :, 1:s_][mask_pos]
         _loss_val = F.binary_cross_entropy_with_logits(pcls, gcls, reduction="none")
         loss_cls = _loss_val.sum(-1).mean()
 
-        # ----------------box损失-----------------
-        ptxty = pyolos[:, :, s_:s_ + 2]
+        # ----------------box损失   xy采用bce wh采用mes-----------------
+        ptxty = pyolos[:, :, s_:s_ + 2]  # 前面已完成归一化
         ptwth = pyolos[:, :, s_ + 2:s_ + 4]
         gtxty = gyolos[:, :, s_:s_ + 2]
         gtwth = gyolos[:, :, s_ + 2:s_ + 4]
@@ -208,15 +275,14 @@ class PredictYOLO_v2(nn.Module):
         device = pyolos.device
         batch, c, h, w = pyolos.shape
 
-        # conf-1, cls-3, tbox-4, weight-1, gbox-4  = 13
-        dim = 1 + cfg.NUM_CLASSES + 4
+        # 解码txywh
+        s_ = 1 + cfg.NUM_CLASSES
         # [3, 40, 13, 13] -> [3, 8, 5, 13*13] -> [3, 169, 5, 8]
-        pyolos = pyolos.view(batch, dim, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
-        # [3, 169, 5, 8] -> [3, 169, 8]
-        pyolos = pyolos.view(batch, -1, dim)
+        pyolos = pyolos.view(batch, s_ + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
 
-        pconf = pyolos[:, :, 0].sigmoid()  # b,hw,c -> b,hw
-        cls_conf, plabels = pyolos[:, :, 1:1 + cfg.NUM_CLASSES].sigmoid().max(-1)
+        _pyolos = pyolos.view(batch, -1, s_ + 4)  # [3, 845, 8]
+        pconf = _pyolos[:, :, 0].sigmoid()
+        cls_conf, plabels = _pyolos[:, :, 1:s_].sigmoid().max(-1)
         pscores = cls_conf * pconf
 
         mask_pos = pscores > cfg.THRESHOLD_PREDICT_CONF  # b,hw
@@ -228,12 +294,12 @@ class PredictYOLO_v2(nn.Module):
             return [None] * 5
 
         ids_batch1, _ = torch.where(mask_pos)
-        ptxywh = pyolos[:, :, 1 + cfg.NUM_CLASSES:]
 
-        ''' 预测 这里是修复是 xywh   torch.Size([3, 845, 4])'''
-        boxes_decode4yolo(ptxywh, h, w, cfg)
+        # torch.Size([3, 169, 5, 8]) -> [3, 169, 5, 4]
+        ptxywh = pyolos[:, :, :, s_:s_ + 4]
+        pltrb = boxes_decode4yolo2(ptxywh, h, w, cfg)  # 预测 -> ltrb [3, 845, 4]
 
-        pboxes_ltrb1 = xywh2ltrb(ptxywh)[mask_pos]
+        pboxes_ltrb1 = pltrb[mask_pos]
         pboxes_ltrb1 = torch.clamp(pboxes_ltrb1, min=0., max=1.)
 
         pscores1 = pscores[mask_pos]

@@ -70,7 +70,7 @@ def load_coco_boxes(keep=False, is_calc_pic_mean=True):
     return np.array(boxes_wh)
 
 
-def calc_anc_size(data, clusters, size_in, is_calc_pic_mean=True):
+def calc_anc_size(data, clusters, size_in):
     out_np = kmeans(data, k=clusters)  # 输出5,2
     print("Accuracy: {:.2f}%".format(avg_iou(data, out_np) * 100))
     # 计算尺寸大小排序后的索引
@@ -116,12 +116,12 @@ if __name__ == '__main__':
 
     '''-------------加载box--------------'''
     # data = load_voc_boxes() # voc直接计算,类型数据
-    # data = load_coco_boxes(keep=False, is_calc_pic_mean=False)  # 基本用这个 coco_dataset
-    data = load_coco_boxes(keep=False, is_calc_pic_mean=True)  # 基本用这个 coco_dataset
+    data = load_coco_boxes(keep=False, is_calc_pic_mean=False)  # 基本用这个 coco_dataset
+    # data = load_coco_boxes(keep=False, is_calc_pic_mean=True)  # 基本用这个 coco_dataset
     # 计算anc尺寸 和图片均值
     show_time(calc_anc_size, data, clusters, size_in)
 
     '''计算显示'''
-    size_ = 19
-    array = np.array([[0.074, 0.074], [0.162, 0.146], [0.314, 0.3], [0.452, 0.506], [0.729, 0.635]]) * size_
-    print(array)
+    # size_ = 19
+    # array = np.array([[0.074, 0.074], [0.162, 0.146], [0.314, 0.3], [0.452, 0.506], [0.729, 0.635]]) * size_
+    # print(array)

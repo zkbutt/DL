@@ -320,6 +320,60 @@ def bbox_iou4one(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
             return ciou
 
 
+def bbox_iou4one2(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
+    '''
+    这个是一一对应  box1  box2
+    :param bbox_a: 多个预测框 (n,4)
+    :param bbox_b: 多个标定框 (n,4)
+    :return: n
+    '''
+    max_lt = torch.max(box1[:, :2], box2[:, :2])
+    min_rb = torch.min(box1[:, 2:], box2[:, 2:])
+    inter_wh = (min_rb - max_lt).clamp(min=0)
+    # inter_area = inter_wh[:, 0] * inter_wh[:, 1]
+    inter_area = torch.prod(inter_wh, dim=1)
+
+    # 并的面积
+    area1 = (box1[:, 2] - box1[:, 0]) * (box1[:, 3] - box1[:, 1])
+    area2 = torch.prod(box2[:, 2:] - box2[:, :2], 1)
+    union_area = area1 + area2 - inter_area + torch.finfo(torch.float16).eps  # 升维n m
+
+    iou = inter_area / union_area
+
+    if not (is_giou or is_diou or is_ciou):
+        return iou
+    else:
+        # 最大矩形面积
+        min_lt = torch.min(box1[:, :2], box2[:, :2])
+        max_rb = torch.max(box1[:, 2:], box2[:, 2:])
+        max_wh = max_rb - min_lt
+        if is_giou:
+            max_area = max_wh[:, 0] * max_wh[:, 1] + torch.finfo(torch.float16).eps  # 降维运算
+            giou = iou - (max_area - union_area) / max_area
+            return giou
+
+        c2 = max_wh[:, 0] ** 2 + max_wh[:, 1] ** 2 + torch.finfo(torch.float16).eps  # 最大矩形的矩离的平方
+        box1_xywh = ltrb2xywh(box1)
+        box2_xywh = ltrb2xywh(box2)
+        xw2_xh2 = torch.pow(box1_xywh[:, :2] - box2_xywh[:, :2], 2)  # 中心点距离的平方
+        d2 = xw2_xh2[:, 0] + xw2_xh2[:, 1]
+        dxy = d2 / c2  # 中心比例距离
+        if is_diou:
+            diou = iou - dxy
+            return diou
+
+        if is_ciou:
+            box1_atan_wh = torch.atan(box1_xywh[:, 2:3] / box1_xywh[:, 3:])
+            box2_atan_wh = torch.atan(box2_xywh[:, 2:3] / box2_xywh[:, 3:])
+            # torch.squeeze(ts)
+            v = torch.pow(box1_atan_wh[:, :] - box2_atan_wh, 2) * (4 / math.pi ** 2)
+            v = torch.squeeze(v, -1)  # m,n,1 -> m,n 去掉最后一维
+            v.squeeze_(-1)  # m,n,1 -> m,n 去掉最后一维
+            alpha = v / (1 - iou + v)
+            ciou = iou - (dxy + v * alpha)
+            return ciou
+
+
 def box_area(boxes):
     return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
