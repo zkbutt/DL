@@ -100,8 +100,6 @@ class CBL(nn.Module):
         return self.convs(x)
 
 
-
-
 class NoneLayer(nn.Module):
     def __init__(self):
         super(NoneLayer, self).__init__()
@@ -172,6 +170,8 @@ class FeatureConcat(nn.Module):
 
 
 class ReorgLayer(nn.Module):
+    '''宽高转通道'''
+
     def __init__(self, stride):
         super(ReorgLayer, self).__init__()
         self.stride = stride

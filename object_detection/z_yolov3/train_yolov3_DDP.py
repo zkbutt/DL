@@ -7,11 +7,9 @@ rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 from f_tools.datas.data_loader import DataLoader
 from object_detection.z_yolov3.train_yolo3 import train_eval_set, init_model
-from f_tools.fits.f_fit_fun import custom_set, show_train_info, train_eval4od, fdatas_l2
+from f_tools.fits.fitting.f_fit_fun import show_train_info, train_eval4od, fdatas_l2
 from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
 from f_tools.fits.f_gpu.f_gpu_api import mgpu_init, mgpu_process0_init
-
-from torch.utils.tensorboard import SummaryWriter
 
 '''解决linux导入出错 完成'''
 import torch

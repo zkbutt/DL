@@ -1,16 +1,10 @@
-import json
 import os
-import random
 
 import torch
-import numpy as np
-from PIL import Image
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_loader import cre_transform_resize4pil
-from f_tools.f_general import get_path_root
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic
-from f_tools.pic.f_show import f_plot_od4pil, f_show_od4pil
 # 这里要删除
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
 from object_detection.z_yolov1.train_yolov1 import init_model, train_eval_set

@@ -10,12 +10,14 @@ from torch.utils.tensorboard import SummaryWriter
 from f_tools.GLOBAL_LOG import flog
 
 
-def all_gather(data):
+def dict_all_gather(data):
     """
     Run all_gather on arbitrary picklable data (not necessarily tensors)
+    接收任意类型
     Args:
         data: any picklable object
     Returns:
+        返回组内每一个GPU值的 list
         list[data]: list of data gathered from each rank
     """
     world_size = get_world_size()
@@ -79,26 +81,6 @@ def reduce_dict(input_dict, average=True):
 
         reduced_dict = {k: v for k, v in zip(names, values)}
         return reduced_dict
-
-
-def warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor):
-    '''
-
-    :param optimizer:
-    :param warmup_iters:  warmup_iters = min(1000, len(data_loader) - 1)
-    :param warmup_factor: warmup_factor = 5.0 / 10000
-    :return:
-    '''
-
-    def f(x):
-        """根据step数返回一个学习率倍率因子"""
-        if x >= warmup_iters:  # 当迭代数大于给定的warmup_iters时，倍率因子为1
-            return 1
-        alpha = float(x) / warmup_iters
-        # 迭代过程中倍率因子从warmup_factor -> 1
-        return warmup_factor * (1 - alpha) + alpha
-
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=f)
 
 
 def setup_for_distributed(is_master):
@@ -233,7 +215,7 @@ def mgpu_process0_init(args, cfg, loader_train, loader_val_coco, model, device):
             while os.path.exists(path):
                 time.sleep(1)
             else:
-                flog.warning('删除成功: %s', path)
+                flog.warning('tb_writer 删除成功: %s', path)
             pass
     else:
         img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 不存在时需要
@@ -262,3 +244,45 @@ def model_device_init(model, device, id_gpu, cfg):
         model.to(device)  # 这个不需要加等号
         is_mgpu = False
     return model, is_mgpu
+
+
+if __name__ == '__main__':
+    # scatter 可以将信息从master节点传到所有的其他节点
+    # gather 可以将信息从别的节点获取到master节点
+
+    # 多GPU 同步测试
+    args, device = mgpu_init()
+    rank = get_rank()
+    # group = dist.new_group([0, 1])
+
+    var = torch.randn((2), device=device)
+
+    # 返回组内每一个GPU值的 list 支持任务类型
+    # var = 123
+    # gather = dict_all_gather(var) 这个加 if is_main_process()
+
+    print('原Rank ', rank, ' has data ', var)
+    req = None
+    dist.broadcast(var, src=0)  # 同步广播  if is_main_process(): 这个不能加主进程
+
+    '''ProcessGroupNCCL does not support send'''
+    # req = dist.isend(tensor=var, dst=1)# 异步 req.wait()
+    # req.wait()
+    # req = dist.irecv(tensor=var, src=0)# 异步 req.wait()
+    # req.wait()
+    # dist.send(tensor=var, dst=1)
+    # dist.recv(tensor=var, src=0)
+
+    # if get_rank() == 0:
+    #     # req = dist.isend(tensor=var, dst=1)  # 异步 req.wait()
+    #     # dist.send(tensor=var, dst=1)
+    #     print('Rank 0 started sending')
+    # else:
+    #     # req = dist.irecv(tensor=var, src=0)  # 异步 req.wait()
+    #     print('Rank 1 started receiving')
+
+    # 获取所有GPU的数据并完成计算 并赋值 只支持tensor
+    # async_op=False 为同步 dist.reduce_op.SUM  dist.reduce_op.PRODUCT  dist.reduce_op.MAX  dist.reduce_op.MIN
+    # dist.all_reduce(var, op=dist.ReduceOp.PRODUCT, async_op=False)
+
+    print('目标Rank ', rank, ' has data ', var)

@@ -10,13 +10,13 @@ from object_detection.z_yolov2.nets.net_yolov2 import Yolo_v2
 from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
 from f_pytorch.tools_model.backbones.darknet import darknet19
 from torch import optim
-from f_tools.datas.data_loader import cfg_raccoon, cfg_type2, DataLoader2
+from f_tools.datas.data_loader import cfg_type2, DataLoader2
 
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init, mgpu_process0_init
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.f_fit_fun import init_od, base_set, train_eval4od, fdatas_l2, show_train_info
+from f_tools.fits.fitting.f_fit_fun import init_od_e, base_set_1gpu, train_eval4od, fdatas_l2, show_train_info
 
 '''
 
@@ -61,29 +61,26 @@ def init_model(cfg, device, id_gpu=None):
 
 
 def train_eval_set(cfg):
+    cfg.IS_MULTI_SCALE = False
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
-    # batch = 20  # raccoon
     batch = 32  # type
-    # batch = 3  # type
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 3
         cfg.IS_COCO_EVAL = False
 
     # batch = 10  # type
     size = (416, 416)  # type
-    # size = (608, 608)  # type
     cfg_type2(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # anc重写
 
-    import numpy as np
     cfg.ANC_SIZE = [[0.074, 0.074], [0.162, 0.146], [0.314, 0.3], [0.452, 0.506], [0.729, 0.635]]
     cfg.NUM_ANC = len(cfg.ANC_SIZE)
 
     # cfg_raccoon(cfg, batch=batch, image_size=size)  # 加载数据基础参数
-    cfg.START_EVAL = 10  # cfg.START_EVAL=10 and EVAL_INTERVAL=3 实际是12
-    cfg.END_EVAL = 100  # 结束间隙验证
-    cfg.EVAL_INTERVAL = 3  #
+    cfg.START_EVAL = 50  # cfg.START_EVAL=10 and EVAL_INTERVAL=3 实际是12
+    cfg.END_EVAL = 150  # 结束间隙验证
+    cfg.EVAL_INTERVAL = 5  #
     # cfg.NUM_SAVE_INTERVAL = 100
 
     cfg.arg_focalloss_alpha = 0.75
@@ -96,15 +93,21 @@ def train_eval_set(cfg):
 
     cfg.LR0 = 1e-3
     cfg.TB_WRITER = True
-    cfg.DEL_TB = False
+    cfg.DEL_TB = True
     cfg.LOSS_EPOCH = False
     cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
+    cfg.IS_FORCE_SAVE = False  # 强制记录
 
 
 if __name__ == '__main__':
+    cfg = CFG
+    path_project_root = '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2'
+    cfg.IS_MULTI_SCALE = False
+
+
     '''------------------系统配置---------------------'''
-    init_od()
-    device, cfg = base_set(CFG, id_gpu=1)
+    device, cfg = base_set_1gpu(CFG, id_gpu=1)
+    init_od_e(cfg)
     train_eval_set(cfg)
 
     cfg.PATH_PROJECT_ROOT = cfg.PATH_HOST + '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2'  # 这个要改

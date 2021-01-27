@@ -9,7 +9,7 @@ rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 '''解决linux导入出错 完成'''
 
-from f_tools.fits.f_fit_fun import train_eval4od, show_train_info
+from f_tools.fits.fitting.f_fit_fun import train_eval4od, show_train_info
 from f_tools.fits.f_gpu.f_gpu_api import mgpu_init, mgpu_process0_init
 from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
 import torch

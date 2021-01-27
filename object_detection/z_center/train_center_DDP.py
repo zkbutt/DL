@@ -8,10 +8,9 @@ from object_detection.z_center.train_center import train_eval_set, init_model
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
-from f_tools.fits.f_fit_fun import custom_set, train_eval4od, fdatas_l2, show_train_info
+from f_tools.fits.fitting.f_fit_fun import train_eval4od, fdatas_l2, show_train_info
 from f_tools.fits.f_gpu.f_gpu_api import mgpu_init, mgpu_process0_init
 from object_detection.z_center.CONFIG_CENTER import CFG
-from torch.utils.tensorboard import SummaryWriter
 
 '''解决linux导入出错 完成'''
 import torch

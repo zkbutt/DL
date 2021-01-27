@@ -210,19 +210,53 @@ def f_二值交叉熵1():
     bce_loss = torch.nn.BCELoss(reduction='none')
     # bce_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
 
-    p_cls = [[0.3, 0.8, 0.9], [0.2, 0.7, 0.8]]
-    g_cls = [[0., 0, 1], [0, 0, 1]]  # float
+    p_cls = [[0.4, 0.8, 0.99], [0.2, 0.7, 0.8]]
+    g_cls = [[0.4, 0.2, 1], [0, 0, 1]]  # float
 
-    p_cls_np = np.array(p_cls)
-    g_cls_np = np.array(g_cls)
-    print(x_bce(p_cls_np, g_cls_np))
+    p_cls = torch.arange(0, 1, 0.01)
+    y = 0.2
+    g_cls = torch.full_like(p_cls, y)
 
-    p_cls_ts = torch.tensor(p_cls)
-    g_cls_ts = torch.tensor(g_cls)
-    print(bce_loss(p_cls_ts, g_cls_ts))
+    # p_cls_np = np.array(p_cls)
+    # g_cls_np = np.array(g_cls)
+    # print(f_bce(p_cls_np, g_cls_np))
 
-    floss = FocalLoss4Center()
-    print(floss(p_cls_ts, g_cls_ts))
+    # p_cls_ts = torch.tensor(p_cls)
+    # g_cls_ts = torch.tensor(g_cls)
+    # print(f_bce(p_cls_ts, g_cls_ts))
+
+    # p_cls_ts = torch.tensor(p_cls)
+    # g_cls_ts = torch.tensor(g_cls)
+
+    # print(out2)
+
+    # floss = FocalLoss4Center()
+    # print(floss(p_cls_ts, g_cls_ts))
+    xs = []
+    ys = []
+    out = focalloss_v3(p_cls, g_cls)
+    xs.append(p_cls)
+    ys.append(out)
+
+    out = bce_loss(p_cls, g_cls)
+    xs.append(p_cls)
+    ys.append(out)
+
+    out = F.mse_loss(p_cls, g_cls, reduction='none')
+    xs.append(p_cls)
+    ys.append(out)
+
+    # print(out1)
+    # print(focalloss_v3(p_cls_ts, g_cls_ts, alpha=0.5, gamma=1))  # gamma=1与bce一致
+
+    plt.xlabel('p_cls')
+    plt.ylabel('loss')
+    plt.title(y)
+    plt.xlim(0, 1)
+    plt.ylim(0, 5)
+    for x, y in zip(xs, ys):
+        plt.plot(x, y)
+    plt.show()
 
 
 def focal_loss4center(pconf, gconf, reduction='none', a=2., b=4.):
@@ -716,9 +750,9 @@ if __name__ == '__main__':
 
     np.random.seed(20201031)
 
-    t_ghm()
+    # t_ghm()
     # t_focal_loss()
 
     # t_多值交叉熵()
     # f_二值交叉熵2()
-    # f_二值交叉熵1()
+    f_二值交叉熵1()

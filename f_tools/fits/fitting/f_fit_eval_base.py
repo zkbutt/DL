@@ -17,14 +17,12 @@ from tqdm import tqdm
 import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.f_coco.coco_api import f_show_coco_pics
-from f_tools.datas.f_coco.coco_eval import CocoEvaluator
 from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_fix_txt, f_recover_gt
 from f_tools.datas.f_map.map_go import f_do_fmap
 from f_tools.f_torch_tools import save_weight
 import torch.distributed as dist
 
-from f_tools.fits.f_gpu.f_gpu_api import all_gather, get_rank, fis_mgpu, is_main_process
+from f_tools.fits.f_gpu.f_gpu_api import dict_all_gather, get_rank, fis_mgpu, is_main_process
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
 from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od_pil, \
     f_plt_show_pil, show_pic_ts, f_plt_od_np
@@ -100,7 +98,7 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
         with autocast(enabled=cfg.IS_MIXTURE_FIX):
             #  完成  数据组装完成   模型输入输出    构建展示字典及返回值
             if fun_datas_l2 is not None:
-                img_ts4, g_targets = fun_datas_l2(batch_data, device, cfg)
+                img_ts4, g_targets = fun_datas_l2(batch_data, device, cfg, epoch, model)
 
             loss_total, log_dict = model(img_ts4, g_targets)
 
@@ -206,7 +204,7 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
     pbar = tqdm(data_loader, desc='%s' % epoch, postfix=dict, mininterval=0.1)
     for batch_data in pbar:
         # torch.Size([5, 3, 416, 416])
-        img_ts4, g_targets = fun_datas_l2(batch_data, device, cfg)
+        img_ts4, g_targets = fun_datas_l2(batch_data, device, cfg, epoch, model)
         # 处理size 和 ids 用于coco
         images, targets = batch_data
 
@@ -319,7 +317,7 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
         d['res_'] = res_
         d['ids_coco'] = ids_coco
         d['num_no_pos'] = num_no_pos
-        data_list = all_gather(d)  # 任务类型同步
+        data_list = dict_all_gather(d)  # 任务类型同步
         if not is_main_process():
             # 其它 GPU 进程退出
             flog.debug('get_rank %s 已退出', get_rank())

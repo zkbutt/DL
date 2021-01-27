@@ -274,7 +274,7 @@ class ModelOut4Mobilenet_v3(nn.Module):
 
 
 if __name__ == '__main__':
-    from f_pytorch.tools_model.model_look import f_look_model
+    from f_pytorch.tools_model.model_look import f_look_tw
     from torchvision import models
 
     '''通过 层层遍历 提取'''

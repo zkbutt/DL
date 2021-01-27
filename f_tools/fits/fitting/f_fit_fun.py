@@ -1,7 +1,3 @@
-import json
-import math
-import os
-
 import cv2
 import matplotlib
 import torch
@@ -10,12 +6,11 @@ import numpy as np
 from f_tools.GLOBAL_LOG import flog
 import socket
 
-from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_recover_gt
 from f_tools.f_torch_tools import save_weight
 from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4fmap, f_evaluate4coco3
 
 
-def init_od():
+def init_od_e(cfg):
     # -----------通用系统配置----------------
     torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
     np.set_printoptions(linewidth=320, suppress=True,
@@ -25,12 +20,19 @@ def init_od():
     # 防止OpenCV进入多线程(使用PyTorch DataLoader)
     cv2.setNumThreads(0)
 
+    if cfg.IS_MULTI_SCALE:
+        cfg.tcfg_size = [640, 640]
+        flog.warning("多尺度训练 ------ 开 最大 %s" % cfg.tcfg_size)
+    else:
+        cfg.tcfg_size = cfg.IMAGE_SIZE
+        flog.warning("多尺度训练 ------ 关 %s", cfg.IMAGE_SIZE)
+
 
 def custom_set(cfg):
     flog.info('当前主机: %s 及主数据路径: %s ' % (cfg.host_name, cfg.PATH_HOST))
 
 
-def base_set(cfg, id_gpu=0):
+def base_set_1gpu(cfg, id_gpu=0):
     # cfg.SAVE_FILE_NAME = os.path.basename(__file__)
     if torch.cuda.is_available():
         device = torch.device('cuda:%s' % id_gpu)
@@ -50,58 +52,7 @@ def base_set(cfg, id_gpu=0):
     else:
         torch.multiprocessing.set_sharing_strategy('file_system')  # 多进程开文件
 
-    '''-----多尺度训练-----'''
-    # if cfg.IS_MULTI_SCALE:
-    #     # 动态输入尺寸选定 根据预设尺寸  0.667~1.5 之间 满足32的倍数
-    #     imgsz_min = cfg.IMAGE_SIZE[0] // cfg.MULTI_SCALE_VAL[1]
-    #     imgsz_max = cfg.IMAGE_SIZE[0] // cfg.MULTI_SCALE_VAL[0]
-    #     # 将给定的最大，最小输入尺寸向下调整到32的整数倍
-    #     grid_min, grid_max = imgsz_min // down_sample, imgsz_max // down_sample
-    #     imgsz_min, imgsz_max = int(grid_min * down_sample), int(grid_max * down_sample)
-    #     sizes_in = []
-    #     for i in range(imgsz_min, imgsz_max + 1, down_sample):
-    #         sizes_in.append(i)
-    #     # imgsz_train = imgsz_max  # initialize with max size
-    #     # img_size = random.randrange(grid_min, grid_max + 1) * gs
-    #     flog.info("输入画像的尺寸范围为[{}, {}] 可选尺寸为{}".format(imgsz_min, imgsz_max, sizes_in))
-
     return device, cfg
-
-
-def fdatas_l2(batch_data, device, cfg):
-    '''
-    cpu转gpu 输入模型前数据处理方法 定制
-    image = torch.nn.functional.interpolate(
-            image[None], scale_factor=scale_factor,
-            mode='bilinear', align_corners=False)[0]
-    images = torch.nn.functional.interpolate(images, size=input_size, mode='bilinear', align_corners=False)
-    :param batch_data:
-    :param device:
-    :return:
-    '''
-    images, targets = batch_data
-    images = images.to(device)
-
-    # 多尺度训练
-    # if iter_i % 10 == 0 and iter_i > 0 and args.multi_scale:
-    #     # randomly choose a new size
-    #     size = random.randint(10, 19) * 32
-    #     input_size = [size, size]
-    #     model.set_grid(input_size)
-    # if args.multi_scale:
-    #     # interpolate
-    #     images = torch.nn.functional.interpolate(images, size=input_size, mode='bilinear', align_corners=False)
-
-    for target in targets:
-        target['boxes'] = target['boxes'].to(device)
-        target['labels'] = target['labels'].to(device)
-        target['size'] = target['size'].to(device)
-        if cfg.NUM_KEYPOINTS > 0:
-            target['keypoints'] = target['keypoints'].to(device)
-
-        # for key, val in target.items():
-        #     target[key] = val.to(device)
-    return images, targets
 
 
 def fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch):
@@ -136,7 +87,7 @@ def train_eval4od(start_epoch, model, optimizer,
 
         if cfg.IS_TRAIN:
             model.train()
-            flog.info('训练开始 %s  半精度训练 %s' % (epoch + 1, cfg.IS_MIXTURE_FIX))
+            flog.warning('训练开始：%s   半精度训练：%s    尺寸：%s' % (epoch + 1, cfg.IS_MIXTURE_FIX, cfg.tcfg_size))
             log_dict = f_train_one_epoch4(
                 model=model,
                 fun_datas_l2=fun_datas_l2,

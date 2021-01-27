@@ -9,7 +9,7 @@ sys.path.append(os.path.split(rootPath)[0])
 from f_tools.datas.data_loader import DataLoader2
 from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
 from object_detection.z_yolov2.train_yolov2 import train_eval_set, init_model
-from f_tools.fits.f_fit_fun import train_eval4od, fdatas_l2, show_train_info
+from f_tools.fits.fitting.f_fit_fun import train_eval4od, fdatas_l2, show_train_info, init_od_e
 from f_tools.fits.f_gpu.f_gpu_api import mgpu_init, mgpu_process0_init
 import torch
 from f_tools.GLOBAL_LOG import flog
@@ -29,10 +29,11 @@ if __name__ == '__main__':
     if torch.cuda.is_available() is False:
         raise EnvironmentError("未发现GPU")
     cfg = CFG
+    init_od_e(cfg)
     train_eval_set(cfg)
 
     # cfg.LR0 = 1e-3
-    cfg.IS_FORCE_SAVE = False
+
     cfg.PATH_PROJECT_ROOT = cfg.PATH_HOST + '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2'  # 这个要改
 
     args, device = mgpu_init()

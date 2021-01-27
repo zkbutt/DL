@@ -3,7 +3,7 @@ from torch import optim
 from torchvision import models
 
 from f_pytorch.tools_model.f_layer_get import ModelOuts4Mobilenet_v2, ModelOut4Mobilenet_v2, ModelOut4Resnet18
-from f_pytorch.tools_model.model_look import f_look_model
+from f_pytorch.tools_model.model_look import f_look_tw
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import MapDataSet, load_od4voc, init_dataloader
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset, CustomCocoDataset

@@ -394,6 +394,6 @@ if __name__ == '__main__':
     # x = torch.rand([5, 3, 416, 416])
     # print(net(x).shape)
 
-    from f_pytorch.tools_model.model_look import f_look_model
+    from f_pytorch.tools_model.model_look import f_look_tw
 
-    f_look_model(net, input=(5, 3, 608, 608), name='Yolo_v2_Net')
+    f_look_tw(net, input=(5, 3, 608, 608), name='Yolo_v2_Net')

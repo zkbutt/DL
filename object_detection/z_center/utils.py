@@ -29,6 +29,7 @@ def gaussian_radius(sizes, min_overlap=0.7):
     c3 = (min_overlap - 1) * ww * hh
     sq3 = torch.sqrt(b3 ** 2 - 4 * a3 * c3)
     r3 = (b3 + sq3) / 2
+    # r3 = (b3 + sq3) / 2 * a3 # 这里可以除以2a,待实验
     val_min, _ = torch.min(torch.cat([r1.unsqueeze(0), r2.unsqueeze(0), r3.unsqueeze(0)], dim=0).T, dim=1)
     return val_min
 

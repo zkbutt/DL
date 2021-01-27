@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.nn import init
 
 from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v3
-from f_pytorch.tools_model.model_look import f_look_model
+from f_pytorch.tools_model.model_look import f_look_tw
 
 
 class hswish(nn.Module):

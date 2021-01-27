@@ -130,7 +130,7 @@ class DataLoader2:
 
     def set_tail(self):
         self.cfg.PATH_SAVE_WEIGHT = self.cfg.PATH_HOST + '/AI/weights/feadre'
-        self.cfg.FILE_FIT_WEIGHT = self.cfg.PATH_SAVE_WEIGHT + '/' + self.cfg.FILE_NAME_WEIGHT
+        self.cfg.FILE_FIT_WEIGHT = os.path.join(self.cfg.PATH_SAVE_WEIGHT, self.cfg.FILE_NAME_WEIGHT)
 
         # json_file = open(os.path.join(self.cfg.PATH_DATA_ROOT, 'ids_classes.json'), 'r', encoding='utf-8')
         # self.cfg.IDS_CLASSES = json.load(json_file, encoding='utf-8')  # json key是字符
@@ -197,6 +197,10 @@ class DataLoader2:
 
 
 '''-----------------------voc---------------------------------'''
+
+
+def _cfg_base(cfg):
+    pass
 
 
 def cfg_voc(cfg):
@@ -344,12 +348,14 @@ def cfg_raccoon(cfg, batch=40, image_size=(448, 448)):
 
 
 def cfg_type2(cfg, batch=40, image_size=(448, 448)):
+    # _cfg_base(cfg)
+    cfg.IMAGE_SIZE = image_size
+
     cfg.BATCH_SIZE = batch
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
 
     cfg.PRINT_FREQ = 5  # BATCH_SIZE * PRINT_FREQ 张图片
 
-    cfg.IMAGE_SIZE = image_size
     cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
     cfg.START_EVAL = 10  # 1第一轮
 

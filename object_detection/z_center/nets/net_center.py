@@ -396,7 +396,7 @@ class CenterNet(nn.Module):
 
 if __name__ == '__main__':
     from torchvision import models
-    from f_pytorch.tools_model.model_look import f_look_model
+    from f_pytorch.tools_model.model_look import f_look_tw
 
     num_classes = 20
     # model = models.mobilenet_v2(pretrained=True)
@@ -408,4 +408,4 @@ if __name__ == '__main__':
 
     model = CenterNet(cfg=None, backbone=model, num_classes=num_classes, dim_in_backbone=model.dim_out)
     model.eval()
-    f_look_model(model, input=(1, 3, 416, 416))
+    f_look_tw(model, input=(1, 3, 416, 416))

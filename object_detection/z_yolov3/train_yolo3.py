@@ -12,12 +12,11 @@ from f_tools.fits.f_gpu.f_gpu_api import model_device_init
 from object_detection.z_yolov3.nets.net_yolov3 import YoloV3SPP
 import math
 from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
-from f_tools.fits.f_fit_fun import init_od, base_set, show_train_info, train_eval4od, fdatas_l2
+from f_tools.fits.fitting.f_fit_fun import init_od_e, base_set_1gpu, show_train_info, train_eval4od, fdatas_l2
 
 from f_tools.GLOBAL_LOG import flog
 from torchvision import models
-from f_pytorch.tools_model.f_layer_get import ModelOut4Resnet18, ModelOut4Mobilenet_v2, ModelOut4Resnet50, \
-    ModelOuts4Mobilenet_v2, ModelOuts4Resnet
+from f_pytorch.tools_model.f_layer_get import ModelOuts4Resnet
 
 '''
 python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov3/train_yolo3.py
@@ -117,8 +116,8 @@ def train_eval_set(cfg):
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
-    init_od()
-    device, cfg = base_set(CFG)
+    init_od_e()
+    device, cfg = base_set_1gpu(CFG)
     train_eval_set(cfg)
 
     if hasattr(cfg, 'FEATURE_MAP_STEPS'):

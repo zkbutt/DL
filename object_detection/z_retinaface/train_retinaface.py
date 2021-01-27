@@ -5,16 +5,15 @@ import sys
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
-from f_tools.datas.data_loader import cfg_raccoon, cfg_type, DataLoader
+from f_tools.datas.data_loader import cfg_type, DataLoader
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.f_fit_fun import init_od, base_set, train_eval4od, fdatas_l2, show_train_info
+from f_tools.fits.fitting.f_fit_fun import init_od_e, base_set_1gpu, train_eval4od, fdatas_l2, show_train_info
 
 from torch import optim
 from torchvision import models
 
-from f_pytorch.tools_model.f_layer_get import ModelOuts4Densenet121, ModelOuts4Mobilenet_v2, ModelOut4Resnet50, \
-    ModelOuts4Resnet
+from f_pytorch.tools_model.f_layer_get import ModelOuts4Mobilenet_v2
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init
 
@@ -122,8 +121,8 @@ IOU大于0.5的为正  小于0.3的为负 负例倒序取3倍
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''
     # -----------通用系统配置----------------
-    init_od()
-    device, cfg = base_set(CFG)
+    init_od_e()
+    device, cfg = base_set_1gpu(CFG)
     train_eval_set(cfg)
 
     '''---------------数据加载及处理--------------'''

@@ -19,7 +19,7 @@ class CfgBase:
 
     '''多尺度'''
     IS_MULTI_SCALE = True  # 多尺度训练
-    MULTI_SCALE_VAL = [0.667, 1.5]  # 多尺寸的比例0.667~1.5 之间 满足32的倍数
+    MULTI_SCALE_VAL = [10, 19]  # 多尺寸的比例0.667~1.5 之间 满足32的倍数
 
     host_name = socket.gethostname()
     if host_name == 'Feadre-NB':
@@ -30,8 +30,6 @@ class CfgBase:
 
     '''训练参数'''
     SYSNC_BN = True  # 不冻结时可使用多设备同步BN,速度减慢
-    IS_MULTI_SCALE = True  # 多尺度训练
-    MULTI_SCALE_VAL = [0.667, 1.5]  # 多尺寸的比例0.667~1.5 之间 满足32的倍数
 
     '''可视化'''
     IS_VISUAL = False
@@ -41,6 +39,7 @@ class CfgBase:
     EPOCH_WARMUP = 2
     FORWARD_COUNT = 1  # 多次迭代再反向
 
+    tcfg_epoch = None
     # import getpass
     # # 获取当前系统用户名
     # user_name = getpass.getuser()

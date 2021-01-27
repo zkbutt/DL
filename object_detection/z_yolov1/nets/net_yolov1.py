@@ -87,16 +87,6 @@ class LossYOLO_v1(nn.Module):
             boxes_ltrb_one = target['boxes']  # ltrb
             labels_one = target['labels']
 
-            # from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
-            # img_ts = f_recover_normalization4ts(imgs_ts[i])
-            # from torchvision.transforms import functional as transformsF
-            # img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
-            # import numpy as np
-            # img_np = np.array(img_pil)
-            # f_plt_show_cv(img_np, gboxes_ltrb=boxes_ltrb_one.cpu()
-            #               , is_recover_size=True,
-            #               grids=(h, w))
-
             gyolos[i] = fmatch4yolov1(
                 boxes_ltrb=boxes_ltrb_one,
                 labels=labels_one,
@@ -151,7 +141,7 @@ class LossYOLO_v1(nn.Module):
         gconf = gyolos[:, :, 0]  # torch.Size([5, 169])
 
         # ----------------cls损失----------------
-        if cfg.loss_args['s_cls'] == 'ce':
+        if cfg.loss_args['s_cls'] == 'ce':  # 二分类用这个
             pcls = pyolos[:, :, 1:s_].permute(0, 2, 1)  # 自动ce
             gcls = gyolos[:, :, 1].long()  # torch.Size([5, 169])
 
@@ -384,6 +374,6 @@ if __name__ == '__main__':
     # x = torch.rand([5, 3, 416, 416])
     # print(net(x).shape)
 
-    from f_pytorch.tools_model.model_look import f_look_model
+    from f_pytorch.tools_model.model_look import f_look_tw
 
-    f_look_model(net, input=(5, 3, 416, 416), name='YOLOv1_Net')
+    f_look_tw(net, input=(5, 3, 416, 416), name='YOLOv1_Net')
