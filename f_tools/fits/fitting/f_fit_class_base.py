@@ -106,6 +106,13 @@ class Train_Mgpu(Train_Base):
                                          path_project_root, args)
 
 
+class Predicted_Pic(Train_Base):
+
+    def __init__(self, cfg, fun_train_eval_set, fun_init_model, is_mgpu, device, path_project_root, args=None) -> None:
+        super().__init__(cfg, fun_train_eval_set, fun_init_model, is_mgpu, device, path_project_root, args)
+
+    
+
 if __name__ == '__main__':
     class ttcfg:
         pass

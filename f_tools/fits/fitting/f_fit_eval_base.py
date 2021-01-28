@@ -25,7 +25,7 @@ import torch.distributed as dist
 from f_tools.fits.f_gpu.f_gpu_api import dict_all_gather, get_rank, fis_mgpu, is_main_process
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
 from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od_pil, \
-    f_plt_show_pil, show_pic_ts, f_plt_od_np
+    f_plt_show_pil, show_pic_ts, f_plt_od_np, f_plt_show_cv
 
 
 def calc_average_loss(value, log_dict):
@@ -371,12 +371,12 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
     return maps_val
 
 
-def _polt_boxes(img_pil, p_boxes_ltrb, szie_scale4bbox, p_scores, p_labels, labels_lsit):
-    if p_boxes_ltrb is not None:
-        flog.debug('一共有 %s 个目标', p_boxes_ltrb.shape[0])
-        p_boxes = p_boxes_ltrb * szie_scale4bbox
-        img_pil = f_plot_od4pil(img_pil, p_boxes, p_scores, p_labels, labels_lsit)
-    return img_pil
+# def _polt_boxes(img_pil, p_boxes_ltrb, szie_scale4bbox, p_scores, p_labels, labels_lsit):
+#     if p_boxes_ltrb is not None:
+#         flog.debug('一共有 %s 个目标', p_boxes_ltrb.shape[0])
+#         p_boxes = p_boxes_ltrb * szie_scale4bbox
+#         img_pil = f_plot_od4pil(img_pil, p_boxes, p_scores, p_labels, labels_lsit)
+#     return img_pil
 
 
 def _polt_keypoints(img_pil, p_boxes_ltrb, szie_scale4bbox, p_keypoints, szie_scale4landmarks,
@@ -389,28 +389,47 @@ def _polt_keypoints(img_pil, p_boxes_ltrb, szie_scale4bbox, p_keypoints, szie_sc
     return img_pil
 
 
-def f_prod_pic(img_pil, model, labels_lsit, data_transform, is_keeep=False, cfg=None):
-    size_input = img_pil.size
+def f_prod_pic4one(img_np, data_transform, model, size_ts, labels_lsit, is_keeep=False, cfg=None,
+                   gboxes_ltrb=None, target=None):
+    img_ts_one, boxes, labels = data_transform(img_np)
+    img_ts4 = img_ts_one.unsqueeze_(0)
+    size_input = size_ts
     if is_keeep:
-        max1 = max(size_input)
-        size_input = [max1, max1]
+        max1 = max(size_ts)
+        size_input = torch.tensor([max1, max1])
 
     # 用于恢复bbox及ke
-    szie_scale4bbox = torch.Tensor(size_input * 2)
-    # szie_scale4landmarks = torch.Tensor(size_input * 5)
-    img_ts = data_transform['val'](img_pil)[0][None]
-    # show_pic_ts(img_ts[0])
+    szie_scale4bbox = size_input.repeat(2)
 
     '''---------------预测开始--------------'''
-    ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts)
-    # ids_batch, p_boxes_ltrb, p_labels, p_scores = model(img_ts)
-    img_pil = _polt_boxes(img_pil, p_boxes_ltrb, szie_scale4bbox, p_scores, p_labels, labels_lsit)
-    f_plt_show_pil(img_pil)
+    ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
+
+    if p_labels is None or len(p_labels) == 0:
+        _text = '未检测出来，id为：%s'
+        if target is not None:
+            _text = _text % target['image_id']
+        flog.warning(_text)
+        plabels_text = None
+        p_scores_float = None
+        p_boxes_ltrb = p_boxes_ltrb
+    else:
+        plabels_text = []
+        p_scores_float = []
+        for i, label in enumerate(p_labels):
+            plabels_text.append(labels_lsit[int(label.item())])
+            p_scores_float.append(p_scores[i].item())
+        p_boxes_ltrb = p_boxes_ltrb * szie_scale4bbox
+
+    f_plt_show_cv(img_np, gboxes_ltrb=gboxes_ltrb,
+                  pboxes_ltrb=p_boxes_ltrb,
+                  plabels_text=plabels_text,
+                  p_scores_float=p_scores_float,
+                  )
 
 
 def f_prod_pic4file(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg=None):
     img_pil = Image.open(file_img).convert('RGB')
-    f_prod_pic(img_pil, model, labels_lsit, data_transform, is_keeep=is_keeep, cfg=cfg)
+    f_prod_pic4one(img_pil, model, labels_lsit, data_transform, is_keeep=is_keeep, cfg=cfg)
 
 
 def f_prod_pic4keypoints(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg=None):

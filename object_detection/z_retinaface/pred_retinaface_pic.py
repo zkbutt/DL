@@ -4,7 +4,7 @@ import torch
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_loader import cre_transform_resize4pil, DataLoader, cfg_raccoon
-from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4keypoints, f_prod_pic
+from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4keypoints, f_prod_pic4one
 from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
 from object_detection.z_retinaface.train_retinaface import init_model, train_eval_set
 
@@ -38,7 +38,7 @@ if __name__ == '__main__':
     # 这里是原图
     for i in range(index_start, len(dataset_val), 1):
         img, _ = dataset_val[i]
-        f_prod_pic(img, model, labels_lsit, data_transform)
+        f_prod_pic4one(img, model, labels_lsit, data_transform)
 
     # for name in file_names:
     #     '''---------------数据加载及处理--------------'''

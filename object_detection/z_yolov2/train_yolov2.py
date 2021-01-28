@@ -26,58 +26,28 @@ tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detecti
 '''
 
 
-def init_model(cfg, device, id_gpu=None):
-    model = darknet19(pretrained=True)
-    model = ModelOuts4DarkNet(model)
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_dark19'
-
-    model = Yolo_v2(backbone=model, cfg=cfg)
-
-    # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))
-
-    if cfg.IS_LOCK_BACKBONE_WEIGHT:
-        for name, param in model.backbone.named_parameters():
-            param.requires_grad_(False)
-        # 除最后的全连接层外，其他权重全部冻结
-        # if "fc" not in name:
-        #     param.requires_grad_(False)
-    # if id_gpu is not None:
-    #     cfg.LR0 = cfg.LR0 / 2
-
-    model, is_mgpu = model_device_init(model, device, id_gpu, cfg)
-
-    # ------------------------自定义backbone完成-------------------------------
-    pg = model.parameters()
-    optimizer = optim.Adam(pg, cfg.LR0)
-    # 两次不上升，降低一半
-    # lr_scheduler = None
-    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [60, 90], 0.1)
-    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=1, verbose=True)
-    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
-    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
-
-    model.cfg = cfg
-    return model, optimizer, lr_scheduler, start_epoch
-
-
 def train_eval_set(cfg):
-    cfg.IS_MULTI_SCALE = False
+    # 基本不动
+    cfg.TB_WRITER = True
+    cfg.LOSS_EPOCH = False
+    cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
+    cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
     batch = 32  # type
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
-        batch *= 3
+        batch *= 2
         cfg.IS_COCO_EVAL = False
 
     # batch = 10  # type
     size = (416, 416)  # type
     cfg_type2(cfg, batch=batch, image_size=size)  # 加载数据基础参数
-    # anc重写
+    # cfg_raccoon(cfg, batch=batch, image_size=size)  # 加载数据基础参数
 
+    # anc重写
     cfg.ANC_SIZE = [[0.074, 0.074], [0.162, 0.146], [0.314, 0.3], [0.452, 0.506], [0.729, 0.635]]
     cfg.NUM_ANC = len(cfg.ANC_SIZE)
 
-    # cfg_raccoon(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     cfg.START_EVAL = 50  # cfg.START_EVAL=10 and EVAL_INTERVAL=3 实际是12
     cfg.END_EVAL = 150  # 结束间隙验证
     cfg.EVAL_INTERVAL = 5  #
@@ -92,18 +62,42 @@ def train_eval_set(cfg):
     cfg.MAPS_VAL = [0.735, 0.502]  # 最高
 
     cfg.LR0 = 1e-3
-    cfg.TB_WRITER = True
     cfg.DEL_TB = True
-    cfg.LOSS_EPOCH = False
-    cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
     cfg.IS_FORCE_SAVE = False  # 强制记录
+
+
+def init_model(cfg, device, id_gpu=None):
+    model = darknet19(pretrained=True)
+    model = ModelOuts4DarkNet(model)
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_dark19'
+
+    model = Yolo_v2(backbone=model, cfg=cfg)
+    # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))
+
+    if cfg.IS_LOCK_BACKBONE_WEIGHT:
+        for name, param in model.backbone.named_parameters():
+            param.requires_grad_(False)
+
+    model, is_mgpu = model_device_init(model, device, id_gpu, cfg)
+
+    # ------------------------自定义backbone完成-------------------------------
+    pg = model.parameters()
+    optimizer = optim.Adam(pg, cfg.LR0)
+    # 两次不上升，降低一半
+    # lr_scheduler = None
+    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [50, 80, 120, 160, 200], 0.75)
+    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=1, verbose=True)
+    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
+    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
+
+    model.cfg = cfg
+    return model, optimizer, lr_scheduler, start_epoch
 
 
 if __name__ == '__main__':
     cfg = CFG
     path_project_root = '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2'
     cfg.IS_MULTI_SCALE = False
-
 
     '''------------------系统配置---------------------'''
     device, cfg = base_set_1gpu(CFG, id_gpu=1)

@@ -1,19 +1,11 @@
 import json
 import os
-import sys
 
 import torch
-import cv2
-import time
-
-from PIL import Image
-import numpy as np
 from f_tools.GLOBAL_LOG import flog
 from f_tools.device.f_device import init_video
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_vodeo
-from f_tools.pic.f_show import f_plot_od4pil
 from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
-from object_detection.z_yolov1.process_fun import init_model, cre_data_transform
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''

@@ -106,9 +106,12 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), lr0)
     lrf_scale = 0.1
     start_epoch = 0
-    epochs = 10
+    epochs = 200
 
-    scheduler = f_lr_cos(optimizer, start_epoch, epochs, lrf_scale)
+    # scheduler = f_lr_cos(optimizer, start_epoch, epochs, lrf_scale)
     # scheduler = lr_example(optimizer)
-    f_show_scheduler(scheduler, 100)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [50, 80, 120, 160, 200], 0.75)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=0.005, )
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.75)
+    f_show_scheduler(scheduler, epochs)
     pass

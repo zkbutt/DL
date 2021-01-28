@@ -986,7 +986,7 @@ def _f_draw_grid_plt(size, grids):
         plt.plot([0, w], [y_, y_], color=colors_, linewidth=1., alpha=0.3)
 
 
-def _f_draw_od_cv_plt(current_axis, boxes_ltrb, is_show_xy=True, labels_text=None,
+def _f_draw_od_cv_plt(current_axis, boxes_ltrb, is_show_xy=True, labels_text=None, p_scores_float=None,
                       color='lightcyan', fill=False, linewidth=1):
     '''新版本'''
     # color = 'lightcyan'  # 白色
@@ -998,13 +998,18 @@ def _f_draw_od_cv_plt(current_axis, boxes_ltrb, is_show_xy=True, labels_text=Non
         _f_draw_box_pil(current_axis, box, color=color, fill=fill, linewidth=linewidth, is_show_xy=is_show_xy)
 
         if labels_text is not None:
-            # labels : tensor -> int
-            # show_text = ids2classes[int(labels[i])] + str(round(scores[i], 2))
-            current_axis.text(l, t - 2, labels_text[i], size=8, color='white',
-                              bbox={'facecolor': 'green', 'alpha': 0.3})
+            if p_scores_float is not None:
+                text = "{}:{:.3f}".format(labels_text[i], p_scores_float[i])
+            else:
+                text = labels_text[i]
+            current_axis.text(l, t - 2, text, size=8, color='white', bbox={'facecolor': 'green', 'alpha': 0.3})
 
 
-def f_plt_show_cv(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False, labels_text=None, grids=None):
+def f_plt_show_cv(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False,
+                  glabels_text=None,
+                  plabels_text=None,
+                  p_scores_float=None,
+                  grids=None):
     '''
 
     :param img_np_bgr: 转换rgb
@@ -1030,14 +1035,15 @@ def f_plt_show_cv(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_siz
             whwh = np.tile(np.array(wh), 2)  # 整体复制 tile
             gboxes_ltrb = gboxes_ltrb * whwh
         _f_draw_od_cv_plt(current_axis, gboxes_ltrb, is_show_xy=True, color='red',
-                          labels_text=labels_text, linewidth=3)
+                          labels_text=glabels_text, linewidth=3)
 
     if pboxes_ltrb is not None:
         if is_recover_size:
             whwh = np.tile(np.array(wh), 2)  # 整体复制 tile
             pboxes_ltrb = pboxes_ltrb * whwh
         _f_draw_od_cv_plt(current_axis, pboxes_ltrb, is_show_xy=True, color='lightcyan',
-                          labels_text=labels_text,
+                          labels_text=plabels_text,
+                          p_scores_float=p_scores_float,
                           linewidth=1)
 
     plt.show()

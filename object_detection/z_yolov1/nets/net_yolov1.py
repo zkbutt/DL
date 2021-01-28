@@ -347,8 +347,8 @@ class Yolo_v1_1(nn.Module):
 
             return loss_total, log_dict
         else:
-            # with torch.no_grad(): # 这个没用
-            ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = self.preder(outs, x)
+            with torch.no_grad():  # 这个没用
+                ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = self.preder(outs, x)
             return ids_batch, p_boxes_ltrb, None, p_labels, p_scores
 
 
