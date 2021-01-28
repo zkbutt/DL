@@ -6,7 +6,7 @@ import types
 from numpy import random
 
 from f_tools.pic.enhance.f_data_pretreatment4pil import BasePretreatment
-from f_tools.pic.f_show import f_plt_show_cv
+from f_tools.pic.f_show import f_show_od_np4plt
 
 
 def cre_transform_resize4np(cfg):

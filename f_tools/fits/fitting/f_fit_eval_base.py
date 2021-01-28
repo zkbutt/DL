@@ -25,7 +25,7 @@ import torch.distributed as dist
 from f_tools.fits.f_gpu.f_gpu_api import dict_all_gather, get_rank, fis_mgpu, is_main_process
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
 from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od_pil, \
-    f_plt_show_pil, show_pic_ts, f_plt_od_np, f_plt_show_cv
+    f_plt_show_pil, show_pic_ts, f_plt_od_np, f_show_od_np4plt, f_show_od_np4cv
 
 
 def calc_average_loss(value, log_dict):
@@ -379,20 +379,12 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
 #     return img_pil
 
 
-def _polt_keypoints(img_pil, p_boxes_ltrb, szie_scale4bbox, p_keypoints, szie_scale4landmarks,
-                    p_scores, p_labels, labels_lsit):
-    if p_boxes_ltrb is not None:
-        flog.debug('一共有 %s 个目标', p_boxes_ltrb.shape[0])
-        p_boxes = p_boxes_ltrb * szie_scale4bbox
-        p_keypoints = p_keypoints * szie_scale4landmarks
-        img_pil = f_plot_od4pil_keypoints(img_pil, p_boxes, p_keypoints, p_scores, p_labels, labels_lsit)
-    return img_pil
-
-
-def f_prod_pic4one(img_np, data_transform, model, size_ts, labels_lsit, is_keeep=False, cfg=None,
-                   gboxes_ltrb=None, target=None):
+def model_out4one(model, img_np, data_transform, size_ts, labels_lsit, target=None, is_keeep=False):
     img_ts_one, boxes, labels = data_transform(img_np)
     img_ts4 = img_ts_one.unsqueeze_(0)
+
+    '''---------------预测开始--------------'''
+    ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
     size_input = size_ts
     if is_keeep:
         max1 = max(size_ts)
@@ -400,9 +392,6 @@ def f_prod_pic4one(img_np, data_transform, model, size_ts, labels_lsit, is_keeep
 
     # 用于恢复bbox及ke
     szie_scale4bbox = size_input.repeat(2)
-
-    '''---------------预测开始--------------'''
-    ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4)
 
     if p_labels is None or len(p_labels) == 0:
         _text = '未检测出来，id为：%s'
@@ -419,12 +408,67 @@ def f_prod_pic4one(img_np, data_transform, model, size_ts, labels_lsit, is_keeep
             plabels_text.append(labels_lsit[int(label.item())])
             p_scores_float.append(p_scores[i].item())
         p_boxes_ltrb = p_boxes_ltrb * szie_scale4bbox
+    return p_boxes_ltrb, p_scores_float, plabels_text
 
-    f_plt_show_cv(img_np, gboxes_ltrb=gboxes_ltrb,
-                  pboxes_ltrb=p_boxes_ltrb,
-                  plabels_text=plabels_text,
-                  p_scores_float=p_scores_float,
-                  )
+
+def f_prod_pic4one(img_np, data_transform, model, size_ts, labels_lsit, is_keeep=False, cfg=None,
+                   gboxes_ltrb=None, target=None):
+    p_boxes_ltrb, p_scores_float, plabels_text = model_out4one(model, img_np, data_transform,
+                                                               size_ts=size_ts,
+                                                               labels_lsit=labels_lsit,
+                                                               target=target,
+                                                               is_keeep=is_keeep
+                                                               )
+
+    f_show_od_np4plt(img_np, gboxes_ltrb=gboxes_ltrb,
+                     pboxes_ltrb=p_boxes_ltrb,
+                     plabels_text=plabels_text,
+                     p_scores_float=p_scores_float,
+                     )
+
+
+def f_prod_vodeo(cap, data_transform, model, labels_lsit, device, is_keeep=False):
+    fps = 0.0
+    count = 0
+
+    while True:
+        start_time = time.time()
+        '''---------------数据加载及处理--------------'''
+        ref, img_np = cap.read()  # 读取某一帧 ref是否成功
+        size_ts = torch.tensor(img_np.shape[:2][::-1], device=device)
+        p_boxes_ltrb, p_scores_float, plabels_text = model_out4one(model, img_np, data_transform,
+                                                                   size_ts=size_ts,
+                                                                   labels_lsit=labels_lsit,
+                                                                   is_keeep=is_keeep,
+                                                                   target=None)
+
+        if p_scores_float is not None and len(p_scores_float) > 0:
+            # 有目标画OD
+            img_np = f_show_od_np4cv(img_np, p_boxes_ltrb, p_scores_float, plabels_text, is_showing=False)
+            pass
+
+        # print("fps= %.2f" % (fps))
+        count += 1
+        img_np = cv2.putText(img_np, "fps= %.2f count=%s" % (fps, count), (0, 40), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                             (0, 255, 0), 2)
+        # 极小数
+        fps = (fps + (1. / max(sys.float_info.min, time.time() - start_time))) / 2
+        cv2.imshow("video", img_np)
+
+        c = cv2.waitKey(1) & 0xff  # 输入esc退出
+        if c == 27:
+            cap.release()
+            break
+
+
+def _polt_keypoints(img_pil, p_boxes_ltrb, szie_scale4bbox, p_keypoints, szie_scale4landmarks,
+                    p_scores, p_labels, labels_lsit):
+    if p_boxes_ltrb is not None:
+        flog.debug('一共有 %s 个目标', p_boxes_ltrb.shape[0])
+        p_boxes = p_boxes_ltrb * szie_scale4bbox
+        p_keypoints = p_keypoints * szie_scale4landmarks
+        img_pil = f_plot_od4pil_keypoints(img_pil, p_boxes, p_keypoints, p_scores, p_labels, labels_lsit)
+    return img_pil
 
 
 def f_prod_pic4file(file_img, model, labels_lsit, data_transform, is_keeep=False, cfg=None):
@@ -449,46 +493,6 @@ def f_prod_pic4keypoints(file_img, model, labels_lsit, data_transform, is_keeep=
     img_pil = _polt_keypoints(img_pil, p_boxes_ltrb, szie_scale4bbox, p_keypoints, szie_scale4landmarks,
                               p_scores, p_labels, labels_lsit)
     img_pil.show()
-
-
-def f_prod_vodeo(cap, data_transform, model, labels_lsit, is_keeep=False):
-    fps = 0.0
-    count = 0
-
-    while True:
-        start_time = time.time()
-        '''---------------数据加载及处理--------------'''
-        ref, img_np = cap.read()  # 读取某一帧 ref是否成功
-        img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)  # 格式转变，BGRtoRGB
-        img_pil = Image.fromarray(img_np, mode="RGB")
-        size_input = img_pil.size
-        if is_keeep:
-            max1 = max(size_input)
-            size_input = [max1, max1]
-
-        szie_scale4bbox = torch.Tensor(size_input * 2)
-        szie_scale4landmarks = torch.Tensor(size_input * 5)
-        img_ts = data_transform['val'](img_pil)[0][None]
-
-        '''---------------预测开始--------------'''
-        ids_batch, p_boxes_ltrb, p_labels, p_scores = model(img_ts)
-
-        img_pil = _polt_boxes(img_pil, p_boxes_ltrb, szie_scale4bbox, p_scores, p_labels, labels_lsit)
-        img_np = np.array(img_pil)
-        img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
-
-        # print("fps= %.2f" % (fps))
-        count += 1
-        img_np = cv2.putText(img_np, "fps= %.2f count=%s" % (fps, count), (0, 40), cv2.FONT_HERSHEY_SIMPLEX, 1,
-                             (0, 255, 0), 2)
-        # 极小数
-        fps = (fps + (1. / max(sys.float_info.min, time.time() - start_time))) / 2
-        cv2.imshow("video", img_np)
-
-        c = cv2.waitKey(1) & 0xff  # 输入esc退出
-        if c == 27:
-            cap.release()
-            break
 
 
 def f_prod_vodeo4keypoints(cap, data_transform, model, labels_lsit, is_keeep=False):

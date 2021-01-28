@@ -16,7 +16,7 @@ from torch.utils.data import Dataset
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.f_coco.coco_api import f_show_coco_pics, f_open_cocoimg
 from f_tools.pic.enhance.f_mosaic import f_mosaic_pics_ts
-from f_tools.pic.f_show import f_plt_box2, f_plt_show_cv, f_plt_show_ts
+from f_tools.pic.f_show import f_plt_box2, f_show_od_np4plt, f_show_od_ts4plt
 
 
 class CocoDataset(Dataset):
@@ -774,7 +774,7 @@ if __name__ == '__main__':
     for img, target in dataset:
         # print(img, target['boxes'], target['labels'])
         # f_plt_show_cv(img, target['boxes'])
-        f_plt_show_ts(img, target['boxes'])
+        f_show_od_ts4plt(img, target['boxes'])
         pass
 
     '''打开某一个图'''

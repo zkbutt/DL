@@ -2,17 +2,14 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from f_pytorch.tools_model.backbones.darknet import darknet19
-from f_pytorch.tools_model.f_layer_get import ModelOuts4DarkNet
-from f_pytorch.tools_model.f_model_api import finit_weights, CBL, finit_conf_bias, ReorgLayer
+from f_pytorch.tools_model.f_layer_get import ModelOuts4DarkNet19
+from f_pytorch.tools_model.f_model_api import CBL, ReorgLayer
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
-from f_tools.fits.f_lossfun import f_ghmc_v3, GHMC_Loss, focalloss_v2, FocalLoss_v2, focal_loss4center2, \
-    show_distribution, focalloss_v3, f_bce
-from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1, boxes_decode4yolo2, boxes_encode4yolo2
+from f_tools.fits.f_match import boxes_decode4yolo2
 from f_tools.fits.f_predictfun import label_nms
-from f_tools.fun_od.f_boxes import offxy2xy, xywh2ltrb, calc_iou4ts, calc_iou4some_dim, ltrb2xywh, bbox_iou4one, \
-    bbox_iou4one2
-from f_tools.pic.f_show import f_plt_show_cv, f_plt_show_ts
+from f_tools.fun_od.f_boxes import xywh2ltrb, calc_iou4ts, ltrb2xywh, bbox_iou4one2
+from f_tools.pic.f_show import f_show_od_np4plt, f_show_od_ts4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 
 
@@ -108,8 +105,8 @@ def calc_iou(ptxywh, gbox_p, batch, grid_h, grid_w, cfg, mask_pos_2, imgs_ts=Non
 
             iou = bbox_iou4one2(_pltrb, _gbox_p)
             flog.debug('iou %s', iou)
-            f_plt_show_ts(img_ts, gboxes_ltrb=_gbox_p, pboxes_ltrb=_pltrb,
-                          is_recover_size=True, grids=(grid_h, grid_w))
+            f_show_od_ts4plt(img_ts, gboxes_ltrb=_gbox_p, pboxes_ltrb=_pltrb,
+                             is_recover_size=True, grids=(grid_h, grid_w))
 
     pltrb = pltrb.view(-1, 4)
     gbox_p = gbox_p.view(-1, 4)
@@ -187,9 +184,9 @@ class LossYOLO_v2(nn.Module):
                 img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
                 import numpy as np
                 img_np = np.array(img_pil)
-                f_plt_show_cv(img_np, gboxes_ltrb=boxes_ltrb_one.cpu()
-                              , pboxes_ltrb=xywh2ltrb(gtxywh.cpu()), is_recover_size=True,
-                              grids=(h, w))
+                f_show_od_np4plt(img_np, gboxes_ltrb=boxes_ltrb_one.cpu()
+                                 , pboxes_ltrb=xywh2ltrb(gtxywh.cpu()), is_recover_size=True,
+                                 grids=(h, w))
 
         # pbox解码计算 匹配的iou 作为正例conf
         s_ = 1 + cfg.NUM_CLASSES
@@ -334,9 +331,9 @@ class Yolo_v2_Net(nn.Module):
         # conf1 + box4 + cls3
         self.head = nn.Conv2d(1024, cfg.NUM_ANC * (1 + 4 + cfg.NUM_CLASSES), 1)
 
-    def forward(self, x, targets=None):
+    def forward(self, x):
         # ceng2, ceng3合并
-        ceng1, ceng2, ceng3 = self.backbone(x)
+        _, ceng2, ceng3 = self.backbone(x)
 
         # conv层集合 2层  不变 [5, 1024, 19, 19]
         ceng3 = self.convsets_1(ceng3)
@@ -370,14 +367,14 @@ class Yolo_v2(nn.Module):
 
             return loss_total, log_dict
         else:
-            # with torch.no_grad(): # 这个没用
-            ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = self.preder(outs, x)
-            return ids_batch, p_boxes_ltrb, None, p_labels, p_scores
+            with torch.no_grad():  # 这个没用
+                ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = self.preder(outs, x)
+            return ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores
 
 
 if __name__ == '__main__':
     model = darknet19(pretrained=True)
-    model = ModelOuts4DarkNet(model)
+    model = ModelOuts4DarkNet19(model)
 
 
     class CFG:

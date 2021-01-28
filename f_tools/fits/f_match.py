@@ -86,7 +86,7 @@ def boxes_decode4yolo2(ptxywh, grid_h, grid_w, cfg):
     pxy = pxy / grid_h
 
     # 特图wh比例 -> 原图
-    ancs_wh_ts = torch.tensor(cfg.ANC_SIZE, device=device)
+    ancs_wh_ts = torch.tensor(cfg.ANC_SCALE, device=device)
     # 比例 ( 比例不需要转换 ) * 特图anc_wh
     pwh = torch.exp(ptxywh[:, :, :, 2:4]) * ancs_wh_ts  # torch.Size([3, 361, 5, 2])
     # fdebug 可视化匹配的anc
@@ -119,7 +119,7 @@ def boxes_encode4yolo2(gboxes_ltrb, grid_h, grid_w, device, cfg):
     txys = (cxys - offset_xys) * grids_ts  # 特图偏移
 
     # twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
-    ancs_wh_ts = torch.tensor(cfg.ANC_SIZE, device=device)
+    ancs_wh_ts = torch.tensor(cfg.ANC_SCALE, device=device)
     # torch.Size([1, 2]) ^ torch.Size([5, 2]) = [5,2]
     twhs = (whs / ancs_wh_ts).log()  # 特图长宽 log减小差距
 

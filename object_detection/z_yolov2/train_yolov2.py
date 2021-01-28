@@ -5,7 +5,8 @@ import sys
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
-from f_pytorch.tools_model.f_layer_get import ModelOuts4DarkNet
+from f_tools.fits.fitting.f_fit_class_base import Train_1gpu
+from f_pytorch.tools_model.f_layer_get import ModelOuts4DarkNet19
 from object_detection.z_yolov2.nets.net_yolov2 import Yolo_v2
 from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
 from f_pytorch.tools_model.backbones.darknet import darknet19
@@ -16,7 +17,6 @@ from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init, mgpu_process0_init
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.fitting.f_fit_fun import init_od_e, base_set_1gpu, train_eval4od, fdatas_l2, show_train_info
 
 '''
 
@@ -39,14 +39,13 @@ def train_eval_set(cfg):
         batch *= 2
         cfg.IS_COCO_EVAL = False
 
-    # batch = 10  # type
     size = (416, 416)  # type
     cfg_type2(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_raccoon(cfg, batch=batch, image_size=size)  # 加载数据基础参数
 
     # anc重写
-    cfg.ANC_SIZE = [[0.074, 0.074], [0.162, 0.146], [0.314, 0.3], [0.452, 0.506], [0.729, 0.635]]
-    cfg.NUM_ANC = len(cfg.ANC_SIZE)
+    cfg.ANC_SCALE = [[0.074, 0.074], [0.162, 0.146], [0.314, 0.3], [0.452, 0.506], [0.729, 0.635]]
+    cfg.NUM_ANC = len(cfg.ANC_SCALE)
 
     cfg.START_EVAL = 50  # cfg.START_EVAL=10 and EVAL_INTERVAL=3 实际是12
     cfg.END_EVAL = 150  # 结束间隙验证
@@ -68,7 +67,7 @@ def train_eval_set(cfg):
 
 def init_model(cfg, device, id_gpu=None):
     model = darknet19(pretrained=True)
-    model = ModelOuts4DarkNet(model)
+    model = ModelOuts4DarkNet19(model)
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_dark19'
 
     model = Yolo_v2(backbone=model, cfg=cfg)
@@ -84,10 +83,7 @@ def init_model(cfg, device, id_gpu=None):
     pg = model.parameters()
     optimizer = optim.Adam(pg, cfg.LR0)
     # 两次不上升，降低一半
-    # lr_scheduler = None
     lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [50, 80, 120, 160, 200], 0.75)
-    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.8, patience=1, verbose=True)
-    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
     start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg
@@ -97,33 +93,9 @@ def init_model(cfg, device, id_gpu=None):
 if __name__ == '__main__':
     cfg = CFG
     path_project_root = '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2'
-    cfg.IS_MULTI_SCALE = False
+    # cfg.LR0 = 1e-3
 
-    '''------------------系统配置---------------------'''
-    device, cfg = base_set_1gpu(CFG, id_gpu=1)
-    init_od_e(cfg)
-    train_eval_set(cfg)
+    train = Train_1gpu(cfg, train_eval_set, init_model, path_project_root)
+    train.f_run()
 
-    cfg.PATH_PROJECT_ROOT = cfg.PATH_HOST + '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2'  # 这个要改
-
-    '''---------------数据加载及处理--------------'''
-    data_loader = DataLoader2(cfg)
-    _ret = data_loader.get_train_eval_datas(is_mgpu=False)
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = _ret
-
-    show_train_info(cfg, loader_train, loader_val_coco)
-
-    '''------------------模型定义---------------------'''
-    model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=None)
-    tb_writer = None
-    if cfg.TB_WRITER:
-        tb_writer = mgpu_process0_init(None, cfg, loader_train, loader_val_coco, model, device)
-        show_train_info(cfg, loader_train, loader_val_coco)
-
-    train_eval4od(start_epoch=start_epoch, model=model, optimizer=optimizer,
-                  fdatas_l2=fdatas_l2, lr_scheduler=lr_scheduler,
-                  loader_train=loader_train, loader_val_fmap=loader_val_fmap, loader_val_coco=loader_val_coco,
-                  device=device, train_sampler=None, eval_sampler=None,
-                  tb_writer=tb_writer, maps_def=cfg.MAPS_VAL
-                  )
     flog.info('---%s--main执行完成------ ', os.path.basename(__file__))

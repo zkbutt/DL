@@ -10,7 +10,7 @@ from f_tools.fits.f_lossfun import f_ghmc_v3, GHMC_Loss, focalloss_v2, FocalLoss
 from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1
 from f_tools.fits.f_predictfun import label_nms
 from f_tools.fun_od.f_boxes import offxy2xy, xywh2ltrb, calc_iou4ts, calc_iou4some_dim, ltrb2xywh
-from f_tools.pic.f_show import f_plt_show_cv
+from f_tools.pic.f_show import f_show_od_np4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 
 
@@ -128,9 +128,9 @@ class LossYOLO_v1(nn.Module):
                 img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
                 import numpy as np
                 img_np = np.array(img_pil)
-                f_plt_show_cv(img_np, gboxes_ltrb=boxes_ltrb_one.cpu()
-                              , pboxes_ltrb=xywh2ltrb(gtxywh.cpu()), is_recover_size=True,
-                              grids=(h, w))
+                f_show_od_np4plt(img_np, gboxes_ltrb=boxes_ltrb_one.cpu()
+                                 , pboxes_ltrb=xywh2ltrb(gtxywh.cpu()), is_recover_size=True,
+                                 grids=(h, w))
 
         # a = 1.05
         # pconf = a * pyolos[:, :, 0].sigmoid() - (a - 1) / 2
@@ -349,7 +349,7 @@ class Yolo_v1_1(nn.Module):
         else:
             with torch.no_grad():  # 这个没用
                 ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = self.preder(outs, x)
-            return ids_batch, p_boxes_ltrb, None, p_labels, p_scores
+            return ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores
 
 
 if __name__ == '__main__':

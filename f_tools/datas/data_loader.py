@@ -1,4 +1,3 @@
-import json
 import os
 import socket
 
@@ -9,99 +8,6 @@ from f_tools.datas.data_factory import load_od4voc, init_dataloader
 from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset, CustomCocoDataset, CustomCocoDataset4cv
 from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_recover_gt
 from f_tools.pic.enhance.f_data_pretreatment4np import cre_transform_resize4np
-from f_tools.pic.enhance.f_data_pretreatment4pil import cre_transform_resize4pil
-
-
-# class DataLoader:
-#
-#     def __init__(self, cfg) -> None:
-#         super().__init__()
-#         self.cfg = cfg
-#
-#         self.set_init()  # 初始化方法
-#         self.data_transform = cre_transform_resize4pil(cfg)  # 写死用这个
-#
-#     def set_init(self):
-#         host_name = socket.gethostname()
-#         if host_name == 'Feadre-NB':
-#             self.cfg.PATH_HOST = 'M:'
-#             # raise Exception('当前主机: %s 及主数据路径: %s ' % (host_name, cfg.PATH_HOST))
-#         elif host_name == 'e2680v2':
-#             self.cfg.PATH_HOST = ''
-#
-#         import platform
-#
-#         sysstr = platform.system()
-#         print('当前系统为:', sysstr)
-#         if sysstr == 'Windows':  # 'Linux'
-#             torch.backends.cudnn.enabled = False
-#
-#     def set_tail(self):
-#         self.cfg.PATH_SAVE_WEIGHT = self.cfg.PATH_HOST + '/AI/weights/feadre'
-#         self.cfg.FILE_FIT_WEIGHT = self.cfg.PATH_SAVE_WEIGHT + '/' + self.cfg.FILE_NAME_WEIGHT
-#
-#         # json_file = open(os.path.join(self.cfg.PATH_DATA_ROOT, 'ids_classes.json'), 'r', encoding='utf-8')
-#         # self.cfg.IDS_CLASSES = json.load(json_file, encoding='utf-8')  # json key是字符
-#
-#         if self.cfg.IS_FMAP_EVAL:
-#             f_recover_gt(self.cfg.PATH_EVAL_INFO + '/gt_info')
-#             # device = torch.device("cpu")
-#
-#         self.cfg.DATA_NUM_WORKERS = min([os.cpu_count(), self.cfg.DATA_NUM_WORKERS])
-#
-#         # 检查保存权重文件夹是否存在，不存在则创建
-#         if not os.path.exists(self.cfg.PATH_SAVE_WEIGHT):
-#             try:
-#                 os.makedirs(self.cfg.PATH_SAVE_WEIGHT)
-#             except Exception as e:
-#                 flog.error(' %s %s', self.cfg.PATH_SAVE_WEIGHT, e)
-#
-#     def get_test_dataset(self):
-#         dataset_val = CustomCocoDataset(
-#             file_json=self.cfg.FILE_JSON_TEST,
-#             path_img=self.cfg.PATH_IMG_EVAL,
-#             mode=self.cfg.MODE_COCO_EVAL,
-#             transform=None,
-#             is_mosaic=False,
-#             is_mosaic_keep_wh=self.cfg.IS_MOSAIC_KEEP_WH,
-#             is_mosaic_fill=self.cfg.IS_MOSAIC_FILL,
-#             is_debug=self.cfg.DEBUG,
-#             cfg=self.cfg
-#         )
-#
-#         self.set_tail()  # 尾设置
-#         return dataset_val
-#
-#     def get_train_eval_datas(self, is_mgpu):
-#         dataset_train = CustomCocoDataset(
-#             file_json=self.cfg.FILE_JSON_TRAIN,
-#             path_img=self.cfg.PATH_IMG_TRAIN,
-#             mode=self.cfg.MODE_COCO_TRAIN,
-#             transform=self.data_transform['train'],
-#             is_mosaic=self.cfg.IS_MOSAIC,
-#             is_mosaic_keep_wh=self.cfg.IS_MOSAIC_KEEP_WH,
-#             is_mosaic_fill=self.cfg.IS_MOSAIC_FILL,
-#             is_debug=self.cfg.DEBUG,
-#             cfg=self.cfg
-#         )
-#
-#         dataset_val = CustomCocoDataset(
-#             file_json=self.cfg.FILE_JSON_TEST,
-#             path_img=self.cfg.PATH_IMG_EVAL,
-#             mode=self.cfg.MODE_COCO_EVAL,
-#             transform=self.data_transform['val'],
-#             is_mosaic=False,
-#             is_mosaic_keep_wh=False,
-#             is_mosaic_fill=False,
-#             is_debug=self.cfg.DEBUG,
-#             cfg=self.cfg
-#         )
-#         _res = init_dataloader(self.cfg, dataset_train, dataset_val, is_mgpu, use_mgpu_eval=self.cfg.USE_MGPU_EVAL)
-#         loader_train, loader_val_coco, train_sampler, eval_sampler = _res
-#         loader_val_fmap = None
-#
-#         self.set_tail()  # 尾设置
-#         return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 
 
 class DataLoader2:
@@ -389,19 +295,23 @@ def cfg_type2(cfg, batch=40, image_size=(448, 448)):
     cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_test_621.json'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
-    # cfg.ANC_SCALE = [
-    #     [[0.078, 0.076], [0.166, 0.164]],
-    #     [[0.374, 0.254], [0.288, 0.424]],
-    #     [[0.574, 0.46], [0.698, 0.668]],
-    # ]
-    cfg.ANC_SCALE = [
-        [[0.05, 0.045], [0.078, 0.084], [0.142, 0.106]],
-        [[0.185, 0.2], [0.384, 0.27], [0.284, 0.426]],
-        [[0.642, 0.436], [0.48, 0.628], [0.77, 0.664]],
-    ]
+    # Accuracy: 73.32%  [3,3,2]
+    cfg.ANC_SCALE = [[[0.06, 0.06], [0.122, 0.098], [0.18, 0.19]],
+                     [[0.382, 0.251], [0.262, 0.378], [0.408, 0.529]],
+                     [[0.621, 0.415], [0.622, 0.704], [0.85, 0.61]]]
     cfg.ANCHORS_CLIP = True  # 是否剔除超边界
     cfg.NUMS_ANC = [3, 3, 3]
-    cfg.NUM_ANC = np.array(cfg.NUMS_ANC).prod()
+    cfg.NUM_ANC = np.array(cfg.NUMS_ANC).sum()
 
     cfg.PIC_MEAN = (0.406, 0.456, 0.485)
     cfg.PIC_STD = (0.225, 0.224, 0.229)
+
+
+if __name__ == '__main__':
+    from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
+
+    cfg = CFG()
+    cfg_type2(cfg)
+    print(len(cfg.ANC_SCALE))
+    print(np.array(cfg.ANC_SCALE).shape)  # [3,3,2]
+    print(cfg.NUM_ANC)

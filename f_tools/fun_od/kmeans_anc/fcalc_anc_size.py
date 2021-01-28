@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 
 import cv2
 import numpy as np
-import torch
 from tqdm import tqdm
 
 from f_tools.datas.f_coco.convert_data.coco_dataset import load_dataset_coco
@@ -110,7 +109,7 @@ if __name__ == '__main__':
     VOC2012 17125 18 Accuracy: 75.18%
     输出anc的归一化比例
     '''
-    clusters = 5
+    clusters = 9
     size_in = [416, 416]
     # size_in = [512, 512]
 

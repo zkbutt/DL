@@ -9,7 +9,7 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.fun_od.f_boxes import ltwh2ltrb
 from f_tools.pic.enhance.f_data_pretreatment4np import SSDAugmentation, RandomMirror, Expand, Normalize, \
     ToPercentCoords, RandomSaturation, ConvertFromInts, RandomSampleCrop, cre_transform_resize4np
-from f_tools.pic.f_show import f_plt_od_np, f_plt_show_cv, f_plt_show_ts
+from f_tools.pic.f_show import f_plt_od_np, f_show_od_np4plt, f_show_od_ts4plt
 
 if __name__ == '__main__':
     # coco_obj加载
@@ -68,8 +68,8 @@ if __name__ == '__main__':
     #               labels_text=labels,
     #               is_recover_size=False)
 
-    f_plt_show_ts(img, gboxes_ltrb=torch.tensor(bboxs_ltrb), pboxes_ltrb=boxes,
-                  labels_text=labels,
-                  is_recover_size=False)
+    f_show_od_ts4plt(img, gboxes_ltrb=torch.tensor(bboxs_ltrb), pboxes_ltrb=boxes,
+                     labels_text=labels,
+                     is_recover_size=False)
     # ssd_augmentation = SSDAugmentation()
     # ssd_augmentation(img_np, bboxs_ltrb, np.array(labels))

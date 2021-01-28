@@ -6,11 +6,9 @@ curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 '''解决linux导入出错 完成'''
-from f_tools.datas.data_loader import DataLoader2
+from f_tools.fits.fitting.f_fit_class_base import Train_Mgpu
 from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
 from object_detection.z_yolov2.train_yolov2 import train_eval_set, init_model
-from f_tools.fits.fitting.f_fit_fun import train_eval4od, fdatas_l2, show_train_info, init_od_e
-from f_tools.fits.f_gpu.f_gpu_api import mgpu_init, mgpu_process0_init
 import torch
 from f_tools.GLOBAL_LOG import flog
 
@@ -29,35 +27,9 @@ if __name__ == '__main__':
     if torch.cuda.is_available() is False:
         raise EnvironmentError("未发现GPU")
     cfg = CFG
-    init_od_e(cfg)
-    train_eval_set(cfg)
+    path_project_root = '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2'  # 这个要加/
+    train = Train_Mgpu(cfg, train_eval_set, init_model, path_project_root)
+    train.f_run()
 
-    # cfg.LR0 = 1e-3
-
-    cfg.PATH_PROJECT_ROOT = cfg.PATH_HOST + '/AI/temp/tmp_pycharm/DL/object_detection/z_yolov2'  # 这个要改
-
-    args, device = mgpu_init()
-
-    '''---------------数据加载及处理--------------'''
-    data_loader = DataLoader2(cfg)
-    _ret = data_loader.get_train_eval_datas(is_mgpu=True)
-    loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler = _ret
-
-    '''------------------模型定义---------------------'''
-    model, optimizer, lr_scheduler, start_epoch = init_model(cfg, device, id_gpu=args)
-
-    '''---------------主进程任务启动--------------'''
-    tb_writer = None
-    if args.rank == 0:
-        tb_writer = mgpu_process0_init(args, cfg, loader_train, loader_val_coco, model, device)
-        show_train_info(cfg, loader_train, loader_val_coco)
-
-    '''---------------训练验证开始--------------'''
-    train_eval4od(start_epoch=start_epoch, model=model, optimizer=optimizer,
-                  fdatas_l2=fdatas_l2, lr_scheduler=lr_scheduler,
-                  loader_train=loader_train, loader_val_fmap=loader_val_fmap, loader_val_coco=loader_val_coco,
-                  device=device, train_sampler=train_sampler, eval_sampler=eval_sampler,
-                  tb_writer=tb_writer, maps_def=cfg.MAPS_VAL
-                  )
     # torch.distributed.destroy_process_group()  # 释放进程
     flog.info('---%s--main执行完成--进程号：%s---- ' % (os.path.basename(__file__), torch.distributed.get_rank()))

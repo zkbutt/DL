@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import os
 
+from f_pytorch.tools_model.f_layer_get import ModelOuts4DarkNet19, ModelOuts4DarkNet53
+
 
 class Conv_LeakyReLU_Res_BN(nn.Module):
     def __init__(self, in_ch, ksize, padding=0, stride=1, dilation=1, depthwise=False):
@@ -196,7 +198,7 @@ class DarkNet_53(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(1024, num_classes)
 
-    def forward(self, x, targets=None):
+    def _forward_impl(self, x):
         x = self.layer_1(x)
         x = self.layer_2(x)
         x = self.layer_3(x)
@@ -208,6 +210,9 @@ class DarkNet_53(nn.Module):
         x = self.fc(x)
 
         return x
+
+    def forward(self, x):
+        return self._forward_impl(x)
 
 
 class DarkNet_Tiny(nn.Module):
@@ -393,7 +398,8 @@ def darknet19(pretrained=False, device='cpu', **kwargs):
     model = DarkNet_19()
     if pretrained:
         print('Loading the darknet19 ...')
-        file_weight = 'AI/weights/pytorch/darknet/darknet19_72.96.pth'
+        # file_weight = 'AI/weights/pytorch/darknet/darknet19_72.96.pth'
+        file_weight = 'AI/weights/pytorch/darknet/darknet19_hr_75.52_92.73.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 
@@ -407,7 +413,8 @@ def darknet53(pretrained=False, device='cpu', **kwargs):
     model = DarkNet_53()
     if pretrained:
         print('Loading the darknet53 ...')
-        file_weight = 'AI/weights/pytorch/darknet/darknet53_75.42.pth'
+        # file_weight = 'AI/weights/pytorch/darknet/darknet53_75.42.pth'
+        file_weight = 'AI/weights/pytorch/darknet/darknet53_hr_77.76.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 
@@ -421,7 +428,8 @@ def darknet_tiny(pretrained=False, device='cpu', **kwargs):
     model = DarkNet_Tiny()
     if pretrained:
         print('Loading the darknet_tiny ...')
-        file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_63.50_85.06.pth'
+        # file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_63.50_85.06.pth'
+        file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_hr_61.85.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 
@@ -435,7 +443,8 @@ def darknet_lite(pretrained=False, device='cpu', **kwargs):
     model = DarkNet_Lite()
     if pretrained:
         print('Loading the darknet_lite ...')
-        file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_63.50_85.06.pth'
+        # file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_63.50_85.06.pth'
+        file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_hr_61.85.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 
@@ -449,7 +458,8 @@ def darknet_light(pretrained=False, device='cpu', **kwargs):
     model = DarkNet_Light()
     if pretrained:
         print('Loading the darknet_light ...')
-        file_weight = 'AI/weights/pytorch/darknet/darknet_light_90_58.99.pth'
+        # file_weight = 'AI/weights/pytorch/darknet/darknet_light_90_58.99.pth'
+        file_weight = 'AI/weights/pytorch/darknet/darknet_light_hr_59.61.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 
@@ -457,11 +467,12 @@ def darknet_light(pretrained=False, device='cpu', **kwargs):
 if __name__ == '__main__':
     from f_pytorch.tools_model.model_look import f_look_summary, f_look_tw
 
-    # darknet_ = darknet19(pretrained=True, device='cpu') # 1
-    # darknet_ = darknet53(pretrained=True, device='cpu') # 2
-    # darknet_ = darknet_tiny(pretrained=True, device='cpu')  # 1/4
-    # darknet_ = darknet_lite(pretrained=True, device='cpu')
-    darknet_ = darknet_light(pretrained=True, device='cpu')
-    f_look_summary(darknet_, input=(3, 416, 416))
-    # f_look_tw(darknet_, input=(1, 3, 416, 416), name='model_look')
-    # print(darknet_)
+    # model = darknet19(pretrained=True, device='cpu') # 1
+    model = darknet53(pretrained=True, device='cpu')  # 2
+    model = ModelOuts4DarkNet53(model)
+    # model = darknet_tiny(pretrained=True, device='cpu')  # 1/4
+    # model = darknet_lite(pretrained=True, device='cpu')
+    # model = darknet_light(pretrained=True, device='cpu')
+    f_look_summary(model, input=(3, 416, 416))
+    # f_look_tw(model, input=(1, 3, 416, 416), name='model_look')
+    # print(model)

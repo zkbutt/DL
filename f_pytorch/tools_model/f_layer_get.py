@@ -154,14 +154,14 @@ class ModelOuts4Mobilenet_v2(nn.Module):
         # return hook
 
 
-class ModelOuts4DarkNet(nn.Module):
-    def __init__(self, model):
+class ModelOuts4DarkNet19(nn.Module):
+    def __init__(self, model, dims_out=(256, 512, 1024)):
         super().__init__()
         del model.conv_7
         del model.avgpool
         self.model_hook = model
         self.model_hook._forward_impl = types.MethodType(self.foverwrite, model)
-        self.dims_out = [256, 512, 1024]
+        self.dims_out = dims_out
 
     def foverwrite(self, model, x):
         x = model.conv_1(x)
@@ -170,6 +170,28 @@ class ModelOuts4DarkNet(nn.Module):
         ceng1 = model.conv_4(x)
         ceng2 = model.conv_5(model.maxpool_4(ceng1))
         ceng3 = model.conv_6(model.maxpool_5(ceng2))
+        return ceng1, ceng2, ceng3
+
+    def forward(self, inputs):
+        outs = self.model_hook(inputs)
+        return outs
+
+
+class ModelOuts4DarkNet53(nn.Module):
+    def __init__(self, model, dims_out=(256, 512, 1024)):
+        super().__init__()
+        del model.avgpool
+        del model.fc
+        self.model_hook = model
+        self.model_hook._forward_impl = types.MethodType(self.foverwrite, model)
+        self.dims_out = dims_out
+
+    def foverwrite(self, model, x):
+        x = model.layer_1(x)
+        x = model.layer_2(x)
+        ceng1 = model.layer_3(x)
+        ceng2 = model.layer_4(ceng1)
+        ceng3 = model.layer_5(ceng2)
         return ceng1, ceng2, ceng3
 
     def forward(self, inputs):

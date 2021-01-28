@@ -278,8 +278,11 @@ COLORS_plt = {
     'yellow': '#FFFF00',
     'yellowgreen': '#9ACD32'}
 
+COLOR_PBOXES = 'lightcyan'
+COLOR_GBOXES = 'red'
 
-def show_od_keypoints4np(img_np, bboxs, keypoints, scores):
+
+def show_od_keypoints4cv(img_np, bboxs, keypoints, scores):
     if isinstance(bboxs, torch.Tensor):
         bboxs = bboxs.numpy()
         keypoints = keypoints.numpy()
@@ -298,26 +301,6 @@ def show_od_keypoints4np(img_np, bboxs, keypoints, scores):
         cv2.circle(img_np, (k[4], k[5]), 1, (255, 0, 255), 4)
         cv2.circle(img_np, (k[6], k[7]), 1, (0, 255, 0), 4)
         cv2.circle(img_np, (k[8], k[9]), 1, (255, 0, 0), 4)
-    # 远程无法显示
-    # img_pil = Image.fromarray(img_np, mode="RGB")  # h,w,c
-    # img_pil.show()
-    show_image = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-    cv2.imshow("after", show_image)
-    cv2.waitKey(0)
-
-
-def show_od4np(img_np, bboxs, scores):
-    if isinstance(bboxs, torch.Tensor):
-        bboxs = bboxs.numpy()
-        scores = scores.numpy()
-    for b, s in zip(bboxs, scores):
-        b = b.astype(np.int)
-        text = "{:.4f}".format(s)
-        cv2.rectangle(img_np, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)  # (l,t),(r,b),颜色.宽度
-        cx = b[0]
-        cy = b[1] + 12
-        cv2.putText(img_np, text, (cx, cy), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
-
     # 远程无法显示
     # img_pil = Image.fromarray(img_np, mode="RGB")  # h,w,c
     # img_pil.show()
@@ -962,7 +945,7 @@ def _f_draw_box_pil(current_axis, box, color='red', fill=False, linewidth=1, is_
         plt.scatter(x, y, marker='x', color=color, s=40, label='First')
 
 
-def _f_draw_grid_plt(size, grids):
+def _f_draw_grid4plt(size, grids):
     '''
 
     :param size:
@@ -986,7 +969,7 @@ def _f_draw_grid_plt(size, grids):
         plt.plot([0, w], [y_, y_], color=colors_, linewidth=1., alpha=0.3)
 
 
-def _f_draw_od_cv_plt(current_axis, boxes_ltrb, is_show_xy=True, labels_text=None, p_scores_float=None,
+def _f_draw_od_np4plt(current_axis, boxes_ltrb, is_show_xy=True, labels_text=None, p_scores_float=None,
                       color='lightcyan', fill=False, linewidth=1):
     '''新版本'''
     # color = 'lightcyan'  # 白色
@@ -1005,11 +988,35 @@ def _f_draw_od_cv_plt(current_axis, boxes_ltrb, is_show_xy=True, labels_text=Non
             current_axis.text(l, t - 2, text, size=8, color='white', bbox={'facecolor': 'green', 'alpha': 0.3})
 
 
-def f_plt_show_cv(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False,
-                  glabels_text=None,
-                  plabels_text=None,
-                  p_scores_float=None,
-                  grids=None):
+def f_show_od_np4cv(img_np, boxes_ltrb, scores, plabels_text, is_showing=True):
+    if isinstance(boxes_ltrb, torch.Tensor):
+        # 转换ts
+        boxes_ltrb = boxes_ltrb.numpy()
+        # scores = scores.numpy()
+    for b, s, t in zip(boxes_ltrb, scores, plabels_text):
+        b = b.astype(np.int)
+        text = "{}:{:.3f}".format(t, s)
+        cv2.rectangle(img_np, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)  # (l,t),(r,b),颜色.宽度
+        cx = b[0]
+        cy = b[1] + 12
+        cv2.putText(img_np, text, (cx, cy), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
+
+    # 远程无法显示
+    # img_pil = Image.fromarray(img_np, mode="RGB")  # h,w,c
+    # img_pil.show()
+    img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    if is_showing:
+        cv2.imshow("after", img_np)
+        cv2.waitKey(0)
+    else:
+        return img_np
+
+
+def f_show_od_np4plt(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False,
+                     glabels_text=None,
+                     plabels_text=None,
+                     p_scores_float=None,
+                     grids=None):
     '''
 
     :param img_np_bgr: 转换rgb
@@ -1027,21 +1034,21 @@ def f_plt_show_cv(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_siz
     wh = img_np_rgb.shape[:2][::-1]  # npwh
     plt.title(wh)
     if grids is not None:
-        _f_draw_grid_plt(wh, grids)
+        _f_draw_grid4plt(wh, grids)
 
     if gboxes_ltrb is not None:
         gboxes_ltrb = gboxes_ltrb.cpu()
         if is_recover_size:
             whwh = np.tile(np.array(wh), 2)  # 整体复制 tile
             gboxes_ltrb = gboxes_ltrb * whwh
-        _f_draw_od_cv_plt(current_axis, gboxes_ltrb, is_show_xy=True, color='red',
+        _f_draw_od_np4plt(current_axis, gboxes_ltrb, is_show_xy=True, color=COLOR_GBOXES,
                           labels_text=glabels_text, linewidth=3)
 
     if pboxes_ltrb is not None:
         if is_recover_size:
             whwh = np.tile(np.array(wh), 2)  # 整体复制 tile
             pboxes_ltrb = pboxes_ltrb * whwh
-        _f_draw_od_cv_plt(current_axis, pboxes_ltrb, is_show_xy=True, color='lightcyan',
+        _f_draw_od_np4plt(current_axis, pboxes_ltrb, is_show_xy=True, color=COLOR_PBOXES,
                           labels_text=plabels_text,
                           p_scores_float=p_scores_float,
                           linewidth=1)
@@ -1049,10 +1056,10 @@ def f_plt_show_cv(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_siz
     plt.show()
 
 
-def f_plt_show_ts(img_ts, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False, labels_text=None, grids=None):
+def f_show_od_ts4plt(img_ts, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False, labels_text=None, grids=None):
     img_np_rgb = img_ts.cpu().numpy().astype(np.float32).transpose((1, 2, 0))
     img_np_bgr = cv2.cvtColor(img_np_rgb, cv2.COLOR_RGB2BGR)
-    f_plt_show_cv(img_np_bgr, gboxes_ltrb, pboxes_ltrb, is_recover_size, labels_text, grids)
+    f_show_od_np4plt(img_np_bgr, gboxes_ltrb, pboxes_ltrb, is_recover_size, labels_text, grids)
 
 
 if __name__ == '__main__':

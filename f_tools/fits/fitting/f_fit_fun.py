@@ -154,11 +154,11 @@ def train_eval4od(start_epoch, model, optimizer,
 def show_train_info(cfg, loader_train, loader_val_coco):
     if loader_train is not None:
         flog.debug('%s dataset_train 数量: %s' % (cfg.PATH_TENSORBOARD, len(loader_train.dataset)))
-        print('类型 ', loader_train.dataset.ids_classes)
+        flog.debug('loader_train 类型 %s' % loader_train.dataset.ids_classes)
     if loader_val_coco is not None:
         flog.debug('%s dataset_val 数量: %s' % (cfg.PATH_TENSORBOARD, len(loader_val_coco.dataset)))
-        print('类型 ', loader_val_coco.dataset.ids_classes)
-    print('cfg.BATCH_SIZE---', cfg.BATCH_SIZE)
+        flog.debug('loader_val_coco 类型 %s' % loader_val_coco.dataset.ids_classes)
+    flog.debug('cfg.BATCH_SIZE---%s' % cfg.BATCH_SIZE)
     flog.warning('cfg.LOSS_WEIGHT--- %s' % cfg.LOSS_WEIGHT)
 
 

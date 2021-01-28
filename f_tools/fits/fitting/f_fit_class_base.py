@@ -1,12 +1,18 @@
 import os
 import random
+
+import cv2
 import torch.distributed as dist
 import torch
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_loader import DataLoader2
+from f_tools.datas.f_coco.convert_data.coco_dataset import CustomCocoDataset4cv
+from f_tools.device.f_device import init_video
+from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4one, f_prod_vodeo
 from f_tools.fits.fitting.f_fit_fun import init_od_e, base_set_1gpu, show_train_info, train_eval4od
 from f_tools.fits.f_gpu.f_gpu_api import mgpu_process0_init, mgpu_init, fis_mgpu, is_main_process
+from f_tools.pic.enhance.f_data_pretreatment4np import cre_transform_resize4np
 
 
 def fdatas_l2(batch_data, device, cfg, epoch, model):
@@ -51,13 +57,20 @@ def fdatas_l2(batch_data, device, cfg, epoch, model):
     return images, targets
 
 
-class Train_Base:
+class FBase:
 
-    def __init__(self, cfg, fun_train_eval_set, fun_init_model, is_mgpu, device, path_project_root, args=None) -> None:
-        super().__init__()
+    def __init__(self, cfg, device) -> None:
         self.cfg = cfg
         self.device = device
 
+    def f_run(self):
+        raise NotImplementedError
+
+
+class Train_Base(FBase):
+
+    def __init__(self, cfg, fun_train_eval_set, fun_init_model, is_mgpu, device, path_project_root, args=None) -> None:
+        super(Train_Base, self).__init__(cfg, device)
         '''------------------系统配置---------------------'''
         fun_train_eval_set(cfg)
         init_od_e(cfg)
@@ -74,7 +87,6 @@ class Train_Base:
         self.tb_writer = None
         if cfg.TB_WRITER and is_main_process():
             self.tb_writer = mgpu_process0_init(args, cfg, self.loader_train, self.loader_val_coco, self.model, device)
-            show_train_info(cfg, self.loader_train, self.loader_val_coco)
 
     def f_run(self):
         train_eval4od(start_epoch=self.start_epoch, model=self.model, optimizer=self.optimizer,
@@ -106,12 +118,78 @@ class Train_Mgpu(Train_Base):
                                          path_project_root, args)
 
 
-class Predicted_Pic(Train_Base):
+class Predicted_Base(FBase):
 
-    def __init__(self, cfg, fun_train_eval_set, fun_init_model, is_mgpu, device, path_project_root, args=None) -> None:
-        super().__init__(cfg, fun_train_eval_set, fun_init_model, is_mgpu, device, path_project_root, args)
+    def __init__(self, cfg, fun_train_eval_set, fun_init_model, device) -> None:
+        super(Predicted_Base, self).__init__(cfg, device)
+        fun_train_eval_set(cfg)
+        cfg.PATH_SAVE_WEIGHT = cfg.PATH_HOST + '/AI/weights/feadre'
+        cfg.FILE_FIT_WEIGHT = os.path.join(cfg.PATH_SAVE_WEIGHT, cfg.FILE_NAME_WEIGHT)
 
-    
+        # 这里是原图
+        self.dataset_test = CustomCocoDataset4cv(
+            file_json=cfg.FILE_JSON_TEST,
+            path_img=cfg.PATH_IMG_EVAL,
+            mode=cfg.MODE_COCO_EVAL,
+            transform=None,
+            is_mosaic=False,
+            is_mosaic_keep_wh=False,
+            is_mosaic_fill=False,
+            is_debug=cfg.DEBUG,
+            cfg=cfg
+        )
+        self.data_transform = cre_transform_resize4np(cfg)['val']
+
+        # 初始化 labels
+        ids_classes = self.dataset_test.ids_classes
+        self.labels_lsit = list(ids_classes.values())  # index 从 1开始 前面随便加一个空
+        self.labels_lsit.insert(0, None)  # index 从 1开始 前面随便加一个空
+        flog.debug('测试类型 %s', self.labels_lsit)
+
+        '''------------------模型定义---------------------'''
+        self.model, _, _, _ = fun_init_model(cfg, device, id_gpu=None)  # model, optimizer, lr_scheduler, start_epoch
+        self.model.eval()
+
+
+class Predicted_Pic(Predicted_Base):
+
+    def __init__(self, cfg, fun_train_eval_set, fun_init_model, device,
+                 eval_start=0,
+                 is_test_dir=False,
+                 path_img=None) -> None:
+        super().__init__(cfg, fun_train_eval_set, fun_init_model, device)
+        self.is_test_dir = is_test_dir
+        self.path_img = path_img
+        self.eval_start = eval_start
+
+    def f_run(self):
+        if self.is_test_dir:
+            file_names = os.listdir(self.path_img)
+            for name in file_names:
+                file_img = os.path.join(self.path_img, name)
+                img_np = cv2.imread(file_img)
+                f_prod_pic4one(img_np=img_np, data_transform=self.data_transform, model=self.model,
+                               size_ts=torch.tensor(img_np.shape[:2][::-1]),
+                               labels_lsit=self.labels_lsit)
+        else:
+            for i in range(self.eval_start, len(self.dataset_test), 1):
+                img_np = self.dataset_test[i][0]
+                target = self.dataset_test[i][1]
+                f_prod_pic4one(img_np=img_np, data_transform=self.data_transform, model=self.model,
+                               size_ts=target['size'], labels_lsit=self.labels_lsit,
+                               gboxes_ltrb=target['boxes'], target=target)
+
+
+class Predicted_Video(Predicted_Base):
+
+    def __init__(self, cfg, fun_train_eval_set, fun_init_model, device) -> None:
+        super(Predicted_Video, self).__init__(cfg, fun_train_eval_set, fun_init_model, device)
+        # 调用摄像头
+        self.cap = init_video()
+
+    def f_run(self):
+        f_prod_vodeo(self.cap, self.data_transform, self.model, self.labels_lsit, self.device, is_keeep=False)
+
 
 if __name__ == '__main__':
     class ttcfg:

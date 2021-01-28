@@ -4,8 +4,8 @@ import torch
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.fitting.f_fit_class_base import Predicted_Pic
-from object_detection.z_yolov1.CONFIG_YOLOV1 import CFG
-from object_detection.z_yolov1.train_yolov1 import init_model, train_eval_set
+from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
+from object_detection.z_yolov2.train_yolov2 import train_eval_set, init_model
 
 if __name__ == '__main__':
     '''

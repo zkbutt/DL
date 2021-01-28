@@ -17,11 +17,6 @@ class CFG(CfgBase):
     IS_FMAP_EVAL = False  # 只运行生成一次
     IS_KEEP_SCALE = False
 
-    '''
-    Loss参数 
-    [30., 1, 0.05, 0.9]  负例降得慢  正例与cls波动
-    
-    '''
     #  conf_pos conf_neg cls loss_txty  loss_twth
     LOSS_WEIGHT = [5., 1, 1, 1, 1]
 
