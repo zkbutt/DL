@@ -399,7 +399,7 @@ def darknet19(pretrained=False, device='cpu', **kwargs):
     if pretrained:
         print('Loading the darknet19 ...')
         # file_weight = 'AI/weights/pytorch/darknet/darknet19_72.96.pth'
-        file_weight = 'AI/weights/pytorch/darknet/darknet19_hr_75.52_92.73.pth'
+        file_weight = '/AI/weights/pytorch/darknet/darknet19_hr_75.52_92.73.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 
@@ -414,7 +414,7 @@ def darknet53(pretrained=False, device='cpu', **kwargs):
     if pretrained:
         print('Loading the darknet53 ...')
         # file_weight = 'AI/weights/pytorch/darknet/darknet53_75.42.pth'
-        file_weight = 'AI/weights/pytorch/darknet/darknet53_hr_77.76.pth'
+        file_weight = '/AI/weights/pytorch/darknet/darknet53_hr_77.76.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 
@@ -429,7 +429,7 @@ def darknet_tiny(pretrained=False, device='cpu', **kwargs):
     if pretrained:
         print('Loading the darknet_tiny ...')
         # file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_63.50_85.06.pth'
-        file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_hr_61.85.pth'
+        file_weight = '/AI/weights/pytorch/darknet/darknet_tiny_hr_61.85.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 
@@ -444,7 +444,7 @@ def darknet_lite(pretrained=False, device='cpu', **kwargs):
     if pretrained:
         print('Loading the darknet_lite ...')
         # file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_63.50_85.06.pth'
-        file_weight = 'AI/weights/pytorch/darknet/darknet_tiny_hr_61.85.pth'
+        file_weight = '/AI/weights/pytorch/darknet/darknet_tiny_hr_61.85.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 
@@ -459,7 +459,7 @@ def darknet_light(pretrained=False, device='cpu', **kwargs):
     if pretrained:
         print('Loading the darknet_light ...')
         # file_weight = 'AI/weights/pytorch/darknet/darknet_light_90_58.99.pth'
-        file_weight = 'AI/weights/pytorch/darknet/darknet_light_hr_59.61.pth'
+        file_weight = '/AI/weights/pytorch/darknet/darknet_light_hr_59.61.pth'
         model = _load_weight_base(model, file_weight, device)
     return model
 

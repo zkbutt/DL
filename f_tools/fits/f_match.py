@@ -118,9 +118,9 @@ def boxes_decode4yolo3(ptxywh, cfg):
         # [3, 10647, 2] -> [3, xx1, 2] ^^
         _end1 = j1 + num_ceng * cfg.NUMS_ANC[i]
         pxy[:, j1:_end1, :] = pxy[:, j1:_end1, :] + f_mershgrid(grid, grid, is_rowcol=False,
-                                                                  num_repeat=cfg.NUMS_ANC[0])
+                                                                num_repeat=cfg.NUMS_ANC[0]).to(device)
         _end2 = j2 + cfg.NUMS_ANC[i]
-        pwh[:, j1:_end1, :] = torch.exp(pwh[:, j1:_end1, :]) * ancs_wh_ts[j2:_end2].repeat(num_ceng,1)
+        pwh[:, j1:_end1, :] = torch.exp(pwh[:, j1:_end1, :]) * ancs_wh_ts[j2:_end2].repeat(num_ceng, 1)
         # 更新开始index
         j1 = _end1
         j2 = _end2

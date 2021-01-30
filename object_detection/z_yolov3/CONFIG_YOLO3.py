@@ -7,17 +7,17 @@ class CFG(CfgBase):
     IS_LOCK_BACKBONE_WEIGHT = False  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
     END_EPOCH = 180
 
-    IS_TRAIN = False
+    IS_TRAIN = True
     IS_COCO_EVAL = True,
-    IS_VISUAL = True
+    IS_VISUAL = False
 
     '''可视化'''
     IS_VISUAL_PRETREATMENT = False  # 图片预处理可视化
     IS_FMAP_EVAL = False  # 只运行生成一次
     IS_KEEP_SCALE = False
 
-    # 调参区
-    LOSS_WEIGHT = [1, 1, 1., 1.]  # loss_conf,loss_xy,loss_wh
+    #  conf_pos conf_neg cls loss_txty  loss_twth
+    LOSS_WEIGHT = [5., 1, 1, 1, 1]
 
     THRESHOLD_PREDICT_CONF = 0.01  # 用于预测的阀值
     THRESHOLD_PREDICT_NMS = 0.5  # 用于预测的阀值

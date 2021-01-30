@@ -32,7 +32,7 @@ def train_eval_set(cfg):
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
     batch = 32  # type
-    batch = 3
+    # batch = 3
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 2
         cfg.IS_COCO_EVAL = False
@@ -43,7 +43,7 @@ def train_eval_set(cfg):
 
     cfg.START_EVAL = 50  # cfg.START_EVAL=10 and EVAL_INTERVAL=3 实际是12
     cfg.END_EVAL = 150  # 结束间隙验证
-    cfg.EVAL_INTERVAL = 5  #
+    cfg.EVAL_INTERVAL = 3  #
     # cfg.NUM_SAVE_INTERVAL = 100
 
     # type3 dark19
