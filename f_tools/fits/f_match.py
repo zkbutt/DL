@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import torch
 
@@ -94,6 +96,36 @@ def boxes_decode4yolo2(ptxywh, grid_h, grid_w, cfg):
 
     pxywh = torch.cat([pxy, pwh], -1)  # torch.Size([3, 169, 5, 4])
     pxywh = pxywh.view(ptxywh.shape[0], -1, 4)  # 原图归一化 [3, 169, 5, 4] -> [3, 169*5, 4]
+    pltrb = xywh2ltrb(pxywh)
+    return pltrb
+
+
+def boxes_decode4yolo3(ptxywh, cfg):
+    '''
+    :param ptxywh: torch.Size([3, 10647, 4])
+    :param cfg:
+    :return: 输出原图归一化 [3, 10647, 4]
+    '''
+    device = ptxywh.device
+    pxy = torch.sigmoid(ptxywh[:, :, :2])
+    pwh = ptxywh[:, :, 2:4]
+    ancs_wh_ts = torch.tensor(cfg.ANC_SCALE, device=device)
+
+    j1 = 0  # dim 开始
+    j2 = 0  # anc 开始
+    for i, num_ceng in enumerate(cfg.nums_ceng):
+        grid = int(math.sqrt(num_ceng))
+        # [3, 10647, 2] -> [3, xx1, 2] ^^
+        _end1 = j1 + num_ceng * cfg.NUMS_ANC[i]
+        pxy[:, j1:_end1, :] = pxy[:, j1:_end1, :] + f_mershgrid(grid, grid, is_rowcol=False,
+                                                                  num_repeat=cfg.NUMS_ANC[0])
+        _end2 = j2 + cfg.NUMS_ANC[i]
+        pwh[:, j1:_end1, :] = torch.exp(pwh[:, j1:_end1, :]) * ancs_wh_ts[j2:_end2].repeat(num_ceng,1)
+        # 更新开始index
+        j1 = _end1
+        j2 = _end2
+
+    pxywh = torch.cat([pxy, pwh], -1)  # torch.Size([3, 169, 5, 4])
     pltrb = xywh2ltrb(pxywh)
     return pltrb
 

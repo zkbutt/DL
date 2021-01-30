@@ -78,6 +78,14 @@ def x_select_max_num(labels_neg):
 
 
 def f_mershgrid(row, col, is_rowcol=True, num_repeat=1):
+    '''
+
+    :param row:  y 需要加 row
+    :param col:  x 需要加 col
+    :param is_rowcol:
+    :param num_repeat:
+    :return:
+    '''
     a = torch.arange(row)  # 3行 4列
     b = torch.arange(col)
     x, y = torch.meshgrid(a, b)  # row=3 col=5
@@ -107,7 +115,7 @@ def f_mershgrid(row, col, is_rowcol=True, num_repeat=1):
 if __name__ == '__main__':
     # x_select_1()
     # x_select_2()
-    print(f_mershgrid(3, 4, num_repeat=5))
+    print(f_mershgrid(3, 4, num_repeat=1, is_rowcol=True))
     # a = torch.arange(5)
     # b = torch.arange(5, 10)
     # print(torch.stack([a, b], dim=1))  # 升级连接

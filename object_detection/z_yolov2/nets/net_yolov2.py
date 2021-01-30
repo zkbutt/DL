@@ -47,7 +47,7 @@ def fmatch4yolov2(gboxes_ltrb, labels, grid, dim, device, cfg, img_ts=None):
     offset_xys = torch.true_divide(colrows_index, grid)  # 网络index 对应归一化的实距
     txys = (cxys - offset_xys) * grids_ts  # 特图偏移
 
-    # conf-1, cls-3, tbox-4, weight-1, gbox-4   torch.Size([13, 13, 13])
+    # conf-1, cls-3, tbox-4, weight-1, gltrb-4   torch.Size([13, 13, 13])
     p_yolo_one = torch.zeros((grid, grid, cfg.NUM_ANC, dim), device=device)
 
     labels = labels2onehot4ts(labels - 1, cfg.NUM_CLASSES)
@@ -104,7 +104,7 @@ def calc_iou(ptxywh, gbox_p, batch, grid_h, grid_w, cfg, mask_pos_2, imgs_ts=Non
             _gbox_p = gbox_p[d0[mask_], d1[mask_]]
 
             iou = bbox_iou4one2(_pltrb, _gbox_p)
-            flog.debug('iou %s', iou)
+            flog.debug('预测 iou %s', iou)
             f_show_od_ts4plt(img_ts, gboxes_ltrb=_gbox_p, pboxes_ltrb=_pltrb,
                              is_recover_size=True, grids=(grid_h, grid_w))
 
@@ -125,6 +125,10 @@ class LossYOLO_v2(nn.Module):
 
         :param pyolos: torch.Size([3, 40, 13, 13]) [conf-1,class-3,box4] 5*8=40
         :param targets:
+            target['boxes'] = target['boxes'].to(device)
+            target['labels'] = target['labels'].to(device)
+            target['size'] = target['size']
+            target['image_id'] = int
         :param imgs_ts:
         :return:
         '''
@@ -133,20 +137,21 @@ class LossYOLO_v2(nn.Module):
         batch, c, h, w = pyolos.shape
 
         '''--------------gt匹配---------------'''
-        # conf-1, cls-3, tbox-4, weight-1, gbox-4  = 13
-        dim = 1 + cfg.NUM_CLASSES + 4 + 1 + 4  # torch.Size([3, 13, 13, 5, 13])
-        gyolos = torch.empty((batch, h, w, cfg.NUM_ANC, dim), device=device)
+        # conf-1, cls-3, tbox-4, weight-1, gltrb-4  = 13
+        gdim = 1 + cfg.NUM_CLASSES + 4 + 1 + 4  # torch.Size([3, 13, 13, 5, 13])
+        gyolos = torch.empty((batch, h, w, cfg.NUM_ANC, gdim), device=device)
 
+        # 匹配GT
         for i, target in enumerate(targets):  # batch遍历
-            boxes_ltrb_one = target['boxes']  # ltrb
-            labels_one = target['labels']
+            boxes_ltrb_b = target['boxes']  # ltrb
+            labels_b = target['labels']
 
-            # conf-1, cls-3, tbox-4, weight-1, gbox-4  = 13
+            # conf-1, cls-3, tbox-4, weight-1, gltrb-4  = 13
             gyolos[i] = fmatch4yolov2(
-                gboxes_ltrb=boxes_ltrb_one,
-                labels=labels_one,
+                gboxes_ltrb=boxes_ltrb_b,
+                labels=labels_b,
                 grid=h,  # 7
-                dim=dim,
+                dim=gdim,
                 device=device,
                 cfg=cfg,
                 img_ts=imgs_ts[i],
@@ -156,7 +161,7 @@ class LossYOLO_v2(nn.Module):
             if cfg.IS_VISUAL:
                 # conf-1, cls-3, box-4, weight-1
                 gyolo_test = gyolos[i].clone()  # torch.Size([32, 13, 13, 9])
-                gyolo_test = gyolo_test.view(-1, dim)
+                gyolo_test = gyolo_test.view(-1, gdim)
                 gconf_one = gyolo_test[:, 0]
                 # mask_pos = torch.logical_or(gconf_one == 1, gconf_one == -1)
                 mask_pos = gconf_one == 1
@@ -184,7 +189,7 @@ class LossYOLO_v2(nn.Module):
                 img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
                 import numpy as np
                 img_np = np.array(img_pil)
-                f_show_od_np4plt(img_np, gboxes_ltrb=boxes_ltrb_one.cpu()
+                f_show_od_np4plt(img_np, gboxes_ltrb=boxes_ltrb_b.cpu()
                                  , pboxes_ltrb=xywh2ltrb(gtxywh.cpu()), is_recover_size=True,
                                  grids=(h, w))
 
@@ -193,18 +198,18 @@ class LossYOLO_v2(nn.Module):
         # [3, 40, 13, 13] -> [3, 8, 5, 13*13] -> [3, 169, 5, 8]
         pyolos = pyolos.view(batch, s_ + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
 
-        # 计算预测与 GT 的 iou 作为 gconf
+        # 解码pxywh 计算预测与 GT 的 iou 作为 gconf
         with torch.no_grad():  # torch.Size([3, 40, 13, 13])
             ptxywh = pyolos[:, :, :, s_:s_ + 4]  # torch.Size([32, 169, 5, 4])
 
-            gyolos = gyolos.view(batch, -1, dim)  # [3, 13, 13, 5, 13] -> [3, 169*5, 13]
+            gyolos = gyolos.view(batch, -1, gdim)  # [3, 13, 13, 5, 13] -> [3, 169*5, 13]
             mask_pos_2 = gyolos[:, :, 0] == 1  # 前面已匹配，降维运算 [3, xx, 13] -> [3, xx]
             gbox_p = gyolos[:, :, -4:]  # [3, 169*5, 13] ->  [3, 169*5, 4]
 
             iou_p = calc_iou(ptxywh, gbox_p, batch, h, w, cfg, mask_pos_2, imgs_ts)
             iou_p = iou_p.view(batch, -1)
 
-        gyolos = gyolos.view(batch, -1, dim)  # torch.Size([3, 845, 13])
+        gyolos = gyolos.view(batch, -1, gdim)  # torch.Size([3, 845, 13])
 
         # [32, 169, 5, 8] -> [32, 845, 8]
         pyolos = pyolos.view(batch, -1, 1 + cfg.NUM_CLASSES + 4)  # torch.Size([3, 169, 8])

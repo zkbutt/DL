@@ -7,9 +7,9 @@ class CFG(CfgBase):
     IS_LOCK_BACKBONE_WEIGHT = False  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
     END_EPOCH = 180
 
-    IS_TRAIN = True
+    IS_TRAIN = False
     IS_COCO_EVAL = True,
-    IS_VISUAL = False
+    IS_VISUAL = True
 
     '''可视化'''
     IS_VISUAL_PRETREATMENT = False  # 图片预处理可视化
