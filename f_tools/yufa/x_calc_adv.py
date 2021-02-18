@@ -112,10 +112,34 @@ def f_mershgrid(row, col, is_rowcol=True, num_repeat=1):
     return stack
 
 
+def t_ids2bool():
+    # topk索引
+    a = torch.arange(9).reshape(3, 3).type(torch.float)
+    a[1, 2] = 1
+    print(a)
+
+    b = torch.zeros_like(a, dtype=torch.bool)
+    print(b)
+
+    # 3,3 -> 2,3
+    topk_val, topk_index = a.topk(2, dim=0)
+    # print(topk_val)
+    print(topk_index)
+
+    res = a[topk_index, torch.arange(3)]  # 3,3 ^^ [[2,3],[ngt]] 降维
+
+    print(res)
+    print(res.mean(0))
+    print(res.shape)
+    b[topk_index, torch.arange(3)] = 1
+    print(b)
+
+
 if __name__ == '__main__':
     # x_select_1()
     # x_select_2()
-    print(f_mershgrid(3, 4, num_repeat=1, is_rowcol=True))
+    # print(f_mershgrid(3, 4, num_repeat=1, is_rowcol=True))
     # a = torch.arange(5)
     # b = torch.arange(5, 10)
     # print(torch.stack([a, b], dim=1))  # 升级连接
+    t_ids2bool()

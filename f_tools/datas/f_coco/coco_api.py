@@ -55,6 +55,8 @@ def f_show_coco_pics(coco, path_img, ids_img=None):
         # 本地加载 h,w,c
         # img = io.imread(os.path.join(path_img, img_info[0]['file_name']))
         img = cv2.imread(os.path.join(path_img, img_info[0]['file_name']))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # flog.debug('imgsize %s', img.shape[:2][::-1])
         # 加载图片基本信息 h w id filename
         # 获取该图片的所有标注的id
         annIds = coco.getAnnIds(imgIds=img_info[0]['id'])
@@ -94,7 +96,7 @@ def t_coco_json():
     path_root = r'm:/AI/datas/widerface/coco'  # 自已的数据集
     # data_type = 'val2017'  # 自动会添加 imgages
     data_type = 'train2017'  # 自动会添加 imgages
-    mode = 'keypoints'
+    mode = 'bbox'
     if mode == 'bbox':
         name_file = 'instances'
     elif mode == 'keypoints':
@@ -106,6 +108,18 @@ def t_coco_json():
     # 图片的根目录
     path_img = os.path.join(path_root, 'images', data_type)
     # 初始化标注数据的 COCO api
+    coco = COCO(file_json)
+    return coco, path_img
+
+
+def t_coco_json2():
+    path_host = 'M:'
+    # path_root = path_host + r'/AI/datas/VOC2007'
+    path_root = path_host + r'/AI/datas/raccoon200'
+    file_json = path_root + '/coco/annotations/instances_val2017.json'
+    # file_json = path_root + '/coco/annotations/instances_type3_train_1096.json'
+    # file_json = path_root + '/coco/annotations/instances_train_5011.json'
+    path_img = path_root + '/VOCdevkit/JPEGImages'
     coco = COCO(file_json)
     return coco, path_img
 

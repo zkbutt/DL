@@ -8,10 +8,27 @@ from collections import OrderedDict
 '''-----------------模型方法区-----------------------'''
 
 
-def finit_conf_bias(model, num_tolal, num_pos, num_classes):
+def f_freeze_bn(model_nn):
+    '''Freeze BatchNorm layers.'''
+    for layer in model_nn.modules():
+        if isinstance(layer, nn.BatchNorm2d):
+            layer.eval()
+
+
+def finit_conf_bias_one(model_nn, num_tolal, num_pos, num_classes):
+    '''初始化分类层 使 conf 输出靠向负例'''
     # pi = num_pos / num_tolal / cfg.NUM_CLASSES
     b = -log(num_tolal / num_pos * num_classes - 1)
-    model.bias.data += b
+    model_nn.bias.data += b
+
+
+def finit_conf_bias(model, num_tolal, num_pos, num_classes):
+    '''初始化分类层 使 conf 输出靠向负例'''
+    # pi = num_pos / num_tolal / cfg.NUM_CLASSES
+    b = -log(num_tolal / num_pos * num_classes - 1)
+    for m in model.modules():
+        if isinstance(m, nn.Conv2d):
+            model.bias.data += b
 
 
 def finit_weights(model):
@@ -29,6 +46,7 @@ def finit_weights(model):
         if isinstance(m, nn.Conv2d):
             # nn.init.normal_(m.weight.data)
             # nn.init.xavier_normal_(m.weight, gain=1.0)  # 正态分布
+            # nn.init.xavier_uniform_(m.weight, gain=1.)
             torch.nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in', nonlinearity='leaky_relu')  # 正态分布
             nn.init.kaiming_uniform_(m.weight, a=0, mode='fan_in', nonlinearity='leaky_relu')
             # nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('tanh'))  # 均匀分布
@@ -170,7 +188,7 @@ class FeatureConcat(nn.Module):
 
 
 class ReorgLayer(nn.Module):
-    '''宽高转通道'''
+    '''宽高 self.stride缩小倍数 ->  转通道增加2*2=4 '''
 
     def __init__(self, stride):
         super(ReorgLayer, self).__init__()
@@ -186,6 +204,42 @@ class ReorgLayer(nn.Module):
         x = x.view(batch_size, -1, _height, _width)
 
         return x
+
+
+'''-----------------模型转换-----------------------'''
+
+
+def load_checkpoint(filepath):
+    checkpoint = torch.load(filepath, map_location='cpu')
+    model = checkpoint['model']  # 提取网络结构
+    model.load_state_dict(checkpoint['model_state_dict'])  # 加载网络权重参数
+    for parameter in model.parameters():
+        parameter.requires_grad = False
+    model.eval()
+    return model
+
+
+class FModelBase(nn.Module):
+    def __init__(self, net, losser, preder):
+        super(FModelBase, self).__init__()
+        self.net = net
+        self.losser = losser
+        self.preder = preder
+
+    def forward(self, x, targets=None):
+        outs = self.net(x)
+
+        if self.training:
+            if targets is None:
+                raise ValueError("In training mode, targets should be passed")
+            loss_total, log_dict = self.losser(outs, targets, x)
+            '''------验证loss 待扩展------'''
+
+            return loss_total, log_dict
+        else:
+            with torch.no_grad():  # 这个没用
+                ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = self.preder(outs, x)
+            return ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores
 
 
 if __name__ == '__main__':

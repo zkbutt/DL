@@ -3,6 +3,7 @@ from PIL import Image
 
 from f_tools.f_od_gen import f_get_rowcol_index
 from f_tools.fun_od.f_boxes import ltrb2xywh, xywh2ltrb
+from f_tools.yufa.x_calc_adv import f_mershgrid
 
 
 class FAnchors:
@@ -35,8 +36,9 @@ class FAnchors:
         # 根据预处理图片及下采倍数，计算特图尺寸 <class 'list'>: [[52, 52], [26, 26], [13, 13]] (w,h)
         self.feature_sizes = [[ceil(self.img_in_size[0] / step), ceil(self.img_in_size[1] / step)]
                               for step in self.feature_size_steps]
+        self.nums_level = []  # 每层个数
         self.device = device
-        self.ancs = self.cre_anchors()
+        self.ancs_xywh = self.cre_anchors()
 
     def cre_anchors(self):
         '''
@@ -45,27 +47,28 @@ class FAnchors:
             返回特图 h*w,4 anchors 是每个特图的长宽个 4维整框
             这里是 x,y,w,h 调整系数
         '''
-        ret_ancs = torch.empty(0, 4)
+        device = self.device
+        ret_ancs = torch.empty((0, 4), device=device)
         for i, (row, col) in enumerate(self.feature_sizes):
             # 求xy 中心点坐标 行列与xy是反的
-            rowcol_index = f_get_rowcol_index(row, col)
-
+            rowcol_index = f_mershgrid(row, col, is_rowcol=True, num_repeat=1)
+            rowcol_index = rowcol_index.to(device)
             # 这个特图的数量
             num_anc_one = rowcol_index.shape[0]  # 2704
             # 这个特图的尺寸 [[0.025, 0.025], [0.05, 0.05]]
             ancs_wh = self.ancs_scale[i]
             # 单体复制 每一个格子有
             num_anc = len(ancs_wh)
-            rowcol_index = rowcol_index.repeat_interleave(num_anc, dim=0)
-            rowcol = torch.tensor((row, col))
+            self.nums_level.append(num_anc_one * num_anc)  # self.nums_feature 是全新
+            rowcol_index = rowcol_index.repeat_interleave(num_anc, dim=0)  # 单体复制
+            rowcol = torch.tensor((row, col), device=device)
             # xy 与 rowcol相反
-            ancs_yx = torch.true_divide(rowcol_index, rowcol)
-            if self.is_xymid:
+            ancs_yx = torch.true_divide(rowcol_index, rowcol)  # 特图归一化
+            if self.is_xymid:  # 移动中心点到格子中间
                 midyx = torch.true_divide(1, rowcol) / 2
                 ancs_yx = ancs_yx + midyx
-            ancs_wh = torch.tensor(ancs_wh).repeat(num_anc_one, 1)
-            ancs_xy = ancs_yx.numpy()[:, ::-1]
-            ancs_xy = torch.tensor(ancs_xy.copy(), dtype=torch.float)
+            ancs_wh = torch.tensor(ancs_wh, device=device).repeat(num_anc_one, 1)
+            ancs_xy = ancs_yx[:, [1, 0]]
             ans_xywh = torch.cat([ancs_xy, ancs_wh], dim=-1)
             ret_ancs = torch.cat([ret_ancs, ans_xywh], dim=0)
         if self.anchors_clip:  # 对于xywh 来说这个参数 是没有用的
@@ -104,7 +107,7 @@ if __name__ == '__main__':
         [[0.4, 0.4], [0.8, 0.8], ],
     ]
     anchors_xywh = FAnchors(size, anc_scale, feature_map_steps,
-                          anchors_clip=False, is_xymid=True, is_real_size=False).cre_anchors()
+                            anchors_clip=False, is_xymid=True, is_real_size=False).cre_anchors()
     # print(anchors)
     # anchors = FAnchors(size, anc_scale, feature_map_steps,
     #                    anchors_clip=True, is_xymid=False, is_real_size=True).cre_anchors()  # torch.Size([10647, 4])

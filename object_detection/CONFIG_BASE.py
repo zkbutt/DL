@@ -10,6 +10,7 @@ class CfgBase:
     USE_MGPU_EVAL = True
 
     '''----TB_WRITER设备-----'''
+    NUMS_EVAL = {10: 5, 100: 3, 160: 2}
     TB_WRITER = True
     DEL_TB = False
     LOSS_EPOCH = True  # False表示iter
@@ -20,6 +21,9 @@ class CfgBase:
     '''多尺度'''
     IS_MULTI_SCALE = True  # 多尺度训练
     MULTI_SCALE_VAL = [10, 19]  # 多尺寸的比例0.667~1.5 之间 满足32的倍数
+
+    '''data_pretreatment'''
+    KEEP_SIZE = False
 
     host_name = socket.gethostname()
     if host_name == 'Feadre-NB':
@@ -45,3 +49,9 @@ class CfgBase:
     # user_name = getpass.getuser()
     # # 获取当前系统用户目录
     # user_home = os.path.expanduser('~')
+
+    loss_args = {
+        's_match': 'log_g',  # 'log' 'whoned' 'log_g'
+        's_conf': 'ohem',  # 'mse' 'foc' 'ohem'
+        's_cls': 'bce',  # 'bce'  'ce'
+    }

@@ -37,6 +37,7 @@ def f_lr_piecewiseDecay(num_iter, base_lr=0.0001):
 def lr_example(optimizer):
     lr = 1e-3
     '''
+    https://www.jianshu.com/p/a20d5a7ed6f3 这里查看
     监控指标，当指标不再变化则调整 2次不降低则 LR变为原来的一半
         • mode：min（对应损失值）/max（对应精确度） 两种模式
         • factor：调整系数（相当于之前的lamda）
@@ -65,7 +66,7 @@ def lr_example(optimizer):
     '''
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [30, 80], 0.1)
 
-    # 按指数减 gamma：指数的底
+    # 按指数减 gamma：指数的底 每次降低0.9
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
     '''
@@ -108,10 +109,10 @@ if __name__ == '__main__':
     start_epoch = 0
     epochs = 200
 
-    # scheduler = f_lr_cos(optimizer, start_epoch, epochs, lrf_scale)
+    scheduler = f_lr_cos(optimizer, start_epoch, epochs, lrf_scale)
     # scheduler = lr_example(optimizer)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [50, 80, 120, 160, 200], 0.75)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=0.005, )
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.75)
+    # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [50, 80, 120, 160, 200], 0.75)
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=0.005, )
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.75)
     f_show_scheduler(scheduler, epochs)
     pass

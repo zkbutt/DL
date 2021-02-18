@@ -1,43 +1,52 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torchvision import models
+
+from f_pytorch.tools_model.backbones.CSPDarknet import BottleneckCSP
 from f_pytorch.tools_model.backbones.darknet import darknet19
-from f_pytorch.tools_model.f_layer_get import ModelOuts4DarkNet19
+from f_pytorch.tools_model.f_layer_get import ModelOuts4DarkNet19, ModelOuts4Resnet
 from f_pytorch.tools_model.f_model_api import CBL, ReorgLayer
+from f_pytorch.tools_model.fmodels.model_modules import SPPv2, SAM
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
-from f_tools.fits.f_match import boxes_decode4yolo2
+from f_tools.fits.f_match import boxes_decode4yolo2, boxes_encode4yolo2
 from f_tools.fits.f_predictfun import label_nms
-from f_tools.fun_od.f_boxes import xywh2ltrb, calc_iou4ts, ltrb2xywh, bbox_iou4one2
+from f_tools.floss.f_lossfun import x_bce
+from f_tools.fun_od.f_boxes import xywh2ltrb, calc_iou4ts, ltrb2xywh, bbox_iou4one
 from f_tools.pic.f_show import f_show_od_np4plt, f_show_od_ts4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 
 
-def fmatch4yolov2(gboxes_ltrb, labels, grid, dim, device, cfg, img_ts=None):
+def fmatch4yolov2(gboxes_ltrb_b, glabels_b, grid, dim, device, cfg, img_ts=None,
+                  iou_pos=0.5, iou_neg=0.4):
     '''
     匹配 gyolo 如果需要计算IOU 需在这里生成
-    :param gboxes_ltrb: ltrb
-    :param labels:
+    :param gboxes_ltrb_b: ltrb
+    :param glabels_b:
     :param grid: 13
     :param dim:
     :param device:
     :return: [13, 13, 5, 13]
     '''
     # 提取[0,0,w,h]用于iou计算  --强制xy为0
-    gboxes_xywh = ltrb2xywh(gboxes_ltrb)
+    gboxes_xywh = ltrb2xywh(gboxes_ltrb_b)
     giou_boxes_xywh = torch.zeros_like(gboxes_xywh, device=device)
     giou_boxes_xywh[:, 2:] = gboxes_xywh[:, 2:]  # gwh 赋值 原图归一化用于与anc比较IOU
 
-    anc_wh = torch.tensor(cfg.ANC_SIZE, device=device)
-    anciou_xywh = torch.zeros((len(cfg.ANC_SIZE), 4), device=device)
-    anciou_xywh[:, 2:] = anc_wh
+    anc_wh_ts = torch.tensor(cfg.ANCS_SCALE, device=device)
+    anciou_xywh = torch.zeros((len(cfg.ANCS_SCALE), 4), device=device)
+    anciou_xywh[:, 2:] = anc_wh_ts
 
     # 匹配一个最大的 用于获取iou index  iou>0.5 忽略
-    iou2 = calc_iou4ts(xywh2ltrb(giou_boxes_xywh), xywh2ltrb(anciou_xywh))
-    mask = iou2 > 0.5
+    iou2d = calc_iou4ts(xywh2ltrb(giou_boxes_xywh), xywh2ltrb(anciou_xywh))
+    # [gt,anc]
+    # index_p = iou2.max(-1)[1]  # 匹配最大的IOU
+    # mask_pos_p = iou2 > iou_pos
+    # mask_neg_p = iou2 < iou_neg
 
     # 编码GT
-    gboxes_xywh = ltrb2xywh(gboxes_ltrb)
+    gboxes_xywh = ltrb2xywh(gboxes_ltrb_b)
     whs = gboxes_xywh[:, 2:]
 
     # 编码xy
@@ -50,13 +59,15 @@ def fmatch4yolov2(gboxes_ltrb, labels, grid, dim, device, cfg, img_ts=None):
     # conf-1, cls-3, tbox-4, weight-1, gltrb-4   torch.Size([13, 13, 13])
     p_yolo_one = torch.zeros((grid, grid, cfg.NUM_ANC, dim), device=device)
 
-    labels = labels2onehot4ts(labels - 1, cfg.NUM_CLASSES)
-    ancs_wh_ts = torch.tensor(cfg.ANC_SIZE, device=device)
+    glabels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
+    ancs_wh_ts = torch.tensor(cfg.ANCS_SCALE, device=device)
 
-    # 遍历格子
+    # 遍历GT
     for i, (col, row) in enumerate(colrows_index):
-        index_max = torch.argmax(iou2, dim=-1)[i]
-        indexs_ignore = torch.where(mask[i])
+        index_max = torch.argmax(iou2d, dim=-1)[i]  # 每个GT最大的IOU
+        p_yolo_one[row, col, :, 0] = -1  # 全部-1
+
+        indexs_ignore = torch.where(mask_pos_p[i])
 
         # 有正例,将正例赋0 用于忽略
         for j in indexs_ignore:
@@ -70,18 +81,61 @@ def fmatch4yolov2(gboxes_ltrb, labels, grid, dim, device, cfg, img_ts=None):
         # 正例的conf
         conf = torch.tensor([1], device=device)
         weight = 2.0 - torch.prod(whs[i], dim=-1)  # 1~2 小目标加成 这个不是数组
-        _labels = labels[i]
+        _labels = glabels_b[i]
 
         # labels恢复至1
-        t = torch.cat([conf, _labels, txywh_g, weight[None], gboxes_ltrb[i]], dim=0)
+        t = torch.cat([conf, _labels, txywh_g, weight[None], gboxes_ltrb_b[i]], dim=0)
         p_yolo_one[row, col, index_max] = t
+
+    return p_yolo_one
+
+
+def fmatch4yolov2_one(gboxes_ltrb_b, glabels_b, grid, dim, device, cfg, img_ts=None):
+    '''
+    匹配 gyolo 如果需要计算IOU 需在这里生成
+    :param gboxes_ltrb_b: ltrb
+    :param glabels_b:
+    :param grid: 13
+    :param dim:
+    :param device:
+    :return: 匹配中心与GT相同 iou 最大的一个anc  其余的全为0
+    '''
+    # 提取[0,0,w,h]用于iou计算  --强制xy为0
+    gboxes_xywh = ltrb2xywh(gboxes_ltrb_b)
+    giou_boxes_xywh = torch.zeros_like(gboxes_xywh, device=device)
+    giou_boxes_xywh[:, 2:] = gboxes_xywh[:, 2:]  # gwh 赋值 原图归一化用于与anc比较IOU
+
+    anc_wh = torch.tensor(cfg.ANCS_SCALE, device=device)
+    anciou_xywh = torch.zeros((len(cfg.ANCS_SCALE), 4), device=device)
+    anciou_xywh[:, 2:] = anc_wh
+
+    # 匹配一个最大的 用于获取iou index
+    iou2d = calc_iou4ts(xywh2ltrb(giou_boxes_xywh), xywh2ltrb(anciou_xywh))
+    # [gt,anc] GT对应格子中哪个最大
+    # index_p = iou2.max(-1)[1]  # 匹配最大的IOU
+    ids_p = torch.argmax(iou2d, dim=-1)  # 匹配最大的IOU
+    txywhs_g, weights, colrows_index = boxes_encode4yolo2(gboxes_ltrb_b, ids_p, grid, grid, device, cfg)
+
+    # conf-1, cls-3, tbox-4, weight-1, gltrb-4   torch.Size([13, 13, 13])
+    p_yolo_one = torch.zeros((grid, grid, cfg.NUM_ANC, dim), device=device)
+
+    glabels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
+    # ancs_wh_ts = torch.tensor(cfg.ANCS_SCALE, device=device)
+
+    # 遍历GT 匹配iou最大的  其它anc全部忽略
+    for i, (col, row) in enumerate(colrows_index):
+        p_yolo_one[row, col, :, 0] = -1  # 全部忽略
+        # 正例的conf
+        conf = torch.tensor([1], device=device)
+        _t = torch.cat([conf, glabels_b[i], txywhs_g[i], weights[i][None], gboxes_ltrb_b[i]], dim=0)
+        p_yolo_one[row, col, ids_p[i]] = _t
 
     return p_yolo_one
 
 
 def calc_iou(ptxywh, gbox_p, batch, grid_h, grid_w, cfg, mask_pos_2, imgs_ts=None):
     '''
-
+    可视化 匹配的预测框
     :param ptxywh: torch.Size([3, 169, 5, 4])
     :param gbox_p: [-1,4]
     :param grid_h:
@@ -103,14 +157,14 @@ def calc_iou(ptxywh, gbox_p, batch, grid_h, grid_w, cfg, mask_pos_2, imgs_ts=Non
             _pltrb = pltrb[d0[mask_], d1[mask_]]
             _gbox_p = gbox_p[d0[mask_], d1[mask_]]
 
-            iou = bbox_iou4one2(_pltrb, _gbox_p)
+            iou = bbox_iou4one(_pltrb, _gbox_p)
             flog.debug('预测 iou %s', iou)
             f_show_od_ts4plt(img_ts, gboxes_ltrb=_gbox_p, pboxes_ltrb=_pltrb,
                              is_recover_size=True, grids=(grid_h, grid_w))
 
     pltrb = pltrb.view(-1, 4)
     gbox_p = gbox_p.view(-1, 4)
-    iou = bbox_iou4one2(pltrb, gbox_p)
+    iou = bbox_iou4one(pltrb, gbox_p)  # 一一对应IOU
     return iou
 
 
@@ -147,9 +201,9 @@ class LossYOLO_v2(nn.Module):
             labels_b = target['labels']
 
             # conf-1, cls-3, tbox-4, weight-1, gltrb-4  = 13
-            gyolos[i] = fmatch4yolov2(
-                gboxes_ltrb=boxes_ltrb_b,
-                labels=labels_b,
+            gyolos[i] = fmatch4yolov2_one(
+                gboxes_ltrb_b=boxes_ltrb_b,
+                glabels_b=labels_b,
                 grid=h,  # 7
                 dim=gdim,
                 device=device,
@@ -195,6 +249,12 @@ class LossYOLO_v2(nn.Module):
 
         # pbox解码计算 匹配的iou 作为正例conf
         s_ = 1 + cfg.NUM_CLASSES
+
+        gconf = gyolos[:, :, 0]
+        mask_pos = gconf > 0
+        mask_neg = gconf == 0  # 忽略-1 不管
+        nums_pos = (mask_pos.sum(-1).to(torch.float16)).clamp(min=torch.finfo(torch.float16).eps)
+
         # [3, 40, 13, 13] -> [3, 8, 5, 13*13] -> [3, 169, 5, 8]
         pyolos = pyolos.view(batch, s_ + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
 
@@ -202,45 +262,65 @@ class LossYOLO_v2(nn.Module):
         with torch.no_grad():  # torch.Size([3, 40, 13, 13])
             ptxywh = pyolos[:, :, :, s_:s_ + 4]  # torch.Size([32, 169, 5, 4])
 
-            gyolos = gyolos.view(batch, -1, gdim)  # [3, 13, 13, 5, 13] -> [3, 169*5, 13]
-            mask_pos_2 = gyolos[:, :, 0] == 1  # 前面已匹配，降维运算 [3, xx, 13] -> [3, xx]
+            gyolos = gyolos.view(batch, -1, gdim)  # 4d -> 3d [3, 13, 13, 5, 13] -> [3, 169*5, 13]
+            mask_pos_2d = gyolos[:, :, 0] == 1  # 前面已匹配，降维运算 [3, xx, 13] -> [3, xx]
             gbox_p = gyolos[:, :, -4:]  # [3, 169*5, 13] ->  [3, 169*5, 4]
 
-            iou_p = calc_iou(ptxywh, gbox_p, batch, h, w, cfg, mask_pos_2, imgs_ts)
-            iou_p = iou_p.view(batch, -1)
+            # [nn,1]
+            iou_p = calc_iou(ptxywh, gbox_p, batch, h, w, cfg, mask_pos_2d, imgs_ts)
+            iou_p = iou_p.view(batch, -1)  # 匹配每批的IOU [nn,1] -> [batch,nn/batch]
 
-        gyolos = gyolos.view(batch, -1, gdim)  # torch.Size([3, 845, 13])
+        # gconf = gyolos[:, :, 0] # 正例使用1
+        gconf = iou_p  # 使用 iou赋值
 
-        # [32, 169, 5, 8] -> [32, 845, 8]
+        # 4d -> 3d [32, 169, 5, 8] -> [32, 845, 8]
         pyolos = pyolos.view(batch, -1, 1 + cfg.NUM_CLASSES + 4)  # torch.Size([3, 169, 8])
 
-        # ----------------conf损失  mes+倍数----------------
-        pconf = pyolos[:, :, 0].sigmoid()  # torch.Size([3, 845])
-        # gconf = gyolos[:, :, 0]
-        gconf = iou_p  # iou赋值
-        weight = gyolos[:, :, s_ + 4]
-        mask_pos = gconf > 0  # 忽略的-1不计
-        mask_neg = gconf == 0
+        # ----------------cls损失----------------
+        pcls = pyolos[:, :, 1:s_].sigmoid()  # 归一
+        gcls = gyolos[:, :, 1:s_]
+        _loss_val = x_bce(pcls, gcls, reduction="none")
+        loss_cls = ((_loss_val.sum(-1) * mask_pos).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[2]
+        # flog.debug('loss_cls:%s', loss_cls)
+
+        # ----------------conf损失----------------
+        pconf = pyolos[:, :, 0].sigmoid()  # 这个需要归一化 torch.Size([3, 845])
+
+        '''------------conf-mse ------------'''
         _loss_val = F.mse_loss(pconf, gconf, reduction="none")
         # _loss_val = F.binary_cross_entropy_with_logits(pconf, gconf, reduction="none")
-        loss_conf_pos = (_loss_val * mask_pos).sum(-1).mean() * cfg.LOSS_WEIGHT[0]
-        loss_conf_neg = (_loss_val * mask_neg).sum(-1).mean() * cfg.LOSS_WEIGHT[1]
+        loss_conf_pos = ((_loss_val * mask_pos).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[0]
+        loss_conf_neg = ((_loss_val * mask_neg).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[1]
+        # flog.debug('loss_conf_pos:%s', loss_conf_pos)
+        # flog.debug('loss_conf_neg:%s', loss_conf_neg)
 
-        # ----------------cls损失  采用bce----------------
-        pcls = pyolos[:, :, 1:s_][mask_pos]
-        gcls = gyolos[:, :, 1:s_][mask_pos]
-        _loss_val = F.binary_cross_entropy_with_logits(pcls, gcls, reduction="none")
-        loss_cls = _loss_val.sum(-1).mean()
+        # if cfg.loss_args['s_conf'] == 'foc':
+        #     l_pos, l_neg = focalloss_v2(pconf, gconf, mask_pos=mask_pos, mask_neg=mask_neg,
+        #                                 alpha=0.25, gamma=2, is_merge=False)
+        #     loss_conf_pos = l_pos.sum(-1).mean()  # 批数平均
+        #     loss_conf_neg = l_neg.sum(-1).mean()  # 批数平均
+        # elif cfg.loss_args['s_conf'] == 'mse':
+        #     _loss_val = F.mse_loss(pconf, gconf, reduction="none")
+        #     _loss_val = F.binary_cross_entropy_with_logits(pconf, gconf, reduction="none")
+        # loss_conf_pos = (_loss_val * mask_pos).sum(-1).mean() * cfg.LOSS_WEIGHT[0]
+        # loss_conf_neg = (_loss_val * mask_neg).sum(-1).mean() * cfg.LOSS_WEIGHT[1]
+        # else:
+        #     raise Exception('类型错误')
 
-        # ----------------box损失   xy采用bce wh采用mes-----------------
-        ptxty = pyolos[:, :, s_:s_ + 2]  # 前面已完成归一化
+        # ----------------box损失 -----------------
+        # conf-1, cls-3, tbox-4, weight-1, gltrb-4  = 13
+        weight = gyolos[:, :, s_ + 4]  # torch.Size([32, 845])
+        ptxty = pyolos[:, :, s_:s_ + 2].sigmoid()  # 这个需要归一化
         ptwth = pyolos[:, :, s_ + 2:s_ + 4]
         gtxty = gyolos[:, :, s_:s_ + 2]
         gtwth = gyolos[:, :, s_ + 2:s_ + 4]
-        _loss_val = F.binary_cross_entropy_with_logits(ptxty, gtxty, reduction="none")
-        loss_txty = (_loss_val.sum(-1) * mask_pos * weight).sum(-1).mean()
+
+        _loss_val = x_bce(ptxty, gtxty, reduction="none")
+        loss_txty = ((_loss_val.sum(-1) * mask_pos * weight).sum(-1) / nums_pos).mean()
         _loss_val = F.mse_loss(ptwth, gtwth, reduction="none")
-        loss_twth = (_loss_val.sum(-1) * mask_pos * weight).sum(-1).mean()
+        loss_twth = ((_loss_val.sum(-1) * mask_pos * weight).sum(-1) / nums_pos).mean()
+        # flog.debug('loss_txty:%s', loss_txty)
+        # flog.debug('loss_twth:%s', loss_twth)
 
         log_dict = {}
         loss_total = loss_conf_pos + loss_conf_neg + loss_cls + loss_txty + loss_twth
@@ -313,7 +393,7 @@ class PredictYOLO_v2(nn.Module):
                                                                     plabels1,
                                                                     pscores1,
                                                                     device,
-                                                                    self.cfg.THRESHOLD_PREDICT_NMS)
+                                                                    cfg.THRESHOLD_PREDICT_NMS)
 
         return ids_batch2, p_boxes_ltrb2, None, p_labels2, p_scores2,
 
@@ -322,28 +402,29 @@ class Yolo_v2_Net(nn.Module):
     def __init__(self, backbone, cfg):
         super(Yolo_v2_Net, self).__init__()
         self.backbone = backbone
+        dims_out = backbone.dims_out  # (128, 256, 512)
 
         # detection head
         self.convsets_1 = nn.Sequential(
-            CBL(1024, 1024, 3, padding=1, leakyReLU=True),
-            CBL(1024, 1024, 3, padding=1, leakyReLU=True)
+            CBL(dims_out[2], dims_out[2], 3, padding=1, leakyReLU=True),
+            CBL(dims_out[2], dims_out[2], 3, padding=1, leakyReLU=True)
         )
 
-        self.route_layer = CBL(512, 64, 1, leakyReLU=True)
+        self.route_layer = CBL(dims_out[1], 64, 1, leakyReLU=True)
         self.reorg = ReorgLayer(stride=2)
-        self.convsets_2 = CBL(1280, 1024, 3, padding=1, leakyReLU=True)
+        self.convsets_2 = CBL(dims_out[1] + dims_out[2], 1024, 3, padding=1, leakyReLU=True)
 
         # conf1 + box4 + cls3
         self.head = nn.Conv2d(1024, cfg.NUM_ANC * (1 + 4 + cfg.NUM_CLASSES), 1)
 
     def forward(self, x):
-        # ceng2, ceng3合并
+        # ceng2 torch.Size([32, 256, 26, 26]) , ceng3 torch.Size([32, 512, 13, 13])
         _, ceng2, ceng3 = self.backbone(x)
 
-        # conv层集合 2层  不变 [5, 1024, 19, 19]
+        # 双CBL混合  dim不变 torch.Size([32, 512, 13, 13])
         ceng3 = self.convsets_1(ceng3)
 
-        # 尺寸加倍再恢复 [5, 64, 38, 38] -> [5, 256, 19, 19]  route from 16th layer in darknet
+        # reorg尺寸加倍再恢复 [5, 64, 38, 38] -> [5, 256, 19, 19]  route from 16th layer in darknet
         ceng2 = self.reorg(self.route_layer(ceng2))
 
         # torch.Size([5, 1280, 19, 19]) route concatenate
@@ -353,10 +434,40 @@ class Yolo_v2_Net(nn.Module):
         return out
 
 
+class Yolo_v2_Netv2(nn.Module):
+    def __init__(self, backbone, cfg):
+        super(Yolo_v2_Netv2, self).__init__()
+        self.backbone = backbone
+        dim_layer = backbone.dims_out[2]  # (128, 256, 512)
+        dim256 = backbone.dims_out[1]
+
+        self.spp = nn.Sequential(
+            CBL(dim_layer, dim256, ksize=1),
+            SPPv2(),
+            BottleneckCSP(dim256 * 4, dim_layer, n=1, shortcut=False)
+        )
+        self.sam = SAM(dim_layer)
+        self.conv_set = BottleneckCSP(dim_layer, dim_layer, n=3, shortcut=False)
+
+        # conf1 + box4 + cls3
+        self.head = nn.Conv2d(dim_layer, cfg.NUM_ANC * (1 + 4 + cfg.NUM_CLASSES), 1)
+
+    def forward(self, x):
+        # ceng2 torch.Size([32, 256, 26, 26]) , ceng3 torch.Size([32, 512, 13, 13])
+        ceng1, ceng2, ceng3 = self.backbone(x)
+
+        outs = self.spp(ceng3)
+        outs = self.sam(outs)
+        outs = self.conv_set(outs)
+        out = self.head(outs)
+        return out
+
+
 class Yolo_v2(nn.Module):
     def __init__(self, backbone, cfg):
         super(Yolo_v2, self).__init__()
-        self.net = Yolo_v2_Net(backbone, cfg)
+        # self.net = Yolo_v2_Net(backbone, cfg)
+        self.net = Yolo_v2_Netv2(backbone, cfg)
 
         self.losser = LossYOLO_v2(cfg=cfg)
         self.preder = PredictYOLO_v2(cfg=cfg)
@@ -378,8 +489,12 @@ class Yolo_v2(nn.Module):
 
 
 if __name__ == '__main__':
-    model = darknet19(pretrained=True)
-    model = ModelOuts4DarkNet19(model)
+    # model = darknet19(pretrained=True)
+    # model = ModelOuts4DarkNet19(model)
+
+    model = models.resnet18(pretrained=True)
+    dims_out = (128, 256, 512)
+    model = ModelOuts4Resnet(model, dims_out)
 
 
     class CFG:
@@ -388,14 +503,11 @@ if __name__ == '__main__':
 
     cfg = CFG()
     cfg.NUM_CLASSES = 3
-    cfg.THRESHOLD_PREDICT_CONF = 0.3
-    cfg.THRESHOLD_PREDICT_NMS = 0.3
-    cfg.NUMS_ANC = [3, 3, 3]
-    cfg.NUM_GRID = 7
+    cfg.NUM_ANC = 5
     net = Yolo_v2_Net(backbone=model, cfg=cfg)
     # x = torch.rand([5, 3, 416, 416])
     # print(net(x).shape)
 
     from f_pytorch.tools_model.model_look import f_look_tw
 
-    f_look_tw(net, input=(5, 3, 608, 608), name='Yolo_v2_Net')
+    f_look_tw(net, input=(5, 3, 416, 416), name='Yolo_v2_Net')

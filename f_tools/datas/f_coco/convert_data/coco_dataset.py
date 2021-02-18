@@ -449,10 +449,10 @@ class CustomCocoDataset(Dataset):
             # raise Exception('这图标注 不存在 %s', coco_anns)
 
         if self.mode == 'bbox':
-            return [torch.tensor(bboxs, dtype=torch.float), torch.tensor(labels, dtype=torch.int64)]
+            return [torch.tensor(bboxs, dtype=torch.float), torch.tensor(labels, dtype=torch.float)]
         elif self.mode == 'keypoints':
             return [torch.tensor(bboxs, dtype=torch.float),
-                    torch.tensor(labels, dtype=torch.int64),
+                    torch.tensor(labels, dtype=torch.float),
                     torch.tensor(keypoints, dtype=torch.float)]
 
     def _init_load_classes(self):
@@ -679,10 +679,10 @@ class CustomCocoDataset4cv(Dataset):
             # raise Exception('这图标注 不存在 %s', coco_anns)
 
         if self.mode == 'bbox':
-            return [torch.tensor(bboxs, dtype=torch.float), torch.tensor(labels, dtype=torch.int64)]
+            return [torch.tensor(bboxs, dtype=torch.float), torch.tensor(labels, dtype=torch.float)]
         elif self.mode == 'keypoints':
             return [torch.tensor(bboxs, dtype=torch.float),
-                    torch.tensor(labels, dtype=torch.int64),
+                    torch.tensor(labels, dtype=torch.float),
                     torch.tensor(keypoints, dtype=torch.float)]
 
     def _init_load_classes(self):

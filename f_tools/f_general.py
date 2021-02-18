@@ -107,7 +107,7 @@ def labels2onehot4ts(labels, num_class):
     batch = labels.shape[0]
     labels.resize_(batch, 1)  # labels[:,None]
     zeros = torch.zeros(batch, num_class, device=labels.device, dtype=torch.int64)
-    return zeros.scatter_(1, labels, 1)  # dim,index,value 数组索引
+    return zeros.scatter_(1, labels.long(), 1)  # dim,index,value 数组索引
 
 
 if __name__ == "__main__":

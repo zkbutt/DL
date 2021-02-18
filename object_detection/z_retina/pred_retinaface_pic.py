@@ -5,8 +5,8 @@ import torch
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_loader import cre_transform_resize4pil, DataLoader, cfg_raccoon
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4keypoints, f_prod_pic4one
-from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
-from object_detection.z_retinaface.train_retinaface import init_model, train_eval_set
+from object_detection.z_retina.CONFIG_RETINAFACE import CFG
+from object_detection.z_retina.train_retinaface import init_model, train_eval_set
 
 if __name__ == '__main__':
     '''
@@ -18,7 +18,7 @@ if __name__ == '__main__':
     index_start = 40
 
     device = torch.device('cpu')
-    flog.info('模型当前设备 %s', device)
+    flog.info('模型当前设备 ------ %s', device)
 
     # 加载数据
     data_loader = DataLoader(cfg)

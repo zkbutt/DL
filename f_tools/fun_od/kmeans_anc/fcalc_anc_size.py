@@ -109,7 +109,7 @@ if __name__ == '__main__':
     VOC2012 17125 18 Accuracy: 75.18%
     输出anc的归一化比例
     '''
-    clusters = 9
+    clusters = 5
     size_in = [416, 416]
     # size_in = [512, 512]
 

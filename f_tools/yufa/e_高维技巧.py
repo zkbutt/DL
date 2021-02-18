@@ -122,6 +122,28 @@ def f_gather():
     print(input.scatter_(-1, idx, 55))  # 与 gather 相同
 
 
+def topk索引():
+    a = torch.randn((6, 5))
+    print('a', a)
+
+    # 每一列选两个大的索引操作
+    # val, ind = a.topk(2, dim=0)
+    # print(val)
+    # print(ind)
+    # print(val.shape)  # torch.Size([2, 5])
+    # a[ind, torch.arange(val.shape[1])] = 999  # 自动广播
+    # print(a)
+
+    # 每一行选两个大的索引操作
+    val, ind = a.topk(2, dim=1)
+    print(val)
+    print(ind)
+    print(val.shape)  # torch.Size([6, 2])
+    a[torch.arange(val.shape[0])[:, None], ind] = 999
+    print(a)
+    # val, ind = a.topk(2, dim=1)
+
+
 if __name__ == '__main__':
     # t1 = torch.arange(8)
     # t2 = t1.reshape(2, 4)
@@ -140,4 +162,5 @@ if __name__ == '__main__':
     # x_高级2(1)
 
     # t_交叉运算()
-    f_gather()
+    # f_gather()
+    topk索引()

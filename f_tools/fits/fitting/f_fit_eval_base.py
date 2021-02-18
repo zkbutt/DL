@@ -133,17 +133,19 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
             for k, v, in log_dict.items():
                 tb_writer.add_scalar('loss_iter/%s' % k, v, len(data_loader) * epoch + i + 1)
 
+    # 这个移动到前
+    if lr_scheduler is not None:
+        # 有警告忽略第一次更新 每批的LR更新
+        # flog.warning('更新 lr_scheduler loss:%s', log_dict['l_total'])
+        # lr_scheduler.step(log_dict['l_total'])  # 更新学习
+        # lr_scheduler.step(epoch)  # 更新学习
+        lr_scheduler.step()  # 更新学习
+
     # 这里返回的是该设备的平均loss ,不是所有GPU的
     log_dict_avg = {}
     log_dict_avg['lr'] = metric_logger.meters['lr'].value
     for k, v in log_dict.items():
         log_dict_avg[k] = metric_logger.meters[k].avg
-
-    if lr_scheduler is not None:
-        # 每批的LR更新
-        # flog.warning('更新 lr_scheduler loss:%s', log_dict['l_total'])
-        # lr_scheduler.step(log_dict['l_total'])  # 更新学习
-        lr_scheduler.step(epoch)  # 更新学习
 
     if fis_mgpu() and not is_main_process():
         # 只有0进程才需要保存
@@ -343,9 +345,9 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
         # 第一个元素指示操作该临时文件的安全级别，第二个元素指示该临时文件的路径
         _, tmp = tempfile.mkstemp()
         json.dump(res_coco, open(tmp, 'w'))
-        cocoDt = coco_gt.loadRes(tmp)
-        coco_eval_obj = COCOeval(coco_gt, cocoDt, ann_type)
-        coco_eval_obj.params.imgIds = ids_coco
+        coco_dt = coco_gt.loadRes(tmp)
+        coco_eval_obj = COCOeval(coco_gt, coco_dt, ann_type)
+        coco_eval_obj.params.imgIds = ids_coco  # 多显卡id合并更新
         coco_eval_obj.evaluate()
         coco_eval_obj.accumulate()
         coco_eval_obj.summarize()

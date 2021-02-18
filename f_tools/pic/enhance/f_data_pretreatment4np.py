@@ -10,21 +10,39 @@ from f_tools.pic.f_show import f_show_od_np4plt
 
 
 def cre_transform_resize4np(cfg):
-    data_transform = {
-        "train": Compose([
-            ConvertFromInts(),
-            # ToAbsoluteCoords(), # 恢复真实尺寸
-            PhotometricDistort(),  # 图片集合
-            Expand(cfg.PIC_MEAN),  # 加大图片
-            RandomSampleCrop(),
-            RandomMirror(),
-            # ToPercentCoords(), # 归一化尺寸
-            Resize(cfg.IMAGE_SIZE),
-            Normalize(cfg.PIC_MEAN, cfg.PIC_STD),
-            ConvertColor(current='BGR', transform='RGB'),
-            ToTensor(is_box_oned=True),
-        ], cfg)
-    }
+    if cfg.KEEP_SIZE:
+        data_transform = {
+            "train": Compose([
+                ConvertFromInts(),
+                # ToAbsoluteCoords(), # 恢复真实尺寸
+                PhotometricDistort(),  # 图片集合
+                # Expand(cfg.PIC_MEAN),  # 放大缩小图片
+                # RandomSampleCrop(),  # 随机剪切定位
+                RandomMirror(),
+                # ToPercentCoords(), # 归一化尺寸
+                Resize(cfg.IMAGE_SIZE),
+                Normalize(cfg.PIC_MEAN, cfg.PIC_STD),
+                ConvertColor(current='BGR', transform='RGB'),
+                ToTensor(is_box_oned=True),
+            ], cfg)
+        }
+    else:
+        data_transform = {
+            "train": Compose([
+                ConvertFromInts(),
+                # ToAbsoluteCoords(), # 恢复真实尺寸
+                PhotometricDistort(),  # 图片集合
+                Expand(cfg.PIC_MEAN),  # 放大缩小图片
+                RandomSampleCrop(),  # 随机剪切定位
+                RandomMirror(),
+                # ToPercentCoords(), # 归一化尺寸
+                Resize(cfg.IMAGE_SIZE),
+                Normalize(cfg.PIC_MEAN, cfg.PIC_STD),
+                ConvertColor(current='BGR', transform='RGB'),
+                ToTensor(is_box_oned=True),
+            ], cfg)
+        }
+
     data_transform["val"] = Compose([
         Resize(cfg.IMAGE_SIZE),
         Normalize(cfg.PIC_MEAN, cfg.PIC_STD),

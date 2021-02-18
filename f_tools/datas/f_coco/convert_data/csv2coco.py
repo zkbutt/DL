@@ -321,7 +321,8 @@ if __name__ == '__main__':
     '''voc 数据集'''
     # 验证集
     file_classes_ids = 'M:/AI/datas/VOC2012/classes_ids.json'
-    path_img = r'M:/AI/datas/VOC2012/test/JPEGImages'  # 真实图片路径
+    # path_img = r'M:/AI/datas/VOC2012/val/JPEGImages'  # 真实图片路径
+    path_img = r'M:/AI/datas/VOC2007/val/JPEGImages'  # 真实图片路径
     file_csv = "../_file/csv_labels_voc_train.csv"
     type = 'val2017'  # train2017
     path_coco_save = r"M:/AI/datas/VOC2012"  # 这个是生成的根 目录必须存在

@@ -215,7 +215,7 @@ def mgpu_process0_init(args, cfg, loader_train, loader_val_coco, model, device):
             while os.path.exists(path):
                 time.sleep(1)
             else:
-                flog.warning('tb_writer 删除成功: %s', path)
+                flog.error('tb_writer 删除成功: %s', path)
             pass
     else:
         img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 不存在时需要

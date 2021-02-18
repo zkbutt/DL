@@ -45,28 +45,11 @@ class SSH(nn.Module):
         return out
 
 
-class SPP(nn.Module):
-    '''
-    与SPP类似 长宽不变, 深度是原来的4倍 calc_oshape_pytorch
-    '''
-
-    def __init__(self, in_channel):
-        super(SPP, self).__init__()
-        self.maxpool5X5 = nn.MaxPool2d(kernel_size=5, stride=1, padding=2)
-        self.maxpool9X9 = nn.MaxPool2d(kernel_size=9, stride=1, padding=4)
-        self.maxpool13X13 = nn.MaxPool2d(kernel_size=13, stride=1, padding=6)
-        self.spp_out = conv2d(in_channel * 4, in_channel, kernel_size=1)
-
-    def forward(self, inputs):
-        maxpool5X5 = self.maxpool5X5(inputs)  # torch.Size([1, 512, 13, 13])
-        maxpool9X9 = self.maxpool9X9(inputs)
-        maxpool13X13 = self.maxpool13X13(inputs)
-        out = torch.cat([inputs, maxpool5X5, maxpool9X9, maxpool13X13], dim=1)
-        out = self.spp_out(out)
-        return out
-
-
 class SPPv2(torch.nn.Module):
+    '''
+    一个输入 由多个尺寸的核 池化后 再进行堆叠
+    '''
+
     def __init__(self, seq='asc'):
         super(SPPv2, self).__init__()
         assert seq in ['desc', 'asc']
@@ -74,7 +57,7 @@ class SPPv2(torch.nn.Module):
 
     def __call__(self, x):
         x_1 = x
-        x_2 = F.max_pool2d(x, 5, 1, 2)
+        x_2 = F.max_pool2d(input=x, kernel_size=5, stride=1, padding=2)
         x_3 = F.max_pool2d(x, 9, 1, 4)
         x_4 = F.max_pool2d(x, 13, 1, 6)
         if self.seq == 'desc':
@@ -148,7 +131,7 @@ class SpatialAttention(nn.Module):
 
 
 class SAM(nn.Module):
-    """ Parallel CBAM from yolov4"""
+    """ conv -> sigmoid * x -> 对原值进行缩放  Parallel CBAM from yolov4"""
 
     def __init__(self, in_ch):
         super(SAM, self).__init__()

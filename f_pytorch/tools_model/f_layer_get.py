@@ -202,6 +202,34 @@ class ModelOuts4DarkNet53(nn.Module):
 '''-----------------单输出---------------------'''
 
 
+class ModelOut4DarkNet19(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        del model.conv_7
+        del model.avgpool
+        self.model = model
+        # 重写流程
+        self.model._forward_impl = types.MethodType(self.foverwrite, model)
+        self.dim_out = 1024
+
+    def foverwrite(self, model, x):
+        x = model.conv_1(x)
+        x = model.conv_2(x)
+        x = model.conv_3(x)
+        x = model.conv_4(x)
+        x = model.conv_5(model.maxpool_4(x))
+        x = model.conv_6(model.maxpool_5(x))
+
+        # x = self.avgpool(x)
+        # x = self.conv_7(x)
+        # x = x.view(x.size(0), -1)
+        return x
+
+    def forward(self, inputs):
+        ous = self.model(inputs)
+        return ous
+
+
 class ModelOut4Resnet18(nn.Module):
     def __init__(self, model):
         super().__init__()
@@ -317,10 +345,10 @@ if __name__ == '__main__':
     # f_look_model(model, input=(1, 3, 416, 416))
 
     # model = models.resnet50(pretrained=True)
-    model = models.resnext50_32x4d(pretrained=True)
-    dims_out = (512, 1024, 2048)
-    # model = models.resnet18(pretrained=True)
-    # dims_out = (128, 256, 512)
+    # model = models.resnext50_32x4d(pretrained=True)
+    # dims_out = (512, 1024, 2048)
+    model = models.resnet18(pretrained=True)
+    dims_out = (128, 256, 512)
     model = ModelOuts4Resnet(model, dims_out)
     # f_look_model(model, input=(1, 3, 416, 416))
 

@@ -40,6 +40,7 @@ def base_set_1gpu(cfg, id_gpu=0):
         device = torch.device("cpu")
         cfg.IS_MIXTURE_FIX = False
     flog.info('模型当前设备 %s', device)
+    cfg.device = device  # cfg添加属性
 
     if cfg.DEBUG:
         flog.warning('debug模式')
@@ -87,7 +88,7 @@ def train_eval4od(start_epoch, model, optimizer,
 
         if cfg.IS_TRAIN:
             model.train()
-            flog.warning('训练开始：%s   半精度训练：%s    尺寸：%s' % (epoch + 1, cfg.IS_MIXTURE_FIX, cfg.tcfg_size))
+            flog.info('训练开始：%s   半精度训练：%s    尺寸：%s' % (epoch + 1, cfg.IS_MIXTURE_FIX, cfg.tcfg_size))
             log_dict = f_train_one_epoch4(
                 model=model,
                 fun_datas_l2=fun_datas_l2,
@@ -105,38 +106,71 @@ def train_eval4od(start_epoch, model, optimizer,
         else:
             log_dict = None
 
-        if model.cfg.IS_COCO_EVAL \
-                and (epoch + 1) > cfg.START_EVAL \
-                and (epoch + 1) % cfg.EVAL_INTERVAL == 0 \
-                or (epoch + 1) > cfg.END_EVAL:
-            flog.info('COCO 验证开始 %s', epoch + 1)
-            model.eval()
-            # with torch.no_grad():
-            ann_type = 'bbox'
-            res_eval = []
+        if cfg.IS_COCO_EVAL:
+            s_keys = sorted(list(cfg.NUMS_EVAL.keys()), reverse=True)
+            for s_key in s_keys:
+                _e = (epoch + 1)
+                if _e < s_key:
+                    continue
+                else:  # >=
+                    eval_interval = cfg.NUMS_EVAL[s_key]
+                    if _e % eval_interval != 0:
+                        # 满足epoch 无需验证退出
+                        break
+                    else:
+                        # 开始验证
+                        flog.info('COCO 验证开始 %s', epoch + 1)
+                        model.eval()
+                        # with torch.no_grad():
+                        ann_type = 'bbox'
+                        res_eval = []
 
-            maps_val = f_evaluate4coco3(
-                model=model,
-                fun_datas_l2=fun_datas_l2,
-                data_loader=loader_val_coco,
-                epoch=epoch,
-                tb_writer=tb_writer,
-                res_eval=res_eval,
-                ann_type=ann_type,
-                device=device,
-                eval_sampler=eval_sampler,
-                is_keep=cfg.IS_KEEP_SCALE
-            )
+                        maps_val = f_evaluate4coco3(
+                            model=model,
+                            fun_datas_l2=fun_datas_l2,
+                            data_loader=loader_val_coco,
+                            epoch=epoch,
+                            tb_writer=tb_writer,
+                            res_eval=res_eval,
+                            ann_type=ann_type,
+                            device=device,
+                            eval_sampler=eval_sampler,
+                            is_keep=cfg.IS_KEEP_SCALE
+                        )
 
-            if maps_val is not None:
-                if maps_val[0] > map_val_max_p:
-                    map_val_max_p = maps_val[0]
-                    map_val_max_r = max(map_val_max_r, maps_val[1])
-                    fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch)
-                elif maps_val[1] > map_val_max_r:
-                    map_val_max_r = maps_val[1]
-                    map_val_max_p = max(map_val_max_p, maps_val[0])
-                    fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch)
+                        if maps_val is not None:
+                            if maps_val[0] > map_val_max_p:
+                                map_val_max_p = maps_val[0]
+                                map_val_max_r = max(map_val_max_r, maps_val[1])
+                                fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch)
+                            elif maps_val[1] > map_val_max_r:
+                                map_val_max_r = maps_val[1]
+                                map_val_max_p = max(map_val_max_p, maps_val[0])
+                                fmax_map_save(maps_val, log_dict, cfg, model, optimizer, lr_scheduler, epoch)
+                        break  # 退出
+
+        # if model.cfg.IS_COCO_EVAL \
+        #         and (epoch + 1) > cfg.START_EVAL \
+        #         and (epoch + 1) % cfg.EVAL_INTERVAL == 0 \
+        #         or (epoch + 1) > cfg.END_EVAL:
+        #     flog.info('COCO 验证开始 %s', epoch + 1)
+        #     model.eval()
+        #     # with torch.no_grad():
+        #     ann_type = 'bbox'
+        #     res_eval = []
+        #
+        #     maps_val = f_evaluate4coco3(
+        #         model=model,
+        #         fun_datas_l2=fun_datas_l2,
+        #         data_loader=loader_val_coco,
+        #         epoch=epoch,
+        #         tb_writer=tb_writer,
+        #         res_eval=res_eval,
+        #         ann_type=ann_type,
+        #         device=device,
+        #         eval_sampler=eval_sampler,
+        #         is_keep=cfg.IS_KEEP_SCALE
+        #     )
 
         if model.cfg.IS_FMAP_EVAL:
             flog.info('FMAP 验证开始 %s', epoch + 1)

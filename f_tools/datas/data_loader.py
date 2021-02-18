@@ -116,8 +116,8 @@ def cfg_voc(cfg):
     cfg.PRINT_FREQ = 20  # 400张图打印
 
     cfg.IMAGE_SIZE = (512, 512)
-    cfg.NUM_SAVE_INTERVAL = 1  # epoch+1
-    cfg.START_EVAL = 3  # epoch
+    # cfg.NUM_SAVE_INTERVAL = 1  # epoch+1
+    # cfg.START_EVAL = 3  # epoch
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
     cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
@@ -146,7 +146,7 @@ def cfg_voc(cfg):
     cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val.json'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
-    cfg.ANC_SCALE = [
+    cfg.ANCS_SCALE = [
         [[0.04, 0.056], [0.092, 0.104]],
         [[0.122, 0.218], [0.254, 0.234]],
         [[0.326, 0.462], [0.71, 0.572]],
@@ -195,7 +195,7 @@ def cfg_widerface(cfg):
     cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val2017.json'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
-    # cfg.ANC_SCALE = [
+    # cfg.ANCS_SCALE = [
     #     [[0.255, 0.263], [0.354, 0.317]],
     #     [[0.389, 0.451], [0.49, 0.612]],
     #     [[0.678, 0.532], [0.804, 0.732]],
@@ -241,7 +241,7 @@ def cfg_raccoon(cfg, batch=40, image_size=(448, 448)):
     cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val2017.json'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
-    cfg.ANC_SCALE = [
+    cfg.ANCS_SCALE = [
         [[0.255, 0.263], [0.354, 0.317]],
         [[0.389, 0.451], [0.49, 0.612]],
         [[0.678, 0.532], [0.804, 0.732]],
@@ -260,7 +260,7 @@ def cfg_type2(cfg, batch=40, image_size=(448, 448)):
     cfg.BATCH_SIZE = batch
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
 
-    cfg.PRINT_FREQ = 5  # BATCH_SIZE * PRINT_FREQ 张图片
+    cfg.PRINT_FREQ = 10  # BATCH_SIZE * PRINT_FREQ 张图片
 
     cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
     cfg.START_EVAL = 10  # 1第一轮
@@ -296,9 +296,9 @@ def cfg_type2(cfg, batch=40, image_size=(448, 448)):
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
     # Accuracy: 73.32%  [3,3,2]
-    cfg.ANC_SCALE = [[0.06, 0.06], [0.122, 0.098], [0.18, 0.19],
-                     [0.382, 0.251], [0.262, 0.378], [0.408, 0.529],
-                     [0.621, 0.415], [0.622, 0.704], [0.85, 0.61]]
+    cfg.ANCS_SCALE = [[0.06, 0.06], [0.122, 0.20], [0.2, 0.12],
+                      [0.382, 0.251], [0.262, 0.378], [0.408, 0.529],
+                      [0.861, 0.675], [0.742, 0.824], [0.97, 0.73]]
     cfg.ANCHORS_CLIP = True  # 是否剔除超边界
     cfg.NUMS_ANC = [3, 3, 3]
 
@@ -311,6 +311,6 @@ if __name__ == '__main__':
 
     cfg = CFG()
     cfg_type2(cfg)
-    print(len(cfg.ANC_SCALE))
-    print(np.array(cfg.ANC_SCALE).shape)  # [3,3,2]
+    print(len(cfg.ANCS_SCALE))
+    print(np.array(cfg.ANCS_SCALE).shape)  # [3,3,2]
     print(cfg.NUM_ANC)

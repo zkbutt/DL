@@ -103,6 +103,8 @@ class Train_1gpu(Train_Base):
     def __init__(self, cfg, fun_train_eval_set, fun_init_model, path_project_root) -> None:
         self.is_mgpu = False
         device, cfg = base_set_1gpu(cfg, id_gpu=0)
+        # fdebug
+        # device = torch.device('cpu')
         super(Train_1gpu, self).__init__(cfg, fun_train_eval_set, fun_init_model, self.is_mgpu, device,
                                          path_project_root)
 

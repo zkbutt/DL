@@ -278,8 +278,9 @@ COLORS_plt = {
     'yellow': '#FFFF00',
     'yellowgreen': '#9ACD32'}
 
-COLOR_PBOXES = 'lightcyan'
-COLOR_GBOXES = 'red'
+COLOR_GBOXES = 'lightgreen'
+COLOR_PBOXES = 'red'
+COLOR_OBOXES = 'tan'
 
 
 def show_od_keypoints4cv(img_np, bboxs, keypoints, scores):
@@ -1012,21 +1013,9 @@ def f_show_od_np4cv(img_np, boxes_ltrb, scores, plabels_text, is_showing=True):
         return img_np
 
 
-def f_show_od_np4plt(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False,
-                     glabels_text=None,
-                     plabels_text=None,
-                     p_scores_float=None,
-                     grids=None):
-    '''
-
-    :param img_np_bgr: 转换rgb
-    :param gboxes_ltrb: tensors
-    :param pboxes_ltrb:
-    :param is_recover_size:
-    :param labels_text:
-    :param grids:
-    :return:
-    '''
+def f_show_od_np4plt(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, other_ltrb=None, is_recover_size=False,
+                     glabels_text=None, plabels_text=None,
+                     p_scores_float=None, grids=None):
     current_axis = plt.gca()
     img_np_rgb = cv2.cvtColor(img_np_bgr, cv2.COLOR_BGR2RGB)
     plt.imshow(img_np_rgb)
@@ -1035,6 +1024,13 @@ def f_show_od_np4plt(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_
     plt.title(wh)
     if grids is not None:
         _f_draw_grid4plt(wh, grids)
+
+    if other_ltrb is not None:
+        if is_recover_size:
+            whwh = np.tile(np.array(wh), 2)  # 整体复制 tile
+            other_ltrb = other_ltrb * whwh
+        _f_draw_od_np4plt(current_axis, other_ltrb, is_show_xy=True, color=COLOR_OBOXES,
+                          linewidth=1)
 
     if gboxes_ltrb is not None:
         gboxes_ltrb = gboxes_ltrb.cpu()
@@ -1056,10 +1052,16 @@ def f_show_od_np4plt(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_
     plt.show()
 
 
-def f_show_od_ts4plt(img_ts, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False, labels_text=None, grids=None):
+def f_show_od_ts4plt(img_ts, gboxes_ltrb=None, pboxes_ltrb=None, is_recover_size=False,
+                     glabels_text=None, plabels_text=None, p_scores_float=None, grids=None):
     img_np_rgb = img_ts.cpu().numpy().astype(np.float32).transpose((1, 2, 0))
     img_np_bgr = cv2.cvtColor(img_np_rgb, cv2.COLOR_RGB2BGR)
-    f_show_od_np4plt(img_np_bgr, gboxes_ltrb, pboxes_ltrb, is_recover_size, labels_text, grids)
+    f_show_od_np4plt(img_np_bgr, gboxes_ltrb=gboxes_ltrb, pboxes_ltrb=pboxes_ltrb,
+                     is_recover_size=is_recover_size,
+                     glabels_text=glabels_text,
+                     plabels_text=plabels_text,
+                     p_scores_float=p_scores_float,
+                     grids=grids)
 
 
 if __name__ == '__main__':

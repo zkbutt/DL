@@ -92,11 +92,11 @@ def f_look_tw(model, input=(1, 3, 416, 416), name='model_look'):
     flog.info('文件生成成功 %s', name + '.xlsx')
 
 
-def f_look_summary(model, input=(3, 416, 416)):
+def f_look_summary(model, input=(3, 416, 416), device="cpu"):
     from torchsummary import summary
     if not isinstance(input, tuple):
         input = tuple(input)
-    summary1 = summary(model, input)
+    summary1 = summary(model, input, device=device)
     print(type(summary1))
 
 

@@ -12,8 +12,8 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.device.f_device import init_video
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_vodeo, f_prod_vodeo4keypoints
 from f_tools.pic.f_show import f_plot_od4pil
-from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
-from object_detection.z_retinaface.process_fun import init_model, cre_data_transform
+from object_detection.z_retina.CONFIG_RETINAFACE import CFG
+from object_detection.z_retina.process_fun import init_model, cre_data_transform
 import numpy as np
 
 if __name__ == '__main__':

@@ -22,16 +22,16 @@ import sys
 import logging
 from tqdm import trange
 
-# a = torch.tensor(1)
-# print(a / 3 * 2)
-# print((a / 3) * 2)
+from f_tools.fun_od.f_boxes import bbox_iou4one
 
-print(torch.randint(low=10, high=19, size=[1]))
-
-# print(str(datetime.timedelta(seconds=5.44444)))
-# a = torch.tensor([[1., 2], [3, 4]])
-# print(a)
-# print(a / 4 * torch.tensor([2, 2]))
-# print(a * torch.tensor([2, 2]) / 4)
-# print(a * torch.tensor([2, 2]) * 4 / 4)
-# print(torch.true_divide(a, 4) * 4)
+a = torch.randn((6, 5))
+print('a', a)
+# ind 是降维的索引
+val, ind = a.topk(2, dim=0)
+a[ind, torch.arange(val.shape[1])] = 999
+# val, ind = a.topk(2, dim=1)
+print(val)
+print(ind)
+# a[ ind] = 999
+print(val.shape)
+print(a)

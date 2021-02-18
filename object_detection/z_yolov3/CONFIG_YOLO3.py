@@ -5,11 +5,12 @@ class CFG(CfgBase):
     DEBUG = False
     IS_FORCE_SAVE = False
     IS_LOCK_BACKBONE_WEIGHT = False  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
-    END_EPOCH = 180
+    END_EPOCH = 300
 
     IS_TRAIN = True
-    IS_COCO_EVAL = True,
+    IS_COCO_EVAL = True
     IS_VISUAL = False
+    IS_TRAIN_DEBUG = True
 
     '''可视化'''
     IS_VISUAL_PRETREATMENT = False  # 图片预处理可视化
@@ -21,4 +22,5 @@ class CFG(CfgBase):
 
     THRESHOLD_PREDICT_CONF = 0.01  # 用于预测的阀值
     THRESHOLD_PREDICT_NMS = 0.5  # 用于预测的阀值
+
     SAVE_FILE_NAME = 't_yolo3_'  # 预置一个 实际无用 根据文件名确定

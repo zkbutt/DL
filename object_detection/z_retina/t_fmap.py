@@ -2,7 +2,7 @@ import os
 
 from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_fix_txt, f_recover_gt
 from f_tools.datas.f_map.map_go import f_do_fmap
-from object_detection.z_retinaface.CONFIG_RETINAFACE import CFG
+from object_detection.z_retina.CONFIG_RETINAFACE import CFG
 
 if __name__ == '__main__':
     cfg = CFG
