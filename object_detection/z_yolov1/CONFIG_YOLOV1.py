@@ -5,9 +5,9 @@ class CFG(CfgBase):
     DEBUG = False
     IS_FORCE_SAVE = False
     IS_LOCK_BACKBONE_WEIGHT = False  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
-    END_EPOCH = 160
+    END_EPOCH = 140
 
-    IS_TRAIN = True
+    IS_TRAIN = False
     IS_COCO_EVAL = True
     IS_VISUAL = False
     IS_TRAIN_DEBUG = True

@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 import time
-
+import torch.nn.functional as F
 import torch
 import xmltodict
 
@@ -24,14 +24,25 @@ from tqdm import trange
 
 from f_tools.fun_od.f_boxes import bbox_iou4one
 
-a = torch.randn((6, 5))
-print('a', a)
-# ind 是降维的索引
-val, ind = a.topk(2, dim=0)
-a[ind, torch.arange(val.shape[1])] = 999
-# val, ind = a.topk(2, dim=1)
-print(val)
-print(ind)
-# a[ ind] = 999
-print(val.shape)
-print(a)
+# a = torch.randn((6, 5))
+# print('a', a)
+# # ind 是降维的索引
+# val, ind = a.topk(2, dim=0)
+# a[ind, torch.arange(val.shape[1])] = 999
+# # val, ind = a.topk(2, dim=1)
+# print(val)
+# print(ind)
+# # a[ ind] = 999
+# print(val.shape)
+# print(a)
+
+# [3,4] * [4,1]
+a = torch.arange(2).reshape(1, 2).type(torch.float)
+a = F.softmax(a, dim=-1)
+# b = torch.arange(2).type(torch.float)
+b = torch.tensor([1,2]).type(torch.float)
+print(a, a.shape)
+print(b[None], b[None].shape)
+
+# [1,2] ^^ [1,2]
+print(F.linear(a, b[None]))

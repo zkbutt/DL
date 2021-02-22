@@ -157,8 +157,12 @@ def bbox_iou4np(bbox_a, bbox_b):
 def bbox_iou4one(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
     '''
     这个是一一对应  box1  box2
-    :param bbox_a: 多个预测框 (n,4)
-    :param bbox_b: 多个标定框 (n,4)
+    :param box1: 多个预测框 (n,4)
+    :param box2: 多个标定框 (n,4)
+    iou: 目标框不相交时全为0 不能反映如何相交的  --- 重叠面积
+    giou: 当目标框完全包裹预测框的时候 退化为iou   --- 中心点距离
+    diou: 提高收敛速度及全包裹优化
+    ciou: --- 长宽比
     :return: n
     '''
     max_lt = torch.max(box1[:, :2], box2[:, :2])  # left-top [N,M,2] 多维组合用法

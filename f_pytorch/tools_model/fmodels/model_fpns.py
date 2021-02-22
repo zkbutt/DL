@@ -7,13 +7,13 @@ import torch.nn.functional as F
 from f_pytorch.tools_model.fmodels.init_weights import xavier_init
 
 
-class FPNv1(nn.Module):
+class FPN_out3(nn.Module):
     '''
     三层图像形变大后 相加
     '''
 
     def __init__(self, in_channels_list, out_channels):
-        super(FPNv1, self).__init__()
+        super(FPN_out3, self).__init__()
         leaky = 0
         if (out_channels <= 64):
             leaky = 0.1
@@ -44,11 +44,11 @@ class FPNv1(nn.Module):
         return outs
 
 
-class FPNv2(nn.Module):
+class FPN_out5(nn.Module):
     ''' FPN '''
 
     def __init__(self, in_channels_list, feature_size=256):
-        super(FPNv2, self).__init__()
+        super(FPN_out5, self).__init__()
 
         # upsample C5 to get P5 from the FPN paper
         self.P5_1 = nn.Conv2d(in_channels_list[2], feature_size, kernel_size=1, stride=1, padding=0)
@@ -95,265 +95,274 @@ class FPNv2(nn.Module):
         return [P3_x, P4_x, P5_x, P6_x, P7_x]
 
 
-class RegressionModel(nn.Module):
-    def __init__(self, num_features_in, num_anchors=9, feature_size=256):
-        super(RegressionModel, self).__init__()
-
-        self.conv1 = nn.Conv2d(num_features_in, feature_size, kernel_size=3, padding=1)
-        self.act1 = nn.ReLU()
-
-        self.conv2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, padding=1)
-        self.act2 = nn.ReLU()
-
-        self.conv3 = nn.Conv2d(feature_size, feature_size, kernel_size=3, padding=1)
-        self.act3 = nn.ReLU()
-
-        self.conv4 = nn.Conv2d(feature_size, feature_size, kernel_size=3, padding=1)
-        self.act4 = nn.ReLU()
-
-        self.output = nn.Conv2d(feature_size, num_anchors * 4, kernel_size=3, padding=1)
-
-    def forward(self, x):
-        out = self.conv1(x)
-        out = self.act1(out)
-
-        out = self.conv2(out)
-        out = self.act2(out)
-
-        out = self.conv3(out)
-        out = self.act3(out)
-
-        out = self.conv4(out)
-        out = self.act4(out)
-
-        out = self.output(out)
-
-        # torch.Size([32, 36, 52, 52]) -> [32, 52, 52, 36]
-        out = out.permute(0, 2, 3, 1)
-
-        return out.contiguous().view(out.shape[0], -1, 4)
-
-
-class ClassificationModel(nn.Module):
-    def __init__(self, num_features_in, num_anchors=9, num_classes=80, prior=0.01, feature_size=256):
-        super(ClassificationModel, self).__init__()
-
-        self.num_classes = num_classes
-        self.num_anchors = num_anchors
-
-        self.conv1 = nn.Conv2d(num_features_in, feature_size, kernel_size=3, padding=1)
-        self.act1 = nn.ReLU()
-
-        self.conv2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, padding=1)
-        self.act2 = nn.ReLU()
-
-        self.conv3 = nn.Conv2d(feature_size, feature_size, kernel_size=3, padding=1)
-        self.act3 = nn.ReLU()
-
-        self.conv4 = nn.Conv2d(feature_size, feature_size, kernel_size=3, padding=1)
-        self.act4 = nn.ReLU()
-
-        self.output = nn.Conv2d(feature_size, num_anchors * num_classes, kernel_size=3, padding=1)
-        # self.output_act = nn.Sigmoid()
-
-    def forward(self, x):
-        out = self.conv1(x)
-        out = self.act1(out)
-
-        out = self.conv2(out)
-        out = self.act2(out)
-
-        out = self.conv3(out)
-        out = self.act3(out)
-
-        out = self.conv4(out)
-        out = self.act4(out)
-
-        out = self.output(out)
-        # out = self.output_act(out)
-
-        # out is B x C x W x H, with C = n_classes + n_anchors
-        out1 = out.permute(0, 2, 3, 1)
-
-        batch_size, width, height, channels = out1.shape
-
-        # torch.Size([1, 52, 52, 9, 3])
-        out2 = out1.view(batch_size, width, height, self.num_anchors, self.num_classes)
-
-        # torch.Size([1, 24336, 3]) c=h,w,anc
-        return out2.contiguous().view(x.shape[0], -1, self.num_classes)
-
-
-def calc_iou(a, b):
-    area = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
-
-    iw = torch.min(torch.unsqueeze(a[:, 2], dim=1), b[:, 2]) - torch.max(torch.unsqueeze(a[:, 0], 1), b[:, 0])
-    ih = torch.min(torch.unsqueeze(a[:, 3], dim=1), b[:, 3]) - torch.max(torch.unsqueeze(a[:, 1], 1), b[:, 1])
-
-    iw = torch.clamp(iw, min=0)
-    ih = torch.clamp(ih, min=0)
-
-    ua = torch.unsqueeze((a[:, 2] - a[:, 0]) * (a[:, 3] - a[:, 1]), dim=1) + area - iw * ih
-
-    ua = torch.clamp(ua, min=1e-8)
-
-    intersection = iw * ih
-
-    IoU = intersection / ua
-
-    return IoU
-
-
-class FocalLoss(nn.Module):
-    # def __init__(self):
-
-    def forward(self, classifications, regressions, anchors, annotations):
-        alpha = 0.25
-        gamma = 2.0
-        batch_size = classifications.shape[0]
-        classification_losses = []
-        regression_losses = []
-
-        anchor = anchors[0, :, :]
-
-        anchor_widths = anchor[:, 2] - anchor[:, 0]
-        anchor_heights = anchor[:, 3] - anchor[:, 1]
-        anchor_ctr_x = anchor[:, 0] + 0.5 * anchor_widths
-        anchor_ctr_y = anchor[:, 1] + 0.5 * anchor_heights
-
-        for j in range(batch_size):
-
-            classification = classifications[j, :, :]
-            regression = regressions[j, :, :]
-
-            bbox_annotation = annotations[j, :, :]
-            bbox_annotation = bbox_annotation[bbox_annotation[:, 4] != -1]
-
-            classification = torch.clamp(classification, 1e-4, 1.0 - 1e-4)
-
-            if bbox_annotation.shape[0] == 0:
-                if torch.cuda.is_available():
-                    alpha_factor = torch.ones(classification.shape).cuda() * alpha
-
-                    alpha_factor = 1. - alpha_factor
-                    focal_weight = classification
-                    focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
-
-                    bce = -(torch.log(1.0 - classification))
-
-                    # cls_loss = focal_weight * torch.pow(bce, gamma)
-                    cls_loss = focal_weight * bce
-                    classification_losses.append(cls_loss.sum())
-                    regression_losses.append(torch.tensor(0).float())
-
-                else:
-                    alpha_factor = torch.ones(classification.shape) * alpha
-
-                    alpha_factor = 1. - alpha_factor
-                    focal_weight = classification
-                    focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
-
-                    bce = -(torch.log(1.0 - classification))
-
-                    # cls_loss = focal_weight * torch.pow(bce, gamma)
-                    cls_loss = focal_weight * bce
-                    classification_losses.append(cls_loss.sum())
-                    regression_losses.append(torch.tensor(0).float())
-
-                continue
-
-            IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :4])  # num_anchors x num_annotations
-
-            IoU_max, IoU_argmax = torch.max(IoU, dim=1)  # num_anchors x 1
-
-            # import pdb
-            # pdb.set_trace()
-
-            # compute the loss for classification
-            targets = torch.ones(classification.shape) * -1
-
-            if torch.cuda.is_available():
-                targets = targets.cuda()
-
-            targets[torch.lt(IoU_max, 0.4), :] = 0
-
-            positive_indices = torch.ge(IoU_max, 0.5)
-
-            num_positive_anchors = positive_indices.sum()
-
-            assigned_annotations = bbox_annotation[IoU_argmax, :]
-
-            targets[positive_indices, :] = 0
-            targets[positive_indices, assigned_annotations[positive_indices, 4].long()] = 1
-
-            if torch.cuda.is_available():
-                alpha_factor = torch.ones(targets.shape).cuda() * alpha
+class ConvModule(nn.Module):
+    """A conv block that contains conv/norm/activation layers.
+
+    Args:
+        in_channels (int): Same as nn.Conv2d.
+        out_channels (int): Same as nn.Conv2d.
+        kernel_size (int or tuple[int]): Same as nn.Conv2d.
+        stride (int or tuple[int]): Same as nn.Conv2d.
+        padding (int or tuple[int]): Same as nn.Conv2d.
+        dilation (int or tuple[int]): Same as nn.Conv2d.
+        groups (int): Same as nn.Conv2d.
+        bias (bool or str): If specified as `auto`, it will be decided by the
+            norm_cfg. Bias will be set as True if norm_cfg is None, otherwise
+            False.
+        conv_cfg (dict): Config dict for convolution layer.
+        norm_cfg (dict): Config dict for normalization layer.
+        activation (str): activation layer, "ReLU" by default.
+        inplace (bool): Whether to use inplace mode for activation.
+        order (tuple[str]): The order of conv/norm/activation layers. It is a
+            sequence of "conv", "norm" and "act". Examples are
+            ("conv", "norm", "act") and ("act", "conv", "norm").
+    """
+
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride=1,
+                 padding=0,
+                 dilation=1,
+                 groups=1,
+                 bias='auto',
+                 conv_cfg=None,
+                 norm_cfg=None,
+                 activation='ReLU',
+                 inplace=True,
+                 order=('conv', 'norm', 'act')):
+        super(ConvModule, self).__init__()
+        assert conv_cfg is None or isinstance(conv_cfg, dict)
+        assert norm_cfg is None or isinstance(norm_cfg, dict)
+        assert activation is None or isinstance(activation, str)
+        self.conv_cfg = conv_cfg
+        self.norm_cfg = norm_cfg
+        self.activation = activation
+        self.inplace = inplace
+        self.order = order
+        assert isinstance(self.order, tuple) and len(self.order) == 3
+        assert set(order) == set(['conv', 'norm', 'act'])
+
+        self.with_norm = norm_cfg is not None
+        # if the conv layer is before a norm layer, bias is unnecessary.
+        if bias == 'auto':
+            bias = False if self.with_norm else True
+        self.with_bias = bias
+
+        if self.with_norm and self.with_bias:
+            warnings.warn('ConvModule has norm and bias at the same time')
+
+        # build convolution layer
+        self.conv = nn.Conv2d(  #
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+            bias=bias)
+        # export the attributes of self.conv to a higher level for convenience
+        self.in_channels = self.conv.in_channels
+        self.out_channels = self.conv.out_channels
+        self.kernel_size = self.conv.kernel_size
+        self.stride = self.conv.stride
+        self.padding = self.conv.padding
+        self.dilation = self.conv.dilation
+        self.transposed = self.conv.transposed
+        self.output_padding = self.conv.output_padding
+        self.groups = self.conv.groups
+
+        # build normalization layers
+        if self.with_norm:
+            # norm layer is after conv layer
+            if order.index('norm') > order.index('conv'):
+                norm_channels = out_channels
             else:
-                alpha_factor = torch.ones(targets.shape) * alpha
+                norm_channels = in_channels
+            self.norm_name, norm = build_norm_layer(norm_cfg, norm_channels)
+            self.add_module(self.norm_name, norm)
 
-            alpha_factor = torch.where(torch.eq(targets, 1.), alpha_factor, 1. - alpha_factor)
-            focal_weight = torch.where(torch.eq(targets, 1.), 1. - classification, classification)
-            focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
+        # build activation layer
+        if self.activation:
+            self.act = act_layers(self.activation)
 
-            bce = -(targets * torch.log(classification) + (1.0 - targets) * torch.log(1.0 - classification))
+        # Use msra init by default
+        self.init_weights()
 
-            # cls_loss = focal_weight * torch.pow(bce, gamma)
-            cls_loss = focal_weight * bce
+    @property
+    def norm(self):
+        return getattr(self, self.norm_name)
 
-            if torch.cuda.is_available():
-                cls_loss = torch.where(torch.ne(targets, -1.0), cls_loss, torch.zeros(cls_loss.shape).cuda())
-            else:
-                cls_loss = torch.where(torch.ne(targets, -1.0), cls_loss, torch.zeros(cls_loss.shape))
+    def init_weights(self):
+        if self.activation == 'LeakyReLU':
+            nonlinearity = 'leaky_relu'
+        else:
+            nonlinearity = 'relu'
+        kaiming_init(self.conv, nonlinearity=nonlinearity)
+        if self.with_norm:
+            constant_init(self.norm, 1, bias=0)
 
-            classification_losses.append(cls_loss.sum() / torch.clamp(num_positive_anchors.float(), min=1.0))
+    def forward(self, x, norm=True):
+        for layer in self.order:
+            if layer == 'conv':
+                x = self.conv(x)
+            elif layer == 'norm' and norm and self.with_norm:
+                x = self.norm(x)
+            elif layer == 'act' and self.activation:
+                x = self.act(x)
+        return x
 
-            # compute the loss for regression
 
-            if positive_indices.sum() > 0:
-                assigned_annotations = assigned_annotations[positive_indices, :]
+class FPN(nn.Module):
 
-                anchor_widths_pi = anchor_widths[positive_indices]
-                anchor_heights_pi = anchor_heights[positive_indices]
-                anchor_ctr_x_pi = anchor_ctr_x[positive_indices]
-                anchor_ctr_y_pi = anchor_ctr_y[positive_indices]
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 num_outs,
+                 start_level=0,
+                 end_level=-1,
+                 conv_cfg=None,
+                 norm_cfg=None,
+                 activation=None
+                 ):
+        super(FPN, self).__init__()
+        assert isinstance(in_channels, list)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.num_ins = len(in_channels)
+        self.num_outs = num_outs
+        self.fp16_enabled = False
 
-                gt_widths = assigned_annotations[:, 2] - assigned_annotations[:, 0]
-                gt_heights = assigned_annotations[:, 3] - assigned_annotations[:, 1]
-                gt_ctr_x = assigned_annotations[:, 0] + 0.5 * gt_widths
-                gt_ctr_y = assigned_annotations[:, 1] + 0.5 * gt_heights
+        if end_level == -1:
+            self.backbone_end_level = self.num_ins
+            assert num_outs >= self.num_ins - start_level
+        else:
+            # if end_level < inputs, no extra level is allowed
+            self.backbone_end_level = end_level
+            assert end_level <= len(in_channels)
+            assert num_outs == end_level - start_level
+        self.start_level = start_level
+        self.end_level = end_level
+        self.lateral_convs = nn.ModuleList()
 
-                # clip widths to 1
-                gt_widths = torch.clamp(gt_widths, min=1)
-                gt_heights = torch.clamp(gt_heights, min=1)
+        for i in range(self.start_level, self.backbone_end_level):
+            l_conv = ConvModule(
+                in_channels[i],
+                out_channels,
+                1,
+                conv_cfg=conv_cfg,
+                norm_cfg=norm_cfg,
+                activation=activation,
+                inplace=False)
 
-                targets_dx = (gt_ctr_x - anchor_ctr_x_pi) / anchor_widths_pi
-                targets_dy = (gt_ctr_y - anchor_ctr_y_pi) / anchor_heights_pi
-                targets_dw = torch.log(gt_widths / anchor_widths_pi)
-                targets_dh = torch.log(gt_heights / anchor_heights_pi)
+            self.lateral_convs.append(l_conv)
+        self.init_weights()
 
-                targets = torch.stack((targets_dx, targets_dy, targets_dw, targets_dh))
-                targets = targets.t()
+    # default init_weights for conv(msra) and norm in ConvModule
+    def init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                xavier_init(m, distribution='uniform')
 
-                if torch.cuda.is_available():
-                    targets = targets / torch.Tensor([[0.1, 0.1, 0.2, 0.2]]).cuda()
-                else:
-                    targets = targets / torch.Tensor([[0.1, 0.1, 0.2, 0.2]])
+    def forward(self, inputs):
+        assert len(inputs) == len(self.in_channels)
 
-                negative_indices = 1 + (~positive_indices)
+        # build laterals
+        laterals = [
+            lateral_conv(inputs[i + self.start_level])
+            for i, lateral_conv in enumerate(self.lateral_convs)
+        ]
 
-                regression_diff = torch.abs(targets - regression[positive_indices, :])
+        # build top-down path
+        used_backbone_levels = len(laterals)
+        for i in range(used_backbone_levels - 1, 0, -1):
+            prev_shape = laterals[i - 1].shape[2:]
+            laterals[i - 1] += F.interpolate(
+                laterals[i], size=prev_shape, mode='bilinear')
 
-                regression_loss = torch.where(
-                    torch.le(regression_diff, 1.0 / 9.0),
-                    0.5 * 9.0 * torch.pow(regression_diff, 2),
-                    regression_diff - 0.5 / 9.0
-                )
-                regression_losses.append(regression_loss.mean())
-            else:
-                if torch.cuda.is_available():
-                    regression_losses.append(torch.tensor(0).float().cuda())
-                else:
-                    regression_losses.append(torch.tensor(0).float())
+        # build outputs
+        outs = [
+            # self.fpn_convs[i](laterals[i]) for i in range(used_backbone_levels)
+            laterals[i] for i in range(used_backbone_levels)
+        ]
+        return tuple(outs)
 
-        return torch.stack(classification_losses).mean(dim=0, keepdim=True), torch.stack(regression_losses).mean(dim=0,
-                                                                                                                 keepdim=True)
+
+class PAN(FPN):
+    """Path Aggregation Network for Instance Segmentation.
+
+    This is an implementation of the `PAN in Path Aggregation Network
+    <https://arxiv.org/abs/1803.01534>`_.
+
+    Args:
+        in_channels (List[int]): Number of input channels per scale.
+        out_channels (int): Number of output channels (used at each scale)
+        num_outs (int): Number of output scales.
+        start_level (int): Index of the start input backbone level used to
+            build the feature pyramid. Default: 0.
+        end_level (int): Index of the end input backbone level (exclusive) to
+            build the feature pyramid. Default: -1, which means the last level.
+        add_extra_convs (bool): Whether to add conv layers on top of the
+            original feature maps. Default: False.
+        extra_convs_on_inputs (bool): Whether to apply extra conv on
+            the original feature from the backbone. Default: False.
+        relu_before_extra_convs (bool): Whether to apply relu before the extra
+            conv. Default: False.
+        no_norm_on_lateral (bool): Whether to apply norm on lateral.
+            Default: False.
+        conv_cfg (dict): Config dict for convolution layer. Default: None.
+        norm_cfg (dict): Config dict for normalization layer. Default: None.
+        act_cfg (str): Config dict for activation layer in ConvModule.
+            Default: None.
+    """
+
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 num_outs,
+                 start_level=0,
+                 end_level=-1,
+                 conv_cfg=None,
+                 norm_cfg=None,
+                 activation=None):
+        super(PAN,
+              self).__init__(in_channels, out_channels, num_outs, start_level,
+                             end_level, conv_cfg, norm_cfg, activation)
+        self.init_weights()
+
+    def forward(self, inputs):
+        """Forward function."""
+        assert len(inputs) == len(self.in_channels)
+
+        # build laterals
+        laterals = [
+            lateral_conv(inputs[i + self.start_level])
+            for i, lateral_conv in enumerate(self.lateral_convs)
+        ]
+
+        # build top-down path
+        used_backbone_levels = len(laterals)
+        for i in range(used_backbone_levels - 1, 0, -1):
+            prev_shape = laterals[i - 1].shape[2:]
+            laterals[i - 1] += F.interpolate(
+                laterals[i], size=prev_shape, mode='bilinear')
+
+        # build outputs
+        # part 1: from original levels
+        inter_outs = [
+            laterals[i] for i in range(used_backbone_levels)
+        ]
+
+        # part 2: add bottom-up path
+        for i in range(0, used_backbone_levels - 1):
+            prev_shape = inter_outs[i + 1].shape[2:]
+            inter_outs[i + 1] += F.interpolate(inter_outs[i], size=prev_shape, mode='bilinear')
+
+        outs = []
+        outs.append(inter_outs[0])
+        outs.extend([
+            inter_outs[i] for i in range(1, used_backbone_levels)
+        ])
+        return tuple(outs)

@@ -110,5 +110,14 @@ def labels2onehot4ts(labels, num_class):
     return zeros.scatter_(1, labels.long(), 1)  # dim,index,value 数组索引
 
 
+class Dict2Obj(object):
+    def __init__(self, d):
+        for a, b in d.items():
+            if isinstance(b, (list, tuple)):
+                setattr(self, a, [Dict2Obj(x) if isinstance(x, dict) else x for x in b])
+            else:
+                setattr(self, a, Dict2Obj(b) if isinstance(b, dict) else b)
+
+
 if __name__ == "__main__":
     pass

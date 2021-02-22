@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from f_pytorch.tools_model.f_model_api import CBL
 from f_pytorch.tools_model.fmodels.model_modules import BottleneckCSP, SAM, SPPv2
 from f_tools.f_general import labels2onehot4ts
+from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import f_ohem_simpleness, f_ohem, x_bce
 from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1
 from f_tools.fits.f_predictfun import label_nms
@@ -131,7 +132,7 @@ class LossYOLO_v1(nn.Module):
         mask_pos = gconf > 0
         # mask_pos = gconf == 1  # yolo1 gt 写死是1
         mask_neg = gconf == 0
-        nums_pos = (mask_pos.sum(-1).to(torch.float16)).clamp(min=torch.finfo(torch.float16).eps)
+        nums_pos = (mask_pos.sum(-1).to(torch.float)).clamp(min=torch.finfo(torch.float16).eps)
 
         ''' ----------------cls损失---------------- '''
         if cfg.loss_args['s_cls'] == 'ce':  # 二分类用这个
@@ -171,7 +172,7 @@ class LossYOLO_v1(nn.Module):
 
         # ------------ conf-mse ------------'''
         # _loss_val = F.mse_loss(pconf, gconf, reduction="none")
-        _loss_val = F.binary_cross_entropy_with_logits(pconf, gconf, reduction="none")
+        _loss_val = x_bce(pconf, gconf, reduction="none")
         loss_conf_pos = ((_loss_val * mask_pos).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[0]
         loss_conf_neg = ((_loss_val * mask_neg).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[1]
         # loss_conf_pos = (_loss_val * mask_pos).sum(-1).mean() * cfg.LOSS_WEIGHT[0]
@@ -207,59 +208,113 @@ class LossYOLO_v1(nn.Module):
         return loss_total, log_dict
 
 
-class PredictYolo_v1(nn.Module):
+# class PredictYolo_v1(nn.Module):
+#     def __init__(self, num_bbox, num_classes, num_grid, threshold_conf=0.5, threshold_nms=0.3, cfg=None):
+#         super(PredictYolo_v1, self).__init__()
+#         self.num_bbox = num_bbox
+#         self.num_classes = num_classes
+#         self.num_grid = num_grid
+#         self.threshold_nms = threshold_nms
+#         self.threshold_conf = threshold_conf
+#         self.cfg = cfg
+#
+#     def forward(self, pyolos, imgs_ts=None):
+#         '''
+#
+#         :param pyolos:torch.Size([5, 8, 13, 13])
+#         :return:
+#             ids_batch2 [nn]
+#             p_boxes_ltrb2 [nn,4]
+#             p_labels2 [nn]
+#             p_scores2 [nn]
+#         '''
+#         cfg = self.cfg
+#         device = pyolos.device  # conf-1 cls-3 ploc-4
+#         batch, c, h, w = pyolos.shape
+#
+#         # b,c,h,w -> b,c,hw -> b,hw,c
+#         pyolos = pyolos.view(batch, c, -1).permute(0, 2, 1)
+#         pconf = pyolos[:, :, 0].sigmoid()  # b,hw,c -> b,hw
+#
+#         # b,hw,c -> b,hw,3 -> b,hw -> b,hw
+#         # cls_conf, plabels = pyolos[:, :, 1:1 + cfg.NUM_CLASSES].softmax(-1).max(-1)
+#         cls_conf, plabels = pyolos[:, :, 1:1 + cfg.NUM_CLASSES].sigmoid().max(-1)
+#
+#         pscores = cls_conf * pconf  # torch.Size([32, 169])
+#
+#         mask_pos = pscores > cfg.THRESHOLD_PREDICT_CONF  # b,hw
+#         if not torch.any(mask_pos):  # 如果没有一个对象
+#             print('该批次没有找到目标 max:{0:.2f} min:{0:.2f} mean:{0:.2f}'.format(pconf.max().item(),
+#                                                                           pconf.min().item(),
+#                                                                           pconf.mean().item(),
+#                                                                           ))
+#             return [None] * 5
+#
+#         _i = 500
+#         if pscores.shape[1] > _i:
+#             # 最大1000个
+#             ids_topk = pscores.topk(_i, dim=-1)[1]  # torch.Size([32, 1000])
+#             mask_topk = torch.zeros_like(mask_pos)
+#             mask_topk[torch.arange(ids_topk.shape[0])[:, None], ids_topk] = True
+#             mask_pos = torch.logical_and(mask_pos, mask_topk)
+#
+#         ids_batch1, _ = torch.where(mask_pos)
+#         ptxywh = pyolos[:, :, 1 + cfg.NUM_CLASSES:]
+#
+#         ''' 预测 这里是修复是 xywh'''
+#         boxes_decode4yolo1(ptxywh, h, w, cfg)
+#
+#         pboxes_ltrb1 = xywh2ltrb(ptxywh)[mask_pos]
+#         pboxes_ltrb1 = torch.clamp(pboxes_ltrb1, min=0., max=1.)
+#
+#         pscores1 = pscores[mask_pos]
+#         plabels1 = plabels[mask_pos]
+#         plabels1 = plabels1 + 1
+#
+#         ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2 = label_nms(ids_batch1,
+#                                                                     pboxes_ltrb1,
+#                                                                     plabels1,
+#                                                                     pscores1,
+#                                                                     device,
+#                                                                     self.threshold_nms)
+#
+#         return ids_batch2, p_boxes_ltrb2, None, p_labels2, p_scores2,
+
+
+class PredictYolo_v1(Predicting_Base):
     def __init__(self, num_bbox, num_classes, num_grid, threshold_conf=0.5, threshold_nms=0.3, cfg=None):
-        super(PredictYolo_v1, self).__init__()
+        super(PredictYolo_v1, self).__init__(cfg)
         self.num_bbox = num_bbox
         self.num_classes = num_classes
         self.num_grid = num_grid
         self.threshold_nms = threshold_nms
         self.threshold_conf = threshold_conf
-        self.cfg = cfg
 
-    def forward(self, pyolos, imgs_ts=None):
-        '''
+    def p_init(self, pyolos):
+        self.batch, self.c, self.h, self.w = pyolos.shape
+        pyolos = pyolos.view(self.batch, self.c, -1).permute(0, 2, 1)
+        return pyolos
 
-        :param pyolos:torch.Size([5, 8, 13, 13])
-        :return:
-            ids_batch2 [nn]
-            p_boxes_ltrb2 [nn,4]
-            p_labels2 [nn]
-            p_scores2 [nn]
-        '''
-        cfg = self.cfg
-        device = pyolos.device  # conf-1 cls-3 ploc-4
-        batch, c, h, w = pyolos.shape
-
+    def get_pscores(self, pyolos):
+        # batch, c, h, w = pyolos.shape
         # b,c,h,w -> b,c,hw -> b,hw,c
-        pyolos = pyolos.view(batch, c, -1).permute(0, 2, 1)
         pconf = pyolos[:, :, 0].sigmoid()  # b,hw,c -> b,hw
 
         # b,hw,c -> b,hw,3 -> b,hw -> b,hw
         # cls_conf, plabels = pyolos[:, :, 1:1 + cfg.NUM_CLASSES].softmax(-1).max(-1)
-        cls_conf, plabels = pyolos[:, :, 1:1 + cfg.NUM_CLASSES].sigmoid().max(-1)
+        cls_conf, plabels = pyolos[:, :, 1:1 + self.cfg.NUM_CLASSES].sigmoid().max(-1)
 
         pscores = cls_conf * pconf  # torch.Size([32, 169])
 
-        mask_pos = pscores > cfg.THRESHOLD_PREDICT_CONF  # b,hw
-        if not torch.any(mask_pos):  # 如果没有一个对象
-            print('该批次没有找到目标 max:{0:.2f} min:{0:.2f} mean:{0:.2f}'.format(pconf.max().item(),
-                                                                          pconf.min().item(),
-                                                                          pconf.mean().item(),
-                                                                          ))
-            return [None] * 5
+        return pscores, plabels, pconf
 
-        # 最大1000个
-        ids_topk = pscores.topk(500, dim=-1)[1]  # torch.Size([32, 1000])
-        mask_topk = torch.zeros_like(mask_pos)
-        mask_topk[torch.arange(ids_topk.shape[0])[:, None], ids_topk] = True
-        mask_pos = torch.logical_and(mask_pos, mask_topk)
-
+    def get_stage_res(self, pyolos, mask_pos, pscores, plabels):
+        # atch, c, h, w = pyolos.shape
         ids_batch1, _ = torch.where(mask_pos)
-        ptxywh = pyolos[:, :, 1 + cfg.NUM_CLASSES:]
+        ptxywh = pyolos[:, :, 1 + self.cfg.NUM_CLASSES:]
 
         ''' 预测 这里是修复是 xywh'''
-        boxes_decode4yolo1(ptxywh, h, w, cfg)
+        boxes_decode4yolo1(ptxywh, self.h, self.w, self.cfg)
 
         pboxes_ltrb1 = xywh2ltrb(ptxywh)[mask_pos]
         pboxes_ltrb1 = torch.clamp(pboxes_ltrb1, min=0., max=1.)
@@ -268,15 +323,7 @@ class PredictYolo_v1(nn.Module):
         plabels1 = plabels[mask_pos]
         plabels1 = plabels1 + 1
 
-        # 这里每批取 1000 个
-        ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2 = label_nms(ids_batch1,
-                                                                    pboxes_ltrb1,
-                                                                    plabels1,
-                                                                    pscores1,
-                                                                    device,
-                                                                    self.threshold_nms)
-
-        return ids_batch2, p_boxes_ltrb2, None, p_labels2, p_scores2,
+        return ids_batch1, pboxes_ltrb1, plabels1, pscores1
 
 
 class YOLOv1_Net(nn.Module):

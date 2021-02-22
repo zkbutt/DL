@@ -1,6 +1,6 @@
 import torch
 from PIL import Image
-
+import numpy as np
 from f_tools.f_od_gen import f_get_rowcol_index
 from f_tools.fun_od.f_boxes import ltrb2xywh, xywh2ltrb
 from f_tools.yufa.x_calc_adv import f_mershgrid
@@ -37,8 +37,12 @@ class FAnchors:
         self.feature_sizes = [[ceil(self.img_in_size[0] / step), ceil(self.img_in_size[1] / step)]
                               for step in self.feature_size_steps]
         self.nums_level = []  # 每层个数
+        self.nums_anc = []  # 每层anc数
         self.device = device
         self.ancs_xywh = self.cre_anchors()
+
+        self.match_grids = None
+        self.ancs_xywh_t = None
 
     def cre_anchors(self):
         '''
@@ -59,6 +63,7 @@ class FAnchors:
             ancs_wh = self.ancs_scale[i]
             # 单体复制 每一个格子有
             num_anc = len(ancs_wh)
+            self.nums_anc.append(num_anc)
             self.nums_level.append(num_anc_one * num_anc)  # self.nums_feature 是全新
             rowcol_index = rowcol_index.repeat_interleave(num_anc, dim=0)  # 单体复制
             rowcol = torch.tensor((row, col), device=device)
@@ -81,6 +86,21 @@ class FAnchors:
         if self.device is not None:
             ret_ancs = ret_ancs.to(self.device)
         return ret_ancs
+
+    def match_anc_grids(self):
+        # anc 归一化 -> anc特图
+        if self.match_grids is not None:
+            return self.match_grids, self.ancs_xywh_t
+
+        nums_ceng_np = np.array(self.nums_level, dtype=np.int32)
+        nums_anc_np = np.array(self.nums_anc, dtype=np.float32)
+        grids_np = np.sqrt((nums_ceng_np / nums_anc_np))  # [ 52 26 13 7 4]
+        match_grids_ts = torch.tensor(np.repeat(grids_np, nums_ceng_np, axis=-1), device=self.ancs_xywh.device,
+                                      dtype=torch.float)
+        match_grids_ts = match_grids_ts.view(-1, 1)  # torch.Size([32526, 1]) -> [32526, 4]
+        self.match_grids = match_grids_ts
+        self.ancs_xywh_t = self.ancs_xywh * match_grids_ts
+        return self.match_grids, self.ancs_xywh_t
 
 
 if __name__ == '__main__':

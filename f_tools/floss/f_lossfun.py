@@ -45,9 +45,9 @@ def x_smooth_l1_loss(input, target, beta=1. / 9, size_average=True):
     return loss.sum()
 
 
-def f_ohem(scores, num_neg_ts, mask_pos, mask_neg, pboxes_ltrb=None, threshold_iou=0.7):
+def f_ohem(scores, num_neg_ts, mask_pos, mash_ignore, pboxes_ltrb=None, threshold_iou=0.7):
     '''
-
+    选反例最大的
     :param pboxes_ltrb:  (batch,anc)
     :param scores:gconf  (batch,anc)
     :param num_neg_ts: 每批负例数 3倍正例 int64 tensor([   3,    6, 3075,  768,    3,    3,    3,    3,    3,   3])
@@ -58,17 +58,14 @@ def f_ohem(scores, num_neg_ts, mask_pos, mask_neg, pboxes_ltrb=None, threshold_i
 
     scores_neg = scores.clone().detach()
     ts0 = torch.tensor(0.0, device=scores_neg.device)
-    if mask_neg is not None:
-        # 有 反例则取忽略
-        scores_neg[torch.logical_or(mask_pos, torch.logical_not(mask_neg))] = ts0
-    else:  # 分数置0 nms 计算不了
-        scores_neg[mask_pos] = ts0
+    # 正例 or 忽略 分数置0
+    scores_neg[torch.logical_or(mask_pos, mash_ignore)] = ts0
 
     if pboxes_ltrb is None:
         return f_ohem_simpleness(scores_neg, num_neg_ts)
 
     # 解码 ptxywh
-    mask_hard = torch.zeros_like(mask_pos, dtype=torch.bool, device=pboxes_ltrb.device)
+    mask_neg_hard = torch.zeros_like(mask_pos, dtype=torch.bool, device=pboxes_ltrb.device)
     num_batch, dim_ancs, _ = pboxes_ltrb.shape
 
     # 只对框框和损失进行nms
@@ -76,7 +73,7 @@ def f_ohem(scores, num_neg_ts, mask_pos, mask_neg, pboxes_ltrb=None, threshold_i
         # 所有预测ltrb,
         keep = torch.ops.torchvision.nms(pboxes_ltrb[i], scores_neg[i], threshold_iou)
         keep = keep[:num_neg_ts[i]]
-        mask_hard[i, keep] = True  # 反例代表记损失
+        mask_neg_hard[i, keep] = True  # 反例代表记损失
 
     # 批量nms
     # keep, ids_keep = batched_nms_auto(pboxes_ltrb, scores=scores, threshold_iou=threshold_iou)
@@ -86,18 +83,22 @@ def f_ohem(scores, num_neg_ts, mask_pos, mask_neg, pboxes_ltrb=None, threshold_i
     #         k = keep[mask][:num_pos_ts[i]]
     #         mask_neg_[i][k - i * dim_ancs] = True
 
-    return mask_hard
+    return mask_neg_hard
 
 
 def f_ohem_simpleness(scores_neg, num_neg_ts):
+    '''
+
+    :param scores_neg:  已正例 及忽略置0的分数
+    :param num_neg_ts:  tensor([111., 501.]) 反例个数 3倍
+    :return:
+    '''
     '''-----------简易版难例----------'''
     _, l_sort_ids = scores_neg.sort(dim=-1, descending=True)  # descending 倒序
     # 得每一个图片batch个 最大值索引排序 torch.Size([32, 169])
     _, l_sort_ids_rank = l_sort_ids.sort(dim=-1)  # 两次索引排序 用于取最大的n个布尔索引
-    # 计算每一层的反例数   [batch] -> [batch,1]  限制正样本3倍不能超过负样本的总个数  基本不可能超过总数
-    num_pos_ts = num_neg_ts.unsqueeze(-1)
-    mask_hard = l_sort_ids_rank < num_pos_ts  # 选出最大的n个的mask  Tensor [batch, 8732]
-    return mask_hard  # torch.Size([32, 169])
+    mask_neg_hard = l_sort_ids_rank < num_neg_ts.unsqueeze(-1)  # 选出最大的n个的mask  Tensor [batch, 8732]
+    return mask_neg_hard  # torch.Size([32, 169])
 
 
 def show_distribution(pconf, num_bins=10):
@@ -125,17 +126,23 @@ def show_res(v_, input, target, name):
 
 
 def t_多值交叉熵():
+    ''' 1,3,2 -> 1,2 '''
+    # 1,2,3
     input = torch.tensor([[[1, 1, 1], [-1., 1, 6]]])
+    # 1,2,3 -> 1,3,2
     input = input.permute(0, 2, 1)
     target = torch.tensor([[2, 1]])  # (1,2)
-    print(input)
-    print(target)
+
+    # # 4d不支持 1,3,2 -> 1,1,3,2
+    # input = input.unsqueeze(0)
+    # # 1,2 -> 1,1,2
+    # target = target.unsqueeze(0)
+
+    print(input.shape)
+    print(target.shape)
 
     obj_ce = nn.CrossEntropyLoss(reduction='none')
     print('CrossEntropyLoss', obj_ce(input, target))
-
-    obj_fl4m = FocalLoss4mclass(alpha=0.25, gamma=2)
-    print('obj_ce', obj_fl4m(input, target))
 
 
 def loss_cre_pdata_t1(nums_bins=(8000, 500, 6, 5, 30, 0, 0, 2, 1, 1)):
@@ -298,10 +305,10 @@ if __name__ == '__main__':
 
     np.random.seed(20201031)
 
-    # t_多值交叉熵()
+    t_多值交叉熵()
     # t_图形测试()
 
     # t_损失值测试()
-    pred = torch.Tensor([0, 2, 3])
-    target = torch.Tensor([1, 1, 1])
-    weight = torch.Tensor([1, 0, 1])
+    # pred = torch.Tensor([0, 2, 3])
+    # target = torch.Tensor([1, 1, 1])
+    # weight = torch.Tensor([1, 0, 1])

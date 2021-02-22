@@ -12,6 +12,7 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fits.f_match import boxes_decode4yolo2, boxes_encode4yolo2
 from f_tools.fits.f_predictfun import label_nms
+from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import x_bce
 from f_tools.fun_od.f_boxes import xywh2ltrb, calc_iou4ts, ltrb2xywh, bbox_iou4one
 from f_tools.pic.f_show import f_show_od_np4plt, f_show_od_ts4plt
@@ -253,7 +254,7 @@ class LossYOLO_v2(nn.Module):
         gconf = gyolos[:, :, 0]
         mask_pos = gconf > 0
         mask_neg = gconf == 0  # 忽略-1 不管
-        nums_pos = (mask_pos.sum(-1).to(torch.float16)).clamp(min=torch.finfo(torch.float16).eps)
+        nums_pos = (mask_pos.sum(-1).to(torch.float)).clamp(min=torch.finfo(torch.float16).eps)
 
         # [3, 40, 13, 13] -> [3, 8, 5, 13*13] -> [3, 169, 5, 8]
         pyolos = pyolos.view(batch, s_ + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
@@ -276,17 +277,17 @@ class LossYOLO_v2(nn.Module):
         # 4d -> 3d [32, 169, 5, 8] -> [32, 845, 8]
         pyolos = pyolos.view(batch, -1, 1 + cfg.NUM_CLASSES + 4)  # torch.Size([3, 169, 8])
 
-        # ----------------cls损失----------------
+        ''' ----------------cls损失---------------- '''
         pcls = pyolos[:, :, 1:s_].sigmoid()  # 归一
         gcls = gyolos[:, :, 1:s_]
         _loss_val = x_bce(pcls, gcls, reduction="none")
         loss_cls = ((_loss_val.sum(-1) * mask_pos).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[2]
         # flog.debug('loss_cls:%s', loss_cls)
 
-        # ----------------conf损失----------------
+        ''' ----------------conf损失 ---------------- '''
         pconf = pyolos[:, :, 0].sigmoid()  # 这个需要归一化 torch.Size([3, 845])
 
-        '''------------conf-mse ------------'''
+        # ------------conf-mse ------------
         _loss_val = F.mse_loss(pconf, gconf, reduction="none")
         # _loss_val = F.binary_cross_entropy_with_logits(pconf, gconf, reduction="none")
         loss_conf_pos = ((_loss_val * mask_pos).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[0]
@@ -307,7 +308,7 @@ class LossYOLO_v2(nn.Module):
         # else:
         #     raise Exception('类型错误')
 
-        # ----------------box损失 -----------------
+        ''' ---------------- box损失 ----------------- '''
         # conf-1, cls-3, tbox-4, weight-1, gltrb-4  = 13
         weight = gyolos[:, :, s_ + 4]  # torch.Size([32, 845])
         ptxty = pyolos[:, :, s_:s_ + 2].sigmoid()  # 这个需要归一化
@@ -338,21 +339,43 @@ class LossYOLO_v2(nn.Module):
         return loss_total, log_dict
 
 
-class PredictYOLO_v2(nn.Module):
+class PredictYOLO_v2(Predicting_Base):
     def __init__(self, cfg=None):
-        super(PredictYOLO_v2, self).__init__()
+        super(PredictYOLO_v2, self).__init__(cfg)
         self.cfg = cfg
 
-    def forward(self, pyolos, imgs_ts=None):
-        '''
+    def p_init(self, pyolos):
+        self.batch, self.c, self.h, self.w = pyolos.shape
+        self.s_ = 1 + cfg.NUM_CLASSES
+        # [3, 40, 13, 13] -> [3, 8, 5, 13*13] -> [3, 169, 5, 8]
+        pyolos = pyolos.view(self.batch, self.s_ + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
+        return pyolos
 
-        :param pyolos: torch.Size([3, 40, 13, 13])
-        :return:
-            ids_batch2 [nn]
-            p_boxes_ltrb2 [nn,4]
-            p_labels2 [nn]
-            p_scores2 [nn]
-        '''
+    def get_pscores(self, pyolos):
+        _pyolos = pyolos.view(self.batch, -1, self.s_ + 4)  # [3, 845, 8]
+        pconf = _pyolos[:, :, 0].sigmoid()
+        cls_conf, plabels = _pyolos[:, :, 1:self.s_].sigmoid().max(-1)
+        pscores = cls_conf * pconf
+
+        return pscores, plabels, pconf
+
+    def get_stage_res(self, pyolos, mask_pos, pscores, plabels):
+        ids_batch1, _ = torch.where(mask_pos)
+
+        # torch.Size([3, 169, 5, 8]) -> [3, 169, 5, 4]
+        ptxywh = pyolos[:, :, :, self.s_:self.s_ + 4]
+        pltrb = boxes_decode4yolo2(ptxywh, self.h, self.w, self.cfg)  # 预测 -> ltrb [3, 845, 4]
+
+        pboxes_ltrb1 = pltrb[mask_pos]
+        pboxes_ltrb1 = torch.clamp(pboxes_ltrb1, min=0., max=1.)
+
+        pscores1 = pscores[mask_pos]
+        plabels1 = plabels[mask_pos]
+        plabels1 = plabels1 + 1
+
+        return ids_batch1, pboxes_ltrb1, plabels1, pscores1
+
+    def forward(self, pyolos, imgs_ts=None):
         cfg = self.cfg
         device = pyolos.device
         batch, c, h, w = pyolos.shape

@@ -31,6 +31,7 @@ tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detecti
 focloss 训练 75轮开始收敛 AP67_43
 126轮AP72_47.5
 
+
  Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.362
  Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.720
  Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.331
@@ -82,7 +83,7 @@ def train_eval_set(cfg):
 
     # type3 resnet18
     # cfg.FILE_NAME_WEIGHT = 'zz/t_yolo1_type3_res18c0.01-110_4.47_p72.4_r46.2' + '.pth'  # conf-0.01 nms-0.5
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-50_5.369' + '.pth'  # conf-0.01 nms-0.5
+    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-100_7.026' + '.pth'  # conf-0.01 nms-0.5
     cfg.MAPS_VAL = [0.724, 0.47]
 
     cfg.LR0 = 1e-3 / 1.5

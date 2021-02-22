@@ -132,6 +132,7 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
             # 主进程写入
             for k, v, in log_dict.items():
                 tb_writer.add_scalar('loss_iter/%s' % k, v, len(data_loader) * epoch + i + 1)
+            tb_writer.add_scalar('loss_iter/lr', now_lr, len(data_loader) * epoch + i + 1)  # 未检出的图片数
 
     # 这个移动到前
     if lr_scheduler is not None:
@@ -340,7 +341,7 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
             res_coco.append({"image_id": image_id, "category_id": labels[i], "bbox": boxes_ltwh[i], "score": score[i]})
 
     maps_val = []
-    if len(res_coco) > 0:
+    if len(res_coco) > 0:  # 有 coco 结果
         coco_gt = data_loader.dataset.coco
         # 第一个元素指示操作该临时文件的安全级别，第二个元素指示该临时文件的路径
         _, tmp = tempfile.mkstemp()
@@ -355,18 +356,45 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
         maps_val.append(coco_eval_obj.stats[7])
 
         if tb_writer is not None:
-            titles = [
-                '[IoU=0.50:0.95]', '[IoU=0.50]', '[IoU=0.75]',
-                'small', 'medium', 'large',
-            ]
+            # Precision_iou
+            _d = {
+                'IoU=0.50:0.95': coco_eval_obj.stats[0],
+                'IoU=0.50': coco_eval_obj.stats[1],
+                'IoU=0.75': coco_eval_obj.stats[2],
+            }
+            tb_writer.add_scalars('mAP/Precision_iou', _d, epoch + 1)
+
+            # Recall_iou
+            _d = {
+                'maxDets=  1': coco_eval_obj.stats[6],
+                'maxDets= 10': coco_eval_obj.stats[7],
+                'maxDets=100': coco_eval_obj.stats[8],
+            }
+            tb_writer.add_scalars('mAP/Recall_iou', _d, epoch + 1)
+
+            # 小中大
+            _d = {
+                'p_large': coco_eval_obj.stats[5],
+                'r_large': coco_eval_obj.stats[11],
+            }
+            tb_writer.add_scalars('mAP/large', _d, epoch + 1)
+
+            _d = {
+                'p_medium': coco_eval_obj.stats[4],
+                'r_medium': coco_eval_obj.stats[10],
+            }
+            tb_writer.add_scalars('mAP/medium', _d, epoch + 1)
+
+            _d = {
+                'p_small': coco_eval_obj.stats[3],
+                'r_small': coco_eval_obj.stats[9],
+            }
+            tb_writer.add_scalars('mAP/small', _d, epoch + 1)
+
+            # 一个图只有一个值
             tb_writer.add_scalar('mAP/num_no_pos', num_no_pos, epoch + 1)  # 未检出的图片数
-            for i, title in zip(range(6), titles):
-                _d = {
-                    'Precision': coco_eval_obj.stats[i],
-                    'Recall': coco_eval_obj.stats[i + 6],
-                }
-                tb_writer.add_scalars('mAP/%s' % title, _d, epoch + 1)
-    else:
+
+    else:  # 没有 coco 结果
         if tb_writer is not None:
             tb_writer.add_scalar('mAP/num_no_pos', num_no_pos, epoch + 1)  # 未检出的图片数
         maps_val = [0, 0]

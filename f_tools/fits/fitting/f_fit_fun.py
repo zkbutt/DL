@@ -10,7 +10,7 @@ from f_tools.f_torch_tools import save_weight
 from f_tools.fits.fitting.f_fit_eval_base import f_train_one_epoch4, f_evaluate4fmap, f_evaluate4coco3
 
 
-def init_od_e(cfg):
+def init_od_e(cfg, seed=0):
     # -----------通用系统配置----------------
     torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
     np.set_printoptions(linewidth=320, suppress=True,
@@ -19,6 +19,12 @@ def init_od_e(cfg):
 
     # 防止OpenCV进入多线程(使用PyTorch DataLoader)
     cv2.setNumThreads(0)
+
+    # 随机种子
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
     if cfg.IS_MULTI_SCALE:
         cfg.tcfg_size = [640, 640]

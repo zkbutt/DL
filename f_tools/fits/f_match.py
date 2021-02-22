@@ -2,9 +2,10 @@ import math
 
 import numpy as np
 import torch
-
+import torch.nn.functional as F
 from f_tools.f_general import labels2onehot4ts
-from f_tools.fun_od.f_boxes import ltrb2xywh, xywh2ltrb, calc_iou4ts, offxy2xy
+from f_tools.fun_od.f_boxes import ltrb2xywh, xywh2ltrb, calc_iou4ts, offxy2xy, bbox_iou4one
+from f_tools.pic.f_show import f_show_od_np4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 from object_detection.z_center.utils import gaussian_radius, draw_gaussian
 
@@ -71,7 +72,7 @@ def boxes_decode4yolo3(ptxywh, cfg):
     '''
     :param ptxywh: torch.Size([3, 10647, 4]) 不要归一化
     :param cfg:
-        cfg.NUMS_ANC [2704, 676, 169]
+        cfg.NUMS_CENG [2704, 676, 169]
         cfg.NUMS_ANC [3, 3, 3]
     :return: 输出原图归一化 [3, 10647, 4]
     '''
@@ -104,7 +105,7 @@ def boxes_decode4yolo3(ptxywh, cfg):
     pxy = ptxywh_[:, :, :2].sigmoid() + indexs_grid
     pxy = pxy / grids.view(1, -1, 1)
     pwh = ptxywh_[:, :, 2:4].exp() * ancs_wh_match
-    pxywh = torch.cat([pxy, pwh], -1) # torch.Size([32, 10647, 4])
+    pxywh = torch.cat([pxy, pwh], -1)  # torch.Size([32, 10647, 4])
     pltrb = xywh2ltrb(pxywh)
     return pltrb
 
@@ -134,6 +135,8 @@ def boxes_decode4retina(cfg, anc_obj, ptxywh, variances=(0.1, 0.2)):
         _pwh = ptxywh_t[:, 2:]
         xy = _anc_xy + _pxy * variances[0] * _anc_wh
         wh = _anc_wh * torch.exp(_pwh * variances[1])
+        # xy = _anc_xy + _pxy * _anc_wh
+        # wh = _anc_wh * torch.exp(_pwh)
     elif ptxywh.dim() == 3:
         anc_xywh_t = anc_obj.ancs_xywh.unsqueeze(0) * match_grids_ts
         _anc_xy = anc_xywh_t[:, :, :2]
@@ -142,6 +145,8 @@ def boxes_decode4retina(cfg, anc_obj, ptxywh, variances=(0.1, 0.2)):
         _pwh = ptxywh_t[:, :, 2:]
         xy = _anc_xy + _pxy * variances[0] * _anc_wh
         wh = _anc_wh * torch.exp(_pwh * variances[1])
+        # xy = _anc_xy + _pxy * _anc_wh
+        # wh = _anc_wh * torch.exp(_pwh)
     else:
         raise Exception('维度错误', anc_obj.ancs_xywh.shape)
     _pxywh = torch.cat([xy, wh], dim=-1)
@@ -149,40 +154,99 @@ def boxes_decode4retina(cfg, anc_obj, ptxywh, variances=(0.1, 0.2)):
     return _pxywh
 
 
-def boxes_decode4retina2(cfg, anc_obj, ptxywh, variances=(0.1, 0.2)):
+def boxes_decode4gfl(cfg, anc_obj, preg_32d_b, is_clamp=False, gboxes_ltrb_match=None):
     '''
-    需要统一 一维和二维
-    :param cfg: cfg.tnums_ceng cfg.NUMS_ANC [8112, 2028, 507]  用于动态层 dim 数
-    :param anc_obj: xywh  (nn,4) 这个始终是一维
-    :param ptxywh: 修正系数 (nn,4)  torch.Size([32, 10647, 4])
-    :return: 修复后的框
+    2D 对齐
+    :param cfg:
+        cfg.NUMS_CENG [2704, 676, 169, 49, 16]
+    :param anc_obj:
+        feature_sizes [[52, 52], [26, 26], [13, 13], [7, 7], [4, 4]]
+        nums_level [2704, 676, 169, 49, 16]
+        ancs_xywh torch.Size([3614, 4])
+    :param poff_ltrb:
+    :param is_clamp: 训练时为 False
+    :param max_shape: 对应各城的尺寸
+    :param gboxes_ltrb_match: 用于训练时计算IOU
+    :return:
     '''
-    size_ts4 = torch.tensor(cfg.IMAGE_SIZE, dtype=torch.float32, device=anc_obj.ancs_xywh.device).repeat(2)
+    # 得预测值
+    # 看着任意概率分布 torch.Size([3614, 32]) -> torch.Size([14456, 8])
+    _preg_32d_b = F.softmax(preg_32d_b.reshape(-1, cfg.NUM_REG), dim=1)
+    # 与0~7值进行矩阵乘 得期望（预测值） 必然是0~7之间的 [8 (0~7) ]
+    _arange = torch.arange(0, cfg.NUM_REG, device=preg_32d_b.device, dtype=torch.float)
+    # 这个是矩阵乘法 [14456, 8] ^^ ( [8]广播[8,1]自动加T ) -> [14456, 1] -> [3614, 4]
+    poff_ltrb_4d = F.linear(_preg_32d_b, _arange).reshape(-1, 4)  # 生成一堆 0~7的数
 
-    # torch.Size([32, 10647, 4]) * torch.Size([10647, 1])
-    ptxywh_t = ptxywh  # 这里是特图
+    # anc 归一化 -> anc特图
+    match_grids_ts, anc_xywh_t = anc_obj.match_anc_grids()
 
-    if ptxywh.dim() == 2:
-        anc_xywh_t = anc_obj.ancs_xywh * size_ts4
-        _anc_xy = anc_xywh_t[:, :2]
-        _anc_wh = anc_xywh_t[:, 2:]
-        _pxy = ptxywh_t[:, :2]
-        _pwh = ptxywh_t[:, 2:]
-        xy = _anc_xy + _pxy * variances[0] * _anc_wh
-        wh = _anc_wh * torch.exp(_pwh * variances[1])
-    elif ptxywh.dim() == 3:
-        anc_xywh_t = anc_obj.ancs_xywh.unsqueeze(0) * size_ts4
-        _anc_xy = anc_xywh_t[:, :, :2]
-        _anc_wh = anc_xywh_t[:, :, 2:]
-        _pxy = ptxywh_t[:, :, :2]
-        _pwh = ptxywh_t[:, :, 2:]
-        xy = _anc_xy + _pxy * variances[0] * _anc_wh
-        wh = _anc_wh * torch.exp(_pwh * variances[1])
-    else:
-        raise Exception('维度错误', anc_obj.ancs_xywh.shape)
-    _pxywh = torch.cat([xy, wh], dim=-1)
-    _pxywh = _pxywh / size_ts4
-    return _pxywh
+    box_lt = anc_xywh_t[:, :2] - poff_ltrb_4d[:, :2]
+    box_rb = anc_xywh_t[:, :2] + poff_ltrb_4d[:, 2:]
+    boxes_t_ltrb = torch.cat([box_lt, box_rb], -1)
+
+    if is_clamp:  # 预测时限制输出在特图长宽中
+        index_start = 0
+        for i, num_ceng in enumerate(anc_obj.nums_level):
+            _index_end = index_start + num_ceng
+            boxes_t_ltrb[index_start:_index_end, :] = boxes_t_ltrb[index_start:_index_end, :].clamp(
+                min=0,
+                max=anc_obj.feature_sizes[i][0])
+
+    # 训练时用 这里用于计算IOU 实际IOU
+    if gboxes_ltrb_match is not None:
+        gboxes_t_ltrb_match = gboxes_ltrb_match * match_grids_ts
+        ious_zg = bbox_iou4one(boxes_t_ltrb, gboxes_t_ltrb_match, is_ciou=True)  # [3614]
+        return boxes_t_ltrb, ious_zg
+
+    return boxes_t_ltrb
+
+
+def boxes_decode4distribute(cfg, anc_obj, preg_32d_b, is_clamp=False, gboxes_ltrb_match=None):
+    '''
+    解码分布并计算IOU
+    :param cfg:
+        cfg.NUMS_CENG [2704, 676, 169, 49, 16]
+    :param anc_obj:
+        feature_sizes [[52, 52], [26, 26], [13, 13], [7, 7], [4, 4]]
+        nums_level [2704, 676, 169, 49, 16]
+        ancs_xywh torch.Size([3614, 4])
+    :param preg_32d_b:
+    :param is_clamp: 训练时为 False
+    :param gboxes_ltrb_match: 用于训练时计算IOU
+    :return:
+        归一化的的预测框
+    '''
+    # 得预测值
+    # 看着任意概率分布 torch.Size([3614, 32]) -> torch.Size([14456, 8])
+    _preg_32d_b = F.softmax(preg_32d_b.reshape(-1, cfg.NUM_REG), dim=1)
+    # 与0~7值进行矩阵乘 得期望（预测值） 必然是0~7之间的 [8 (0~7) ]
+    _arange = torch.arange(0, cfg.NUM_REG, device=preg_32d_b.device, dtype=torch.float)
+    # 这个是矩阵乘法 [14456, 8] ^^ ( [8]广播[8,1]自动加T ) -> [14456, 1] -> [3614, 4]
+    poff_ltrb_t_4d = F.linear(_preg_32d_b, _arange).reshape(-1, 4)  # 生成一堆 0~7的数
+
+    # anc 归一化 -> anc特图
+    match_grids_ts, anc_xywh_t = anc_obj.match_anc_grids()
+
+    box_lt = anc_xywh_t[:, :2] - poff_ltrb_t_4d[:, :2]
+    box_rb = anc_xywh_t[:, :2] + poff_ltrb_t_4d[:, 2:]
+    boxes_t_ltrb = torch.cat([box_lt, box_rb], -1)
+
+    if is_clamp:  # 预测时限制输出在特图长宽中
+        index_start = 0
+        for i, num_ceng in enumerate(anc_obj.nums_level):
+            _index_end = index_start + num_ceng
+            boxes_t_ltrb[index_start:_index_end, :] = boxes_t_ltrb[index_start:_index_end, :].clamp(
+                min=0,
+                max=anc_obj.feature_sizes[i][0])
+
+    # 特图归一化到原图
+    boxes_ltrb = boxes_t_ltrb / match_grids_ts
+    # 训练时用 这里用于计算IOU 实际IOU
+    if gboxes_ltrb_match is not None:
+        ious_zg = bbox_iou4one(boxes_ltrb, gboxes_ltrb_match, is_ciou=True)  # [3614]
+        return boxes_ltrb, ious_zg
+
+    return boxes_ltrb
 
 
 '''-------------------------------编码--------------------------'''
@@ -280,38 +344,236 @@ def boxes_encode4retina(cfg, anc_obj, gboxes_ltrb, variances=(0.1, 0.2)):
     return _gtxywh
 
 
-def boxes_encode4retina2(cfg, anc_obj, gboxes_ltrb, variances=(0.1, 0.2)):
+def boxes_encode4distribute(cfg, anc_obj, gboxes_ltrb_match, max_dis):
     '''
-    用anc同维 和 已匹配的GT 计算差异
-    :param cfg: cfg.tnums_ceng cfg.NUMS_ANC [8112, 2028, 507]  用于动态层 dim 数
+    for dfl
+    :param cfg:
     :param anc_obj:
-        ancs_xywh  (nn,4) torch.Size([1, 16800, 4]) torch.Size([10647, 4])
-        anc_obj.nums_dim_feature: [24336, 6084, 1521, 441, 144]
-    :param gboxes_ltrb: gt torch.Size([5, 16800, 4]) torch.Size([10647, 4])
-    :return: 计算差异值   对应xywh torch.Size([10647, 4])
+    :param gboxes_ltrb_match:
+    :param max_dis: 根据定义的向量数 限制在向量-1 值以内
+    :return:
     '''
-    gxywh = ltrb2xywh(gboxes_ltrb)
-    size_ts4 = torch.tensor(cfg.IMAGE_SIZE, dtype=torch.float32, device=anc_obj.ancs_xywh.device).repeat(2)
-    gxywh_t = gxywh * size_ts4
+    # anc 归一化 -> anc特图
+    match_grids_ts, anc_xywh_t = anc_obj.match_anc_grids()
+    gboxes_ltrb_t = gboxes_ltrb_match * match_grids_ts
 
-    if gboxes_ltrb.dim() == 2:
-        anc_xywh_t = anc_obj.ancs_xywh * size_ts4
-        _a = (gxywh_t[:, :2] - anc_xywh_t[:, :2]) / anc_xywh_t[:, 2:] / variances[0]
-        _b = (gxywh_t[:, 2:] / anc_xywh_t[:, 2:]).log() / variances[1]
-    elif gboxes_ltrb.dim() == 3:
-        anc_xywh_t = anc_obj.ancs_xywh.unsqueeze(0) * size_ts4
-        _a = (gxywh_t[:, :, :2] - anc_xywh_t[:, :, :2]) / anc_xywh_t[:, :, 2:] / variances[0]
-        _b = (gxywh_t[:, :, 2:] / anc_xywh_t[:, :, 2:]).log() / variances[1]
-    else:
-        raise Exception('维度错误', anc_obj.ancs_xywh.shape)
-    _gtxywh = torch.cat([_a, _b], dim=-1)
-    return _gtxywh
+    pt_lt = anc_xywh_t[:, :2] - gboxes_ltrb_t[:, :2]
+    pt_rb = gboxes_ltrb_t[:, 2:] - anc_xywh_t[:, :2]
+    gt_ltrb_t = torch.cat([pt_lt, pt_rb], -1)
+
+    eps = torch.finfo(torch.float16).eps
+    gt_ltrb_t.clamp_(min=0, max=max_dis - eps)  # 无需计算梯度
+
+    return gt_ltrb_t
 
 
 '''------------------------------- 匹配 --------------------------'''
 
 
-def match_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='iou', ptxywh_b=None, img_ts=None):
+def matchs_gfl(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, preg_32d_b, mode='atss', img_ts=None):
+    '''
+    cfg.NUMS_ANC = [3, 3, 3]
+
+    :param cfg:
+    :param dim: ious_zg-1 , cls-3,  与预测对应gt_ltrb-4
+    :param gboxes_ltrb_b: torch.Size([ngt, 4])
+    :param glabels_b: [ngt]
+    :param anc_obj:
+        anc_obj.nums_level: [24336, 6084, 1521, 441, 144]
+        ancs_xywh  (nn,4)
+    :param mode: topk atss iou
+    :param preg_32d_b: torch.Size([3614, 32])
+    :param img_ts: [3, 416, 416]
+    :return:
+    '''
+    # mode = 'iou'  # topk atss iou
+    if preg_32d_b is not None:
+        device = preg_32d_b.device
+    else:
+        device = torch.device('cpu')
+
+    # 计算 iou
+    anc_xywh = anc_obj.ancs_xywh
+    anc_ltrb = xywh2ltrb(anc_xywh)
+    num_anc = anc_xywh.shape[0]
+    # (anc 个,boxes 个) torch.Size([3, 10647])
+    ious_ag = calc_iou4ts(anc_ltrb, gboxes_ltrb_b)
+    num_gt = gboxes_ltrb_b.shape[0]
+
+    # 全部ANC的距离
+    gboxes_xywh_b = ltrb2xywh(gboxes_ltrb_b)
+    # 中间点绝对距离 多维广播 (anc 个,boxes 个)  torch.Size([32526, 7])
+    distances = (anc_xywh[:, None, :2] - gboxes_xywh_b[None, :, :2]).pow(2).sum(-1).sqrt()
+
+    # conf-1, cls-3, txywh-4, keypoint-nn  = 8 + nn
+    gretinas_one = torch.zeros((num_anc, dim), device=device)  # 返回值
+    s_ = 1 + cfg.NUM_CLASSES  # 前面 两个是 conf-1, cls-3,
+
+    if mode == 'atss':
+        ''' 使正例框数量都保持一致 保障小目标也能匹配到多个anc
+        用最大一个iou的均值和标准差,计算阀值,用IOU阀值初选正样本
+        确保anc中心点在gt框中
+        '''
+        # 每层 anc 数是一致的
+        num_atss_topk = 9  # 这个 topk = 要 * 该层的anc数
+
+        idxs_candidate = []
+        index_start = 0  # 这是每层的anc偏移值
+        for i, num_dim_feature in enumerate(anc_obj.nums_level):  # [24336, 6084, 1521, 441, 144]
+            '''每一层的每一个GT选 topk * anc数'''
+            index_end = index_start + num_dim_feature
+            # 取出某层的所有anc距离  中间点绝对距离 (anc 个,boxes 个)  torch.Size([32526, 7]) -> [nn, 7]
+            distances_per_level = distances[index_start:index_end, :]
+            # 确认该层的TOPK 不能超过该层总 anc 数 这里是一个数
+            # topk = min(num_atss_topk * cfg.NUMS_ANC[i], num_dim_feature)
+            topk = min(num_atss_topk, num_dim_feature)
+            # 放 topk个 每个gt对应对的anc的index torch.Size([24336, box_n])---(anc,gt) -> torch.Size([topk, 1])
+            _, topk_idxs_per_level = distances_per_level.topk(topk, dim=0, largest=False)  # 只能在某一维top
+            idxs_candidate.append(topk_idxs_per_level + index_start)
+            index_start = index_end
+
+        # 用于计算iou均值和方差 候选人，候补者；应试者 torch.Size([405, 1])
+        idxs_candidate = torch.cat(idxs_candidate, dim=0)
+        '''--- 选出每层每个anc对应的距离中心最近topk iou值 ---'''
+        # ***************这个是ids选择 这个是多维筛选 ious---[anc,ngt]    [405, ngt] [0,1...ngt]-> [405,ngt]
+        ious_candidate = ious_ag[idxs_candidate, torch.arange(num_gt)]
+        mask_distances = torch.zeros_like(distances, device=device, dtype=torch.bool)
+        mask_distances[idxs_candidate, torch.arange(idxs_candidate.shape[1])] = True
+
+        # debug 可视  匹配正例可视化
+        # mask_pos = torch.zeros(mask_distances.shape[0], device=device, dtype=torch.bool)
+        # mask_distances_t = mask_distances.t()  # [32526 , 3] -> [3, 32526]
+        # for m_pos_iou in mask_distances_t:  # 拉平 每个 32526
+        #     mask_pos = torch.logical_or(m_pos_iou, mask_pos)
+        # from f_tools.pic.enhance.f_data_pretreatment4pil import f_recover_normalization4ts
+        # _img_ts = f_recover_normalization4ts(img_ts.clone())
+        # from torchvision.transforms import functional as transformsF
+        # img_pil = transformsF.to_pil_image(_img_ts).convert('RGB')
+        # import numpy as np
+        # img_np = np.array(img_pil)
+        #
+        # f_show_od_np4plt(img_np, gboxes_ltrb=gboxes_ltrb_b.cpu()
+        #                  , pboxes_ltrb=anc_ltrb[mask_pos].cpu(),
+        #                  is_recover_size=True)
+
+        '''--- 用最大一个iou的均值和标准差,计算阀值 ---'''
+        # 统计每一个 GT的均值 std [ntopk,ngt] -> [ngt] 个
+        _iou_mean_per_gt = ious_candidate.mean(dim=0)  # 除维
+        _iou_std_per_gt = ious_candidate.std(dim=0)
+        _iou_thresh_per_gt = _iou_mean_per_gt + _iou_std_per_gt
+        '''--- 用IOU阀值初选正样本 ---'''
+        # torch.Size([32526, 1]) ^^ ([ngt] -> [1,ngt]) -> [32526,ngt]
+        mask_pos4iou = ious_ag >= _iou_thresh_per_gt[None, :]  # 核心是这个选
+
+        '''--- 中心点需落在GT中间 需要选出 anc的中心点-gt的lt为正, gr的rb-anc的中心点为正  ---'''
+        # torch.Size([32526, 1, 2])
+        dlt = anc_xywh[:, None, :2] - gboxes_ltrb_b[None, :, :2]
+        drb = gboxes_ltrb_b[None, :, 2:] - anc_xywh[:, None, :2]
+        # [32526, 1, 2] -> [32526, 1, 4] -> [32526, 1]
+        mask_pos4in_gt = torch.all(torch.cat([dlt, drb], dim=-1) > 0.01, dim=-1)
+        mask_pos_iou = torch.logical_and(torch.logical_and(mask_distances, mask_pos4iou), mask_pos4in_gt)
+
+        '''--- 生成最终正例mask [32526, ngt] -> [32526] ---'''
+        mask_pos = torch.zeros(mask_pos_iou.shape[0], device=device, dtype=torch.bool)
+        mask_pos_iou = mask_pos_iou.t()  # [32526 , 3] -> [3, 32526]
+        for m_pos_iou in mask_pos_iou:  # 拉平 每个 32526
+            mask_pos = torch.logical_or(m_pos_iou, mask_pos)
+
+        # mask_neg = torch.logical_not(mask_pos)
+
+        '''--- 确定anc匹配 一个锚框被多个真实框所选择，则其归于iou较高的真实框  ---'''
+        # (anc 个,boxes 个) torch.Size([3, 10647])
+        anc_max_iou, boxes_index = ious_ag.max(dim=1)  # 存的是 bboxs的index
+
+        '''--- GFL解码  ---'''
+        # 解码 通过 anc ^^ 回归系数 = 最终预测框 和 giou值 用于giou损失
+        gboxes_ltrb_match = gboxes_ltrb_b[boxes_index].type(torch.float)
+        # zboxes_t_ltrb 这里解码出来 没用
+        zboxes_t_ltrb, ious_zg = boxes_decode4distribute(cfg, anc_obj, preg_32d_b, is_clamp=False,
+                                                         gboxes_ltrb_match=gboxes_ltrb_match)
+
+        '''   ious_zg-1 , cls-3,  与预测对应gt_ltrb-4  '''
+        gretinas_one[mask_pos, 0] = ious_zg[mask_pos].clamp(min=0)
+
+        glabels_b_onehot = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
+        gretinas_one[mask_pos, 1:s_] = glabels_b_onehot[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
+
+        # 用anc 和gt 编码实际值每个0~7 之间 最大8-1
+        _gt_ltrb_t = boxes_encode4distribute(cfg, anc_obj, gboxes_ltrb_match, max_dis=cfg.NUM_REG - 1)
+        gretinas_one[mask_pos, s_:s_ + 4] = _gt_ltrb_t[mask_pos]
+
+        # 匹配正例可视化
+        # from f_tools.pic.enhance.f_data_pretreatment4pil import f_recover_normalization4ts
+        # _img_ts = f_recover_normalization4ts(img_ts.clone())
+        # from torchvision.transforms import functional as transformsF
+        # img_pil = transformsF.to_pil_image(_img_ts).convert('RGB')
+        # import numpy as np
+        # img_np = np.array(img_pil)
+        # match_grids_ts, anc_xywh_t = anc_obj.match_anc_grids()
+        #
+        # f_show_od_np4plt(img_np, gboxes_ltrb=gboxes_ltrb_b.cpu()
+        #                  , pboxes_ltrb=anc_ltrb[mask_pos].cpu(),
+        #                  other_ltrb=(zboxes_t_ltrb / match_grids_ts)[mask_pos].detach().cpu(),
+        #                  is_recover_size=True)
+
+    elif mode == 'topk':
+        '''--- 简单匹配9个 用IOU和距离相关计算 每特图取9个最好的 ---'''
+        num_atss_topk = 9
+        distances = distances / distances.max() / 1000
+        mask_pos_candidate = torch.zeros_like(ious_ag, dtype=torch.bool)  # torch.Size([32526, 2])
+        for ng in range(num_gt):  # 遍历每一个GT匹配9个
+            # iou和距离差 [3614] -> [9]
+            _, topk_idxs = (ious_ag[:, ng] - distances[:, ng]).topk(num_atss_topk, dim=0)
+            anc_xy = anc_xywh[topk_idxs, :2]
+            dlt = anc_xy - gboxes_ltrb_b[ng, :2]
+            drb = - anc_xy + gboxes_ltrb_b[ng, 2:]
+            # [topk,4] -> [topk]
+            mask_4in_gt = torch.all(torch.cat([dlt, drb], dim=-1) > 0.01, dim=1)
+            mask_pos_candidate[topk_idxs[mask_4in_gt], ng] = True
+
+        # mask转换 [32526, 2] -> [32526]
+        mask_pos = torch.zeros(mask_pos_candidate.shape[0], device=device, dtype=torch.bool)
+        mask_pos_iou = mask_pos_candidate.t()  # [32526 , 3] -> [3, 32526]
+        for m_pos_iou in mask_pos_iou:  # 拉平 每个 32526
+            mask_pos = torch.logical_or(m_pos_iou, mask_pos)
+
+        anc_max_iou, boxes_index = ious_ag.max(dim=1)  # 存的是 bboxs的index
+
+        gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
+
+        glabels_b_onehot = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
+        gretinas_one[mask_pos, 1:s_] = glabels_b_onehot[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
+        _gtxywh = boxes_encode4retina(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
+        gretinas_one[mask_pos, s_:s_ + 4] = _gtxywh[mask_pos]
+
+    elif mode == 'iou':
+        '''--- iou阀值来确定 正反忽略 通常 >0.5 <0.4 正例至少匹配1个 ---'''
+        # (anc 个,boxes 个) torch.Size([3, 10647])
+        anc_max_iou, boxes_index = ious_ag.max(dim=1)  # 存的是 bboxs的index
+        bbox_max_iou, anc_index = ious_ag.max(dim=0)  # 存的是 anc的index
+        anc_max_iou.index_fill_(0, anc_index, 1)  # 最大的为正例, 强制为conf 为1
+        gt_ids = torch.arange(0, anc_index.size(0), dtype=torch.int64).to(boxes_index)  # [0,1]
+        anc_ids = anc_index[gt_ids]
+        boxes_index[anc_ids] = gt_ids
+        mask_pos = anc_max_iou >= cfg.THRESHOLD_CONF_POS  # [10647] anc 的正例 index 不管
+        mask_neg = anc_max_iou < cfg.THRESHOLD_CONF_NEG  # anc 的反例 index
+        mash_ignore = torch.logical_not(torch.logical_or(mask_pos, mask_neg))
+        # mask_neg 负例自动0
+
+        gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
+        gretinas_one[mash_ignore, 0] = torch.tensor(-1., device=device)
+
+        glabels_b_onehot = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
+        gretinas_one[mask_pos, 1:s_] = glabels_b_onehot[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
+        _gtxywh = boxes_encode4retina(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
+        gretinas_one[mask_pos, s_:s_ + 4] = _gtxywh[mask_pos]
+    else:
+        raise NotImplementedError
+
+    return gretinas_one
+
+
+def matchs_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh_b=None, img_ts=None):
     '''
     cfg.NUMS_ANC = [3, 3, 3]
 
@@ -323,7 +585,7 @@ def match_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='iou', ptxywh_b
         anc_obj.nums_level: [24336, 6084, 1521, 441, 144]
         ancs_xywh  (nn,4)
     :param mode: topk atss iou
-    :param ptxywh_b: [32526, 4]
+    :param ptxywh_b: torch.Size([3614, 32])
     :param img_ts: [3, 416, 416]
     :return:
     '''
@@ -332,7 +594,7 @@ def match_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='iou', ptxywh_b
         device = ptxywh_b.device
     else:
         device = torch.device('cpu')
-    num_atss_topk = 9
+
     # 计算 iou
     anc_xywh = anc_obj.ancs_xywh
     anc_ltrb = xywh2ltrb(anc_xywh)
@@ -343,100 +605,141 @@ def match_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='iou', ptxywh_b
 
     # 全部ANC的距离
     gboxes_xywh_b = ltrb2xywh(gboxes_ltrb_b)
-    # (anc 个,boxes 个)  torch.Size([32526, 7])
+    # 中间点绝对距离 多维广播 (anc 个,boxes 个)  torch.Size([32526, 7])
     distances = (anc_xywh[:, None, :2] - gboxes_xywh_b[None, :, :2]).pow(2).sum(-1).sqrt()
 
-    # cls-1, txywh-4, gltrb-4,  keypoint-nn  = 9 + nn
+    # conf-1, cls-3, txywh-4, keypoint-nn  = 8 + nn
     gretinas_one = torch.zeros((num_anc, dim), device=device)  # 返回值
+    s_ = 1 + cfg.NUM_CLASSES  # 前面 两个是 conf-1, cls-3,
 
     if mode == 'atss':
-        # 放 topk个 每个gt对应对的anc的index
+        ''' 使正例框数量都保持一致 保障小目标也能匹配到多个anc
+        用最大一个iou的均值和标准差,计算阀值,用IOU阀值初选正样本
+        确保anc中心点在gt框中
+        '''
+        # 每层 anc 数是一致的
+        num_atss_topk = 9  # 这个 topk = 要 * 该层的anc数
+
         idxs_candidate = []
         index_start = 0  # 这是每层的anc偏移值
-        for i, num_dim_feature in enumerate(anc_obj.nums_level):
-            '''每一层的每一个GT选 topk*'''
+        for i, num_dim_feature in enumerate(anc_obj.nums_level):  # [24336, 6084, 1521, 441, 144]
+            '''每一层的每一个GT选 topk * anc数'''
             index_end = index_start + num_dim_feature
+            # 取出某层的所有anc距离  中间点绝对距离 (anc 个,boxes 个)  torch.Size([32526, 7]) -> [nn, 7]
             distances_per_level = distances[index_start:index_end, :]
             # 确认该层的TOPK 不能超过该层总 anc 数 这里是一个数
-            topk = min(num_atss_topk * cfg.NUMS_ANC[i], num_dim_feature)
-            # torch.Size([24336, box_n])---(anc,gt) -> torch.Size([topk, 1]) 放 topk个 每个gt对应对的anc的index
+            # topk = min(num_atss_topk * cfg.NUMS_ANC[i], num_dim_feature)
+            topk = min(num_atss_topk, num_dim_feature)
+            # 放 topk个 每个gt对应对的anc的index torch.Size([24336, box_n])---(anc,gt) -> torch.Size([topk, 1])
             _, topk_idxs_per_level = distances_per_level.topk(topk, dim=0, largest=False)  # 只能在某一维top
             idxs_candidate.append(topk_idxs_per_level + index_start)
             index_start = index_end
 
-        # 候选人，候补者；应试者
+        # 用于计算iou均值和方差 候选人，候补者；应试者 torch.Size([405, 1])
         idxs_candidate = torch.cat(idxs_candidate, dim=0)
         '''--- 选出每层每个anc对应的距离中心最近topk iou值 ---'''
         # ***************这个是ids选择 这个是多维筛选 ious---[anc,ngt]    [405, ngt] [0,1...ngt]-> [405,ngt]
         ious_candidate = ious[idxs_candidate, torch.arange(num_gt)]
+        mask_distances = torch.zeros_like(distances, device=device, dtype=torch.bool)
+        mask_distances[idxs_candidate, torch.arange(idxs_candidate.shape[1])] = True
+
+        # debug 可视  匹配正例可视化
+        # mask_pos = torch.zeros(mask_distances.shape[0], device=device, dtype=torch.bool)
+        # mask_distances_t = mask_distances.t()  # [32526 , 3] -> [3, 32526]
+        # for m_pos_iou in mask_distances_t:  # 拉平 每个 32526
+        #     mask_pos = torch.logical_or(m_pos_iou, mask_pos)
+        # from f_tools.pic.enhance.f_data_pretreatment4pil import f_recover_normalization4ts
+        # _img_ts = f_recover_normalization4ts(img_ts.clone())
+        # from torchvision.transforms import functional as transformsF
+        # img_pil = transformsF.to_pil_image(_img_ts).convert('RGB')
+        # import numpy as np
+        # img_np = np.array(img_pil)
+        #
+        # f_show_od_np4plt(img_np, gboxes_ltrb=gboxes_ltrb_b.cpu()
+        #                  , pboxes_ltrb=anc_ltrb[mask_pos].cpu(),
+        #                  is_recover_size=True)
 
         '''--- 用最大一个iou的均值和标准差,计算阀值 ---'''
-        # 统计每一个 GT的均值 std [ntopk,ngt] -> [ngt]
+        # 统计每一个 GT的均值 std [ntopk,ngt] -> [ngt] 个
         _iou_mean_per_gt = ious_candidate.mean(dim=0)  # 除维
         _iou_std_per_gt = ious_candidate.std(dim=0)
         _iou_thresh_per_gt = _iou_mean_per_gt + _iou_std_per_gt
         '''--- 用IOU阀值初选正样本 ---'''
-        # 每一个GT是阀值 [405,ngt] ^^ ([ngt] -> [1,ngt])->  [405,ngt]
-        mask_pos4iou = ious_candidate >= _iou_thresh_per_gt[None, :]
+        # torch.Size([32526, 1]) ^^ ([ngt] -> [1,ngt]) -> [32526,ngt]
+        mask_pos4iou = ious >= _iou_thresh_per_gt[None, :]  # 核心是这个选
 
         '''--- 中心点需落在GT中间 需要选出 anc的中心点-gt的lt为正, gr的rb-anc的中心点为正  ---'''
-        for ng in range(num_gt):  # 拉平
-            # 强制使每一个GT对应的anc 加个偏移
-            idxs_candidate[:, ng] += ng * num_anc
-        num_pos4iou = idxs_candidate.shape[0]
-        idxs_candidate4gt = idxs_candidate.view(-1)
-        # [65052, 4] -> [65052*num_anc, 2] 扩展后用于多GT筛选
-        anc_xy4gt = anc_xywh.repeat(num_gt, 1)[:, :2]  # 用于与拉平的匹配
-        # 单体复制 与 anc匹配
-        gboxes_ltrb_b4gt = torch.repeat_interleave(gboxes_ltrb_b, num_pos4iou, dim=0)
-        anc_xy4candidate = anc_xy4gt[idxs_candidate4gt]  # 把 anc 选出来
-        dlt = anc_xy4candidate - gboxes_ltrb_b4gt[:, :2]
-        drb = gboxes_ltrb_b4gt[:, 2:] - anc_xy4candidate
-        # [405*ngt,4] -> [405*ngt]
-        mask_pos4in_gt = torch.all(torch.cat([dlt, drb], dim=-1) > 0.01, dim=1)
-        mask_pos4in_gt = mask_pos4in_gt.view(-1, num_gt)
-        # 合并距离 和 中间点的 mask
-        mask_pos = torch.logical_and(mask_pos4iou, mask_pos4in_gt)
+        # torch.Size([32526, 1, 2])
+        dlt = anc_xywh[:, None, :2] - gboxes_ltrb_b[None, :, :2]
+        drb = gboxes_ltrb_b[None, :, 2:] - anc_xywh[:, None, :2]
+        # [32526, 1, 2] -> [32526, 1, 4] -> [32526, 1]
+        mask_pos4in_gt = torch.all(torch.cat([dlt, drb], dim=-1) > 0.01, dim=-1)
+        mask_pos_iou = torch.logical_and(torch.logical_and(mask_distances, mask_pos4iou), mask_pos4in_gt)
 
-        '''--- 一个锚框被多个真实框所选择，则其归于iou较高的真实框  ---'''
-        # [32526, 1] -> [1, 32526] 创建一个按GT个数 -1 拉平的 match ().contiguous(默认负例为-1
-        ious_z = torch.full_like(ious, -1).t().view(-1)
-        # 取出所有的正例 [nnn] -> [74]
-        index = idxs_candidate4gt[mask_pos.view(-1)]
-        # [anc,gt] -> [gt,anc] ->[gt*anc] -> 最终选出来 mask_pos个 写出真实的iou
-        ious_z[index] = ious.t().contiguous().view(-1)[index]
-        # 恢复到最初 32526*ngt -> [ngt,32526] -> [32526, ngt]
-        ious_z = ious_z.view(num_gt, -1).t()
-        # [32526, ngt] -> [32526, 1] -> [32526] 最张index
+        '''--- 生成最终正例mask [32526, ngt] -> [32526] ---'''
+        mask_pos = torch.zeros(mask_pos_iou.shape[0], device=device, dtype=torch.bool)
+        mask_pos_iou = mask_pos_iou.t()  # [32526 , 3] -> [3, 32526]
+        for m_pos_iou in mask_pos_iou:  # 拉平 每个 32526
+            mask_pos = torch.logical_or(m_pos_iou, mask_pos)
 
-        anc_max_iou, boxes_index = ious_z.max(dim=1)
+        # mask_neg = torch.logical_not(mask_pos)
 
-        gretinas_one[:, 0] = glabels_b[boxes_index]
-        gretinas_one[:, 0][anc_max_iou == -1] = 0
+        '''--- 确定anc匹配 一个锚框被多个真实框所选择，则其归于iou较高的真实框  ---'''
+        # (anc 个,boxes 个) torch.Size([3, 10647])
+        anc_max_iou, boxes_index = ious.max(dim=1)  # 存的是 bboxs的index
+
+        gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
+
+        labels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
+        gretinas_one[mask_pos, 1:s_] = labels_b[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
+        _gtxywh = boxes_encode4retina(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
+        gretinas_one[mask_pos, s_:s_ + 4] = _gtxywh[mask_pos]
+
+        # 匹配正例可视化
+        # from f_tools.pic.enhance.f_data_pretreatment4pil import f_recover_normalization4ts
+        # _img_ts = f_recover_normalization4ts(img_ts.clone())
+        # from torchvision.transforms import functional as transformsF
+        # img_pil = transformsF.to_pil_image(_img_ts).convert('RGB')
+        # import numpy as np
+        # img_np = np.array(img_pil)
+        #
+        # f_show_od_np4plt(img_np, gboxes_ltrb=gboxes_ltrb_b.cpu()
+        #                  , pboxes_ltrb=anc_ltrb[mask_pos].cpu(),
+        #                  is_recover_size=True)
 
     elif mode == 'topk':
-        '''--- 简单匹配9个 用IOU和距离相关取9个 ---'''
+        '''--- 简单匹配9个 用IOU和距离相关计算 每特图取9个最好的 ---'''
+        num_atss_topk = 9
         distances = distances / distances.max() / 1000
-        mask_pos = torch.zeros_like(ious, dtype=torch.bool)
-        for ng in range(num_gt):
-            # [3614] -> [9]
+        mask_pos_candidate = torch.zeros_like(ious, dtype=torch.bool)  # torch.Size([32526, 2])
+        for ng in range(num_gt):  # 遍历每一个GT匹配9个
+            # iou和距离差 [3614] -> [9]
             _, topk_idxs = (ious[:, ng] - distances[:, ng]).topk(num_atss_topk, dim=0)
             anc_xy = anc_xywh[topk_idxs, :2]
             dlt = anc_xy - gboxes_ltrb_b[ng, :2]
             drb = - anc_xy + gboxes_ltrb_b[ng, 2:]
             # [topk,4] -> [topk]
             mask_4in_gt = torch.all(torch.cat([dlt, drb], dim=-1) > 0.01, dim=1)
-            mask_pos[topk_idxs[mask_4in_gt], ng] = True
-        ious[torch.logical_not(mask_pos)] = -1
-        ious_z = ious
+            mask_pos_candidate[topk_idxs[mask_4in_gt], ng] = True
 
-        anc_max_iou, boxes_index = ious_z.max(dim=1)
+        # mask转换 [32526, 2] -> [32526]
+        mask_pos = torch.zeros(mask_pos_candidate.shape[0], device=device, dtype=torch.bool)
+        mask_pos_iou = mask_pos_candidate.t()  # [32526 , 3] -> [3, 32526]
+        for m_pos_iou in mask_pos_iou:  # 拉平 每个 32526
+            mask_pos = torch.logical_or(m_pos_iou, mask_pos)
 
-        gretinas_one[:, 0] = glabels_b[boxes_index]
-        gretinas_one[:, 0][anc_max_iou == -1] = 0
+        anc_max_iou, boxes_index = ious.max(dim=1)  # 存的是 bboxs的index
+
+        gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
+
+        labels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
+        gretinas_one[mask_pos, 1:s_] = labels_b[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
+        _gtxywh = boxes_encode4retina(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
+        gretinas_one[mask_pos, s_:s_ + 4] = _gtxywh[mask_pos]
 
     elif mode == 'iou':
-        '''--- 这个有可能只能匹配1个 ---'''
+        '''--- iou阀值来确定 正反忽略 通常 >0.5 <0.4 正例至少匹配1个 ---'''
+        # (anc 个,boxes 个) torch.Size([3, 10647])
         anc_max_iou, boxes_index = ious.max(dim=1)  # 存的是 bboxs的index
         bbox_max_iou, anc_index = ious.max(dim=0)  # 存的是 anc的index
         anc_max_iou.index_fill_(0, anc_index, 1)  # 最大的为正例, 强制为conf 为1
@@ -447,18 +750,17 @@ def match_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='iou', ptxywh_b
         mask_neg = anc_max_iou < cfg.THRESHOLD_CONF_NEG  # anc 的反例 index
         mash_ignore = torch.logical_not(torch.logical_or(mask_pos, mask_neg))
         # mask_neg 负例自动0
+
+        gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
+        gretinas_one[mash_ignore, 0] = torch.tensor(-1., device=device)
+
         labels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
-
-        gretinas_one[mask_pos, :cfg.NUM_CLASSES] = labels_b[boxes_index][mask_pos].float()
-        gretinas_one[mash_ignore, :cfg.NUM_CLASSES] = torch.tensor(-1., device=device)
-
+        gretinas_one[mask_pos, 1:s_] = labels_b[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
+        _gtxywh = boxes_encode4retina(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
+        gretinas_one[mask_pos, s_:s_ + 4] = _gtxywh[mask_pos]
     else:
         raise NotImplementedError
 
-    # _gtxywh = boxes_encode4retina(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
-    _gtxywh = boxes_encode4retina2(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
-    gretinas_one[:, cfg.NUM_CLASSES:cfg.NUM_CLASSES + 4] = _gtxywh
-    # gretinas_one[:, 1 + 4:1 + 4 + 4] = gboxes_ltrb_b[boxes_index]
     return gretinas_one
 
 
@@ -570,8 +872,8 @@ def pos_match_retina(cfg, dim, anc_obj, gboxes_ltrb_b, glabels_b, gkeypoints_b, 
     boxes_index[anc_ids] = gt_ids
 
     # ----------正例的index 和 正例对应的bbox索引----------
-    mask_pos = anc_max_iou >= cfg.THRESHOLD_CONF_POS  # [10647] anc 的正例 index 不管
-    mask_neg = anc_max_iou < cfg.THRESHOLD_CONF_NEG  # anc 的反例 index
+    mask_pos = anc_max_iou >= cfg.THRESHOLD_CONF_POS  # 0.5 [10647] anc 的正例 index 不管
+    mask_neg = anc_max_iou < cfg.THRESHOLD_CONF_NEG  # 0.4 anc 的反例 index
     mash_ignore = torch.logical_not(torch.logical_or(mask_pos, mask_neg))
 
     dim_total, _d4 = ptxywh_b.shape
@@ -584,7 +886,7 @@ def pos_match_retina(cfg, dim, anc_obj, gboxes_ltrb_b, glabels_b, gkeypoints_b, 
     # 整体匹配 正例全部为1 默认为0
     gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
     gretinas_one[mash_ignore, 0] = torch.tensor(-1., device=device)
-    gretinas_one[:, 1] = anc_max_iou  # iou赋值
+    # gretinas_one[:, 1] = anc_max_iou  # iou赋值
 
     # 局部更新
     s_ = 1 + cfg.NUM_CLASSES  # 前面 两个是 conf-1, cls-3,

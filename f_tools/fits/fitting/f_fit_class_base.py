@@ -1,5 +1,6 @@
 import os
 import random
+from abc import abstractmethod
 
 import cv2
 import torch.distributed as dist
@@ -9,10 +10,12 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_loader import DataLoader2
 from f_tools.datas.f_coco.convert_data.coco_dataset import CustomCocoDataset4cv
 from f_tools.device.f_device import init_video
+from f_tools.fits.f_predictfun import label_nms
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4one, f_prod_vodeo
 from f_tools.fits.fitting.f_fit_fun import init_od_e, base_set_1gpu, show_train_info, train_eval4od
 from f_tools.fits.f_gpu.f_gpu_api import mgpu_process0_init, mgpu_init, fis_mgpu, is_main_process
 from f_tools.pic.enhance.f_data_pretreatment4np import cre_transform_resize4np
+from torch import nn
 
 
 def fdatas_l2(batch_data, device, cfg, epoch, model):
@@ -55,6 +58,82 @@ def fdatas_l2(batch_data, device, cfg, epoch, model):
         # for key, val in target.items():
         #     target[key] = val.to(device)
     return images, targets
+
+
+class Predicting_Base(nn.Module):
+
+    def __init__(self, cfg) -> None:
+        super(Predicting_Base, self).__init__()
+        self.cfg = cfg
+
+    @abstractmethod
+    def p_init(self, outs):
+        '''
+        用于初始化参数 : 后续会用到的 self
+        :param outs: 进行调整维度等
+        :return:
+            outs, device 必须返回
+        '''
+        # return outs, device
+
+    @abstractmethod
+    def get_pscores(self, outs):
+        '''
+
+        :param outs: 通过pconf pcls 计算分数
+        :return:
+            pscores : 这个用于判断
+            plabels : 这个用于二阶段
+            pconf : 用于显示conf的统计值
+        '''
+
+    @abstractmethod
+    def get_stage_res(self, outs, mask_pos, pscores, plabels):
+        '''
+
+        :param outs: ptxywh -> pltrb , 获取 ids_batch1
+        :param mask_pos:
+        :param pscores:
+        :param plabels:
+        :return:
+            ids_batch1 : 返回第二阶段
+            pboxes_ltrb1 :
+            plabels1 :
+            pscores1 :
+        '''
+
+    def forward(self, outs, imgs_ts=None):
+        cfg = self.cfg
+        outs, device = self.p_init(outs)
+
+        pscores, plabels, pconf = self.get_pscores(outs)
+
+        mask_pos = pscores > cfg.THRESHOLD_PREDICT_CONF  # b,hw
+        if not torch.any(mask_pos):  # 如果没有一个对象
+            print('该批次没有找到目标 max:{0:.2f} min:{0:.2f} mean:{0:.2f}'.format(pconf.max().item(),
+                                                                          pconf.min().item(),
+                                                                          pconf.mean().item(),
+                                                                          ))
+            return [None] * 5
+
+        _i = 500
+        if pscores.shape[1] > _i:
+            # 最大1000个
+            ids_topk = pscores.topk(_i, dim=-1)[1]  # torch.Size([32, 1000])
+            mask_topk = torch.zeros_like(mask_pos)
+            mask_topk[torch.arange(ids_topk.shape[0])[:, None], ids_topk] = True
+            mask_pos = torch.logical_and(mask_pos, mask_topk)
+
+        ids_batch1, pboxes_ltrb1, plabels1, pscores1 = self.get_stage_res(outs, mask_pos, pscores, plabels)
+
+        ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2 = label_nms(ids_batch1,
+                                                                    pboxes_ltrb1,
+                                                                    plabels1,
+                                                                    pscores1,
+                                                                    device,
+                                                                    cfg.THRESHOLD_PREDICT_NMS)
+
+        return ids_batch2, p_boxes_ltrb2, None, p_labels2, p_scores2,
 
 
 class FBase:

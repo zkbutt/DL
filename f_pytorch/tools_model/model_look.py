@@ -153,6 +153,7 @@ if __name__ == '__main__':
     # model = models.resnext50_32x4d(pretrained=True)  # 能力 22.38 6.30 ---top3
     model = models.mobilenet_v2(pretrained=True)  # 能力 28.12 9.71 ---速度top1
     model = models.mnasnet1_0(pretrained=True)
+    model = models.shufflenet_v2_x1_0(pretrained=True)
 
     # model = models.resnet50(pretrained=True)  # 下采样倍数32 能力23.85 7.13
     # return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
