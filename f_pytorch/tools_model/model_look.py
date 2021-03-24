@@ -164,7 +164,7 @@ if __name__ == '__main__':
 
     # f替换(model)
 
-    f_look_tw(model, data_inputs_list)
+    # f_look_tw(model, data_inputs_list)
     # f_look2(model, data_inputs_list[-3:])
 
     # model = darknet53()

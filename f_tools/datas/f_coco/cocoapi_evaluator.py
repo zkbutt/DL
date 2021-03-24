@@ -109,7 +109,7 @@ class COCOAPIEvaluator():
         # Evaluate the Dt (detection) json comparing with the ground truth
         if len(data_dict) > 0:
             print('evaluating ......')
-            cocoGt = self.dataset.coco
+            cocoGt = self.dataset.coco_obj
             # workaround: temporarily write data to json file because pycocotools can't process dict in py36.
             if self.testset:
                 json.dump(data_dict, open('yolo_2017.json', 'w'))
@@ -118,7 +118,7 @@ class COCOAPIEvaluator():
                 _, tmp = tempfile.mkstemp()
                 json.dump(data_dict, open(tmp, 'w'))
                 cocoDt = cocoGt.loadRes(tmp)
-            cocoEval = COCOeval(self.dataset.coco, cocoDt, annType[1])
+            cocoEval = COCOeval(self.dataset.coco_obj, cocoDt, annType[1])
             cocoEval.params.imgIds = ids
             cocoEval.evaluate()
             cocoEval.accumulate()

@@ -153,7 +153,7 @@ class Widerface2Csv:
 
 
 def handler_widerface():
-    # 标注文件
+    # 这个可以直接创建json
     data_type = 'train'  # val  test
     # type = 'val'
     path_root = os.path.join('M:/AI/datas/widerface', data_type)
@@ -166,6 +166,7 @@ def handler_widerface():
 
 
 def hadler_voc():
+    # 这个可以直接创建json
     mode = 'bbox'  # 'keypoints'  # 'bbox':
     # path_root = r'M:/AI/datas/VOC2012'
     path_root = r'M:/AI/datas/VOC2007'
@@ -266,4 +267,4 @@ if __name__ == '__main__':
     
     '''
     # handler_widerface()
-    hadler_voc()
+    hadler_voc()  # 这个可以直接创建json

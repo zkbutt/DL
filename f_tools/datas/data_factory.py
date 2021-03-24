@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 from tqdm import tqdm
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset
+from f_tools.datas.f_coco.coco_dataset import CocoDataset
 from f_tools.pic.enhance.f_mosaic import f_mosaic_pics_ts
 
 

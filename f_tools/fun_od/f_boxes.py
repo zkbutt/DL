@@ -3,6 +3,8 @@ import torch
 import numpy as np
 from torch.nn import functional as F
 
+from f_tools.GLOBAL_LOG import flog
+
 
 def empty_bboxes(bboxs):
     if isinstance(bboxs, np.ndarray):
@@ -97,6 +99,27 @@ def xywh2ltrb(bboxs):
     return bboxs_
 
 
+def xywh2ltrb4np(bboxs):
+    dim = len(bboxs.shape)
+    bboxs_ = empty_bboxes(bboxs)
+
+    if dim == 2:
+        bboxs_[:, :2] = bboxs[:, :2] - np.ndarray(bboxs[:, 2:], 2)  # lt = xy + wh/2
+        bboxs_[:, 2:] = bboxs_[:, :2] + bboxs[:, 2:]  # rb = nlt + wh
+    elif dim == 3:
+        bboxs_[:, :, :2] = bboxs[:, :, :2] - np.ndarray(bboxs[:, :, 2:], 2)
+        bboxs_[:, :, 2:] = bboxs_[:, :, :2] + bboxs[:, :, 2:]
+    else:
+        raise Exception('维度错误', bboxs.shape)
+    return bboxs_
+
+
+def xywh2ltrb4ts(bboxs):
+    lt = bboxs[..., :2] - torch.true_divide(bboxs[..., 2:], 2)  # lt = xy + wh/2
+    rb = lt + bboxs[..., 2:]  # rb = nlt + wh
+    return torch.cat([lt, rb], -1)
+
+
 def xywh2ltwh(bboxs):
     dim = len(bboxs.shape)
     bboxs_ = empty_bboxes(bboxs)
@@ -154,46 +177,47 @@ def bbox_iou4np(bbox_a, bbox_b):
     return area_i / _area_all  # (2002,2)
 
 
-def bbox_iou4one(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
+def bbox_iou4one(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=False):
     '''
     这个是一一对应  box1  box2
-    :param box1: 多个预测框 (n,4)
-    :param box2: 多个标定框 (n,4)
+    :param box1_ltrb: 多个预测框 (n,4)
+    :param box2_ltrb: 多个标定框 (n,4)
     iou: 目标框不相交时全为0 不能反映如何相交的  --- 重叠面积
     giou: 当目标框完全包裹预测框的时候 退化为iou   --- 中心点距离
     diou: 提高收敛速度及全包裹优化
-    ciou: --- 长宽比
+    ciou: --- 长宽比  CIOU有点不一致
     :return: n
     '''
-    max_lt = torch.max(box1[:, :2], box2[:, :2])  # left-top [N,M,2] 多维组合用法
-    min_rb = torch.min(box1[:, 2:], box2[:, 2:])  # right-bottom [N,M,2]
+    max_lt = torch.max(box1_ltrb[:, :2], box2_ltrb[:, :2])  # left-top [N,M,2] 多维组合用法
+    min_rb = torch.min(box1_ltrb[:, 2:], box2_ltrb[:, 2:])  # right-bottom [N,M,2]
     inter_wh = (min_rb - max_lt).clamp(min=0)  # [N,M,2]
     # inter_area = inter_wh[:, 0] * inter_wh[:, 1]  # [N,M] 降维
     inter_area = torch.prod(inter_wh, dim=1)
 
     # 并的面积
-    area1 = box_area(box1)  # 降维 n
-    area2 = box_area(box2)  # 降维 m
-    union_area = area1 + area2 - inter_area  # 升维n m
+    area1 = box_area(box1_ltrb)  # 降维 n
+    area2 = box_area(box2_ltrb)  # 降维 m
+    union_area = area1 + area2 - inter_area  # A+B-交=并
     union_area = union_area.clamp(min=torch.finfo(torch.float16).eps)
 
-    iou = inter_area / union_area
+    iou = inter_area / union_area  # 交一定小于并
+    # flog.debug('iou %s', iou)
 
     if not (is_giou or is_diou or is_ciou):
         return iou
     else:
         # 最大矩形面积
-        min_lt = torch.min(box1[:, :2], box2[:, :2])
-        max_rb = torch.max(box1[:, 2:], box2[:, 2:])
+        min_lt = torch.min(box1_ltrb[:, :2], box2_ltrb[:, :2])
+        max_rb = torch.max(box1_ltrb[:, 2:], box2_ltrb[:, 2:])
         max_wh = max_rb - min_lt
         if is_giou:
-            max_area = max_wh[:, 0] * max_wh[:, 1] + torch.finfo(torch.float16).eps  # 降维运算
+            max_area = (max_wh[:, 0] * max_wh[:, 1]).clamp(min=torch.finfo(torch.float16).eps)
             giou = iou - (max_area - union_area) / max_area
             return giou
 
         c2 = max_wh[:, 0] ** 2 + max_wh[:, 1] ** 2 + torch.finfo(torch.float16).eps  # 最大矩形的矩离的平方
-        box1_xywh = ltrb2xywh(box1)
-        box2_xywh = ltrb2xywh(box2)
+        box1_xywh = ltrb2xywh(box1_ltrb)
+        box2_xywh = ltrb2xywh(box2_ltrb)
         xw2_xh2 = torch.pow(box1_xywh[:, :2] - box2_xywh[:, :2], 2)  # 中心点距离的平方
         d2 = xw2_xh2[:, 0] + xw2_xh2[:, 1]
         dxy = d2 / c2  # 中心比例距离
@@ -202,19 +226,68 @@ def bbox_iou4one(box1, box2, is_giou=False, is_diou=False, is_ciou=False):
             return diou
 
         if is_ciou:
+            # [3, 1] / [3, 1]  => [3, 1]
             box1_atan_wh = torch.atan(box1_xywh[:, 2:3] / box1_xywh[:, 3:])
             box2_atan_wh = torch.atan(box2_xywh[:, 2:3] / box2_xywh[:, 3:])
-            # torch.squeeze(ts)
+            # torch.Size([3, 1])
             v = torch.pow(box1_atan_wh[:, :] - box2_atan_wh, 2) * (4 / math.pi ** 2)
             v = torch.squeeze(v, -1)  # m,n,1 -> m,n 去掉最后一维
-            v.squeeze_(-1)  # m,n,1 -> m,n 去掉最后一维
-            alpha = v / (1 - iou + v)
+            # v.squeeze_(-1)  # m,n,1 -> m,n 去掉最后一维
+            with torch.no_grad():
+                alpha = v / (1 - iou + v)
             ciou = iou - (dxy + v * alpha)
             return ciou
 
 
+def bbox_iou4y(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False):
+    # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
+    box1 = box1.t()
+    box2 = box2.t()
+
+    # Get the coordinates of bounding boxes
+    if x1y1x2y2:  # x1, y1, x2, y2 = box1
+        b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
+        b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
+    else:  # transform from xywh to xyxy
+        b1_x1, b1_x2 = box1[0] - box1[2] / 2, box1[0] + box1[2] / 2
+        b1_y1, b1_y2 = box1[1] - box1[3] / 2, box1[1] + box1[3] / 2
+        b2_x1, b2_x2 = box2[0] - box2[2] / 2, box2[0] + box2[2] / 2
+        b2_y1, b2_y2 = box2[1] - box2[3] / 2, box2[1] + box2[3] / 2
+
+    # Intersection area
+    inter = (torch.min(b1_x2, b2_x2) - torch.max(b1_x1, b2_x1)).clamp(0) * \
+            (torch.min(b1_y2, b2_y2) - torch.max(b1_y1, b2_y1)).clamp(0)
+
+    # Union Area
+    w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1
+    w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1
+    union = (w1 * h1 + 1e-16) + w2 * h2 - inter
+
+    iou = inter / union  # iou
+    if GIoU or DIoU or CIoU:
+        cw = torch.max(b1_x2, b2_x2) - torch.min(b1_x1, b2_x1)  # convex (smallest enclosing box) width
+        ch = torch.max(b1_y2, b2_y2) - torch.min(b1_y1, b2_y1)  # convex height
+        if GIoU:  # Generalized IoU https://arxiv.org/pdf/1902.09630.pdf
+            c_area = cw * ch + 1e-16  # convex area
+            return iou - (c_area - union) / c_area  # GIoU
+        if DIoU or CIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
+            # convex diagonal squared
+            c2 = cw ** 2 + ch ** 2 + 1e-16
+            # centerpoint distance squared
+            rho2 = ((b2_x1 + b2_x2) - (b1_x1 + b1_x2)) ** 2 / 4 + ((b2_y1 + b2_y2) - (b1_y1 + b1_y2)) ** 2 / 4
+            if DIoU:
+                return iou - rho2 / c2  # DIoU
+            elif CIoU:  # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
+                v = (4 / math.pi ** 2) * torch.pow(torch.atan(w2 / h2) - torch.atan(w1 / h1), 2)
+                with torch.no_grad():
+                    alpha = v / (1 - iou + v)
+                return iou - (rho2 / c2 + v * alpha)  # CIoU
+
+    return iou
+
+
 def box_area(boxes):
-    return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+    return torch.abs(boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
 
 def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):

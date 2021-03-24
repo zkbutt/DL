@@ -2,14 +2,13 @@
 import os
 import sys
 
-
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 from torchvision import models
 from object_detection.z_yolov3.nets.net_yolov3 import Yolo_v3
 from f_pytorch.tools_model.backbones.darknet import darknet53, darknet19
-from f_tools.datas.data_loader import cfg_type2
+from f_tools.datas.data_loader import cfg_type3
 from f_tools.fits.fitting.f_fit_class_base import Train_1gpu
 from torch import optim
 from f_tools.f_torch_tools import load_weight
@@ -40,11 +39,16 @@ def train_eval_set(cfg):
         cfg.IS_COCO_EVAL = False
 
     size = (416, 416)  # type
-    cfg_type2(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg.NUM_ANC = len(cfg.ANCS_SCALE) # cfg_type2 已有
 
     cfg.NUMS_EVAL = {10: 5, 100: 3, 160: 2}
     # cfg.NUM_SAVE_INTERVAL = 100
+
+    '''特有参数'''
+    cfg.MODE_TRAIN = 1  # base
+    cfg.NUM_REG = 1  # 这个是必须
+    cfg.KEEP_SIZE = False  # 有anc建议用这个
 
     # type3 dark19
     # cfg.FILE_NAME_WEIGHT = 't_yolo3_type3_dark19-200_4.841' + '.pth'  # conf-0.01 nms-0.5
@@ -52,10 +56,10 @@ def train_eval_set(cfg):
     # cfg.FILE_NAME_WEIGHT = 't_yolo3_type3_res18-10_220.274' + '.pth'  # conf-0.01 nms-0.5
     cfg.MAPS_VAL = [0.70, 0.47]  # 最高
 
-    cfg.LR0 = 1e-3/1.5
+    cfg.LR0 = 1e-3 / 1.5
     cfg.DEL_TB = True
+    cfg.TB_WRITER = True
     cfg.IS_FORCE_SAVE = False  # 强制记录
-    cfg.KEEP_SIZE = False
 
 
 def init_model(cfg, device, id_gpu=None):

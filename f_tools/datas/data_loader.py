@@ -5,7 +5,7 @@ import torch
 import numpy as np
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import load_od4voc, init_dataloader
-from f_tools.datas.f_coco.convert_data.coco_dataset import CocoDataset, CustomCocoDataset, CustomCocoDataset4cv
+from f_tools.datas.f_coco.coco_dataset import CocoDataset, CustomCocoDataset, CustomCocoDataset4cv
 from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_recover_gt
 from f_tools.pic.enhance.f_data_pretreatment4np import cre_transform_resize4np
 
@@ -109,15 +109,16 @@ def _cfg_base(cfg):
     pass
 
 
-def cfg_voc(cfg):
-    # cfg.BATCH_SIZE = 16
+def cfg_voc(cfg, batch=40, image_size=(448, 448)):
+    cfg.IMAGE_SIZE = image_size
+
+    cfg.BATCH_SIZE = batch
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
 
     cfg.PRINT_FREQ = 20  # 400张图打印
 
-    cfg.IMAGE_SIZE = (512, 512)
-    # cfg.NUM_SAVE_INTERVAL = 1  # epoch+1
-    # cfg.START_EVAL = 3  # epoch
+    cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
+    cfg.START_EVAL = 10  # 1第一轮
 
     cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
     cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
@@ -125,8 +126,8 @@ def cfg_voc(cfg):
 
     cfg.NUM_CLASSES = 20  # 这里要改
     cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
-    cfg.MODE_COCO_TRAIN = 'bbox'  # bbox segm keypoints caption
-    cfg.MODE_COCO_EVAL = 'bbox'  # bbox segm keypoints caption
+    # cfg.MODE_COCO_TRAIN = 'bbox'  # bbox segm keypoints caption
+    # cfg.MODE_COCO_EVAL = 'bbox'  # bbox segm keypoints caption
     cfg.DATA_NUM_WORKERS = 4
 
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_voc'
@@ -137,23 +138,27 @@ def cfg_voc(cfg):
 
     # 训练
     cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/VOCdevkit/JPEGImages'
-    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_train.json'
+    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
+    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_train_5011.json'
 
     # 验证
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_EVAL = cfg.PATH_IMG_TRAIN
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val.json'
+    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_test_4952.json'
+
+    # 暂无需测试集
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
-    cfg.ANCS_SCALE = [
-        [[0.04, 0.056], [0.092, 0.104]],
-        [[0.122, 0.218], [0.254, 0.234]],
-        [[0.326, 0.462], [0.71, 0.572]],
-    ]
+    cfg.ANCS_SCALE = [[0.04, 0.056], [0.092, 0.104],
+                      [0.122, 0.218], [0.254, 0.234],
+                      [0.326, 0.462], [0.71, 0.572],
+                      ]
 
-    # cfg.PIC_MEAN = [0.45320560056079773, 0.43316440952455354, 0.3765994764105359]
-    # cfg.PIC_STD = [0.2196906701893696, 0.21533684244241802, 0.21516573455080967]
+    cfg.ANCHORS_CLIP = True  # 是否剔除超边界
+    cfg.NUMS_ANC = [2, 2, 2]
+
+    cfg.PIC_MEAN = (0.406, 0.456, 0.485)
+    cfg.PIC_STD = (0.225, 0.224, 0.229)
 
 
 '''-----------------------widerface---------------------------------'''
@@ -253,7 +258,7 @@ def cfg_raccoon(cfg, batch=40, image_size=(448, 448)):
 '''-----------------------type3---------------------------------'''
 
 
-def cfg_type2(cfg, batch=40, image_size=(448, 448)):
+def cfg_type3(cfg, batch=40, image_size=(448, 448)):
     # _cfg_base(cfg)
     cfg.IMAGE_SIZE = image_size
 
@@ -271,7 +276,7 @@ def cfg_type2(cfg, batch=40, image_size=(448, 448)):
 
     cfg.NUM_CLASSES = 3
     cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
-    cfg.DATA_NUM_WORKERS = 2
+    cfg.DATA_NUM_WORKERS = 4
 
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'type3'
     cfg.PATH_TENSORBOARD = 'runs_type3'
@@ -306,11 +311,64 @@ def cfg_type2(cfg, batch=40, image_size=(448, 448)):
     cfg.PIC_STD = (0.225, 0.224, 0.229)
 
 
+def cfg_type4(cfg, batch=40, image_size=(448, 448)):
+    # _cfg_base(cfg)
+    cfg.IMAGE_SIZE = image_size
+
+    cfg.BATCH_SIZE = batch
+    cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
+
+    cfg.PRINT_FREQ = 10  # BATCH_SIZE * PRINT_FREQ 张图片
+
+    cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
+    cfg.START_EVAL = 10  # 1第一轮
+
+    cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
+    cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
+    cfg.IS_MOSAIC_FILL = True
+
+    cfg.NUM_CLASSES = 4
+    cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
+    cfg.DATA_NUM_WORKERS = 4
+
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'type4'
+    cfg.PATH_TENSORBOARD = 'runs_type4'
+
+    # cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2012'
+    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2007'
+
+    # 训练
+    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
+    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type4_train_753.json'
+
+    # 验证
+    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type4_val_284.json'
+
+    # 测试
+    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type4_test_407.json'
+
+    cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
+    # Accuracy: 73.32%  [3,3,2]
+    cfg.ANCS_SCALE = [[0.06, 0.06], [0.122, 0.20], [0.2, 0.12],
+                      [0.382, 0.251], [0.262, 0.378], [0.408, 0.529],
+                      [0.861, 0.675], [0.742, 0.824], [0.97, 0.73]]
+    cfg.ANCHORS_CLIP = True  # 是否剔除超边界
+    cfg.NUMS_ANC = [3, 3, 3]
+
+    cfg.PIC_MEAN = (0.406, 0.456, 0.485)
+    cfg.PIC_STD = (0.225, 0.224, 0.229)
+
+
 if __name__ == '__main__':
     from object_detection.z_yolov3.CONFIG_YOLO3 import CFG
 
     cfg = CFG()
-    cfg_type2(cfg)
+    cfg_type3(cfg)
     print(len(cfg.ANCS_SCALE))
     print(np.array(cfg.ANCS_SCALE).shape)  # [3,3,2]
     print(cfg.NUM_ANC)

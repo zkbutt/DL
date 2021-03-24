@@ -37,12 +37,31 @@ from f_tools.fun_od.f_boxes import bbox_iou4one
 # print(a)
 
 # [3,4] * [4,1]
-a = torch.arange(2).reshape(1, 2).type(torch.float)
-a = F.softmax(a, dim=-1)
-# b = torch.arange(2).type(torch.float)
-b = torch.tensor([1,2]).type(torch.float)
-print(a, a.shape)
-print(b[None], b[None].shape)
+# a = torch.arange(2).reshape(1, 2).type(torch.float)
+# a = F.softmax(a, dim=-1)
+# # b = torch.arange(2).type(torch.float)
+# b = torch.tensor([1,2]).type(torch.float)
+# print(a, a.shape)
+# print(b[None], b[None].shape)
+#
+# # [1,2] ^^ [1,2]
+# print(F.linear(a, b[None]))
+import os.path as osp
+import subprocess
+import sys
+from collections import defaultdict
 
-# [1,2] ^^ [1,2]
-print(F.linear(a, b[None]))
+import cv2
+import torch
+import torchvision
+
+# gcc = subprocess.check_output('gcc --version | head -n1', shell=True)
+# gcc = gcc.decode('utf-8').strip()
+# print(gcc)
+a = torch.tensor([
+    [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1]],
+    [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1]]])
+print(a.shape)
+print(a[..., 1])
+a[:, :, 1] = 999
+print(a)

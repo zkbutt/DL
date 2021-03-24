@@ -9,7 +9,7 @@ from collections import OrderedDict
 
 
 def f_freeze_bn(model_nn):
-    '''Freeze BatchNorm layers.'''
+    '''Freeze BatchNorm layers. 冻结BN层'''
     for layer in model_nn.modules():
         if isinstance(layer, nn.BatchNorm2d):
             layer.eval()

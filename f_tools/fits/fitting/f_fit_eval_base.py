@@ -23,6 +23,7 @@ from f_tools.f_torch_tools import save_weight
 import torch.distributed as dist
 
 from f_tools.fits.f_gpu.f_gpu_api import dict_all_gather, get_rank, fis_mgpu, is_main_process
+from f_tools.fits.fitting.fcocoeval import FCOCOeval
 from f_tools.fun_od.f_boxes import ltrb2ltwh, xywh2ltrb
 from f_tools.pic.f_show import f_show_od4ts, f_plot_od4pil, f_show_od4pil, f_plot_od4pil_keypoints, f_plt_od_pil, \
     f_plt_show_pil, show_pic_ts, f_plt_od_np, f_show_od_np4plt, f_show_od_np4cv
@@ -187,7 +188,7 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
 @torch.no_grad()
 def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
                      res_eval=None, tb_writer=None, ann_type='bbox',
-                     device=None, eval_sampler=None, is_keep=False, ):
+                     device=None, eval_sampler=None, is_keep=False):
     '''
 
     :param ann_type:  ['segm', 'bbox', 'keypoints']
@@ -265,7 +266,7 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
                     #          )
 
                     _size = torch.tensor(cfg.IMAGE_SIZE * 2)
-                    coco = data_loader.dataset.coco
+                    coco = data_loader.dataset.coco_obj
                     img_info = coco.loadImgs([image_id])
                     file_img = os.path.join(data_loader.dataset.path_img, img_info[0]['file_name'])
 
@@ -342,16 +343,30 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
 
     maps_val = []
     if len(res_coco) > 0:  # 有 coco 结果
-        coco_gt = data_loader.dataset.coco
+        coco_gt = data_loader.dataset.coco_obj
         # 第一个元素指示操作该临时文件的安全级别，第二个元素指示该临时文件的路径
         _, tmp = tempfile.mkstemp()
         json.dump(res_coco, open(tmp, 'w'))
         coco_dt = coco_gt.loadRes(tmp)
-        coco_eval_obj = COCOeval(coco_gt, coco_dt, ann_type)
+        '''
+        _summarizeDets()->_summarize() 
+            _summarizeDets 函数中调用了12次 _summarize
+            结果在 self.eval['precision'] , self.eval['recall']中 
+        '''
+        # coco_eval_obj = COCOeval(coco_gt, coco_dt, ann_type)
+        coco_eval_obj = FCOCOeval(coco_gt, coco_dt, ann_type)
         coco_eval_obj.params.imgIds = ids_coco  # 多显卡id合并更新
         coco_eval_obj.evaluate()
         coco_eval_obj.accumulate()
-        coco_eval_obj.summarize()
+        # coco_eval_obj.summarize() # 原装生成 coco_eval_obj.stats
+
+        coco_stats, print_coco = coco_eval_obj.summarize()
+        print(print_coco)
+        coco_eval_obj.stats = coco_stats
+
+        clses_name = list(data_loader.dataset.classes_ids)
+        coco_eval_obj.print_clses(clses_name)
+
         maps_val.append(coco_eval_obj.stats[1])
         maps_val.append(coco_eval_obj.stats[7])
 

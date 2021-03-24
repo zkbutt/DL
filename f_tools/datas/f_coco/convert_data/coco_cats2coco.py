@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.f_coco.coco_api import f_show_coco_pics
-from f_tools.datas.f_coco.convert_data.coco_dataset import load_dataset_coco, CocoDataset
+from f_tools.datas.f_coco.coco_dataset import load_dataset_coco, CocoDataset, CustomCocoDataset
 from f_tools.datas.f_coco.convert_data.csv2coco import to_coco, to_coco_v2
 import numpy as np
 
@@ -16,31 +16,33 @@ if __name__ == '__main__':
     '''
     coco出来是 ltwh
     '''
-    mode = 'bbox'  # bbox segm keypoints caption
     path_host = 'M:'
-    # path_host = ''
-    # path_root = path_host + r'/AI/datas/VOC2012'  # 自已的数据集
-    path_root = path_host + r'/AI/datas/VOC2007'  # 自已的数据集
 
-    # type = 'train'
-    # data_type = 'train_5011'  # train2017 val2017 自动匹配json文件名
-
-    type_img = 'val'
-    type_json = 'test'
-    data_type = 'val_1980'  # train2017 val2017 自动匹配json文件名
-    data_type = 'test_2972'  # train2017 val2017 自动匹配json文件名
-
-    name = 'type3' + '_' + type_json  # 文件名
-    s_ids_cats = [3, 8, 12]  # 汽车 1284 ,dog 1341, 人person 9583
+    s_ids_cats = [1, 2, 5, 14]  # aeroplane bicycle bottle motorbike
     nums_cat = [1000, 1000, 1000]  # 类型的最大数量
+    path_root = path_host + r'/AI/datas/VOC2007'
+    # type_json = 'train'  # train, val, test
+    # file_json = path_root + '/coco/annotations/instances_train_5011.json'
+    # path_img = path_root + '/train/JPEGImages'
 
-    path_coco_target = os.path.join(path_root, 'coco/annotations')
-    path_img = os.path.join(path_root, type_img, 'JPEGImages')
+    path_img = path_root + '/val/JPEGImages'
+    # type_json = 'val'  # train, val, test
+    # file_json = path_root + '/coco/annotations/instances_val_1980.json'
 
-    dataset = CocoDataset(path_coco_target, path_img, mode, data_type,
-                          s_ids_cats=s_ids_cats,
-                          nums_cat=nums_cat,
-                          )
+    type_json = 'test'  # train, val, test
+    file_json = path_root + '/coco/annotations/instances_test_2972.json'
+    name = 'type4' + '_' + type_json  # 文件名
+    file = os.path.join(path_root, 'classes_name_type4.txt')  # 指定类别文件,需创建
+
+    mode = 'bbox'  # bbox segm keypoints caption
+
+    dataset = CustomCocoDataset(
+        file_json=file_json,
+        path_img=path_img,
+        mode=mode,
+        s_ids_cats=s_ids_cats,
+        nums_cat=nums_cat
+    )
 
     classes_ids = {}  # name int
     ids_classes = {}  # name int
@@ -51,12 +53,11 @@ if __name__ == '__main__':
         ids_classes[cat_id] = cat_name
         classes_name.append(cat_name)
 
-    file = os.path.join(path_root, 'classes_name_cats.txt')
     if not os.path.exists(file):
         with open(file, 'w') as f:
             f.write(' '.join(classes_name))
 
-    coco = dataset.coco
+    coco = dataset.coco_obj
 
     annotations = []
     no_match = []

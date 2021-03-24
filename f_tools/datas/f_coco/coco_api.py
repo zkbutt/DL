@@ -114,9 +114,9 @@ def t_coco_json():
 
 def t_coco_json2():
     path_host = 'M:'
-    # path_root = path_host + r'/AI/datas/VOC2007'
-    path_root = path_host + r'/AI/datas/raccoon200'
-    file_json = path_root + '/coco/annotations/instances_val2017.json'
+    path_root = path_host + r'/AI/datas/VOC2007'
+    # path_root = path_host + r'/AI/datas/raccoon200'
+    file_json = path_root + '/coco/annotations/instances_train_5011.json'
     # file_json = path_root + '/coco/annotations/instances_type3_train_1096.json'
     # file_json = path_root + '/coco/annotations/instances_train_5011.json'
     path_img = path_root + '/VOCdevkit/JPEGImages'
@@ -127,16 +127,20 @@ def t_coco_json2():
 if __name__ == '__main__':
     '''
     coco出来是 ltwh
+    关联 coco_dataset
     '''
     pylab.rcParams['figure.figsize'] = (8.0, 10.0)
-    coco, path_img = t_coco_json()
+    # 加载coco数据集
+    # coco, path_img = t_coco_json()
+    coco, path_img = t_coco_json2()
 
-    f_show_coco_pics(coco, path_img, ids_img=[279])
+    # 显示一张图片
+    # f_show_coco_pics(coco, path_img, ids_img=[279])
 
-    # 查看具体类 ID从1开始 [{'id': 1, 'name': 'aeroplane'}, {'id': 2, 'name': 'bicycle'}, {'id': 3, 'name': 'bird'}, {'id': 4, 'name': 'boat'}, {'id': 5, 'name': 'bottle'}, {'id': 6, 'name': 'bus'}, {'id': 7, 'name': 'car'}, {'id': 8, 'name': 'cat'}, {'id': 9, 'name': 'chair'}, {'id': 10, 'name': 'cow'}, {'id': 11, 'name': 'diningtable'}, {'id': 12, 'name': 'dog'}, {'id': 13, 'name': 'horse'}, {'id': 14, 'name': 'motorbike'}, {'id': 15, 'name': 'person'}, {'id': 16, 'name': 'pottedplant'}, {'id': 17, 'name': 'sheep'}, {'id': 18, 'name': 'sofa'}, {'id': 19, 'name': 'train'}, {'id': 20, 'name': 'tvmonitor'}]
-    # cats = coco.loadCats(coco.getCatIds())
-    # nms = [cat['name'] for cat in cats]  # 单独获取 类别名称（category name）
-    # print('COCO categories: \n{}\n'.format(' '.join(nms)))
+    # 查看具体类名 ID从1开始 [{'id': 1, 'name': 'aeroplane'}, {'id': 2, 'name': 'bicycle'}, {'id': 3, 'name': 'bird'}, {'id': 4, 'name': 'boat'}, {'id': 5, 'name': 'bottle'}, {'id': 6, 'name': 'bus'}, {'id': 7, 'name': 'car'}, {'id': 8, 'name': 'cat'}, {'id': 9, 'name': 'chair'}, {'id': 10, 'name': 'cow'}, {'id': 11, 'name': 'diningtable'}, {'id': 12, 'name': 'dog'}, {'id': 13, 'name': 'horse'}, {'id': 14, 'name': 'motorbike'}, {'id': 15, 'name': 'person'}, {'id': 16, 'name': 'pottedplant'}, {'id': 17, 'name': 'sheep'}, {'id': 18, 'name': 'sofa'}, {'id': 19, 'name': 'train'}, {'id': 20, 'name': 'tvmonitor'}]
+    cats = coco.loadCats(coco.getCatIds())
+    nms = [cat['name'] for cat in cats]  # 单独获取 类别名称（category name）
+    print('COCO categories: \n{}\n'.format(' '.join(nms)))
 
     # 大类 自已的数据集没有大类
     # nms = set([cat['supercategory'] for cat in cats])
@@ -147,9 +151,9 @@ if __name__ == '__main__':
     # print(dataset)
 
     '''---------------分析--------------'''
-    # ids = coco.getImgIds()
-    # for i in ids:
-    #     _img_info = coco.loadImgs(i)[0]
-    #     # print(_img_info)
-    #     w, h = _img_info['width'], _img_info['height']
+    ids = coco.getImgIds()
+    for i in ids:
+        _img_info = coco.loadImgs(i)[0]
+        # print(_img_info)
+        w, h = _img_info['width'], _img_info['height']
     # f_look_coco_type(coco)

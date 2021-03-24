@@ -8,7 +8,8 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_gpu.f_gpu_api import fis_mgpu, is_main_process
 
 
-def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=torch.device('cpu'), is_mgpu=False):
+def load_weight(file_weight, model, optimizer=None, lr_scheduler=None,
+                device=torch.device('cpu'), is_mgpu=False, ffun=None):
     start_epoch = 0
 
     # 只匹配需要的
@@ -47,19 +48,25 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None, device=to
         #     flog.error('已特殊加载 feadre 权重文件为 %s', file_weight)
         #     return start_epoch
 
+        ''' debug '''
+        if ffun is not None:
+            pretrained_dict = ffun(pretrained_dict)
+
         dd = {}
+
+        # 多GPU处理
         ss = 'module.'
-        if is_mgpu:
-            for k, v in pretrained_dict.items():
+        for k, v in pretrained_dict.items():
+            if is_mgpu:
                 if ss not in k:
                     dd[ss + k] = v
                 else:
                     dd = pretrained_dict
                     break
                     # dd[k] = v
-        else:
-            for k, v in pretrained_dict.items():
+            else:
                 dd[k.replace(ss, '')] = v
+                
         '''重组权重'''
         # load_weights_dict = {k: v for k, v in weights_dict.items()
         #                      if model.state_dict()[k].numel() == v.numel()}

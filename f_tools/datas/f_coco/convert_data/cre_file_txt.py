@@ -108,4 +108,4 @@ if __name__ == '__main__':
 
     # spilt_data2folder(r'M:\datas\flower_data\flower_photos')
     # spilt_voc2txt(path, val_rate=256)
-    spilt_voc2txt(path, val_rate=0.4)  # 为0不要验证集
+    spilt_voc2txt(path, val_rate=0)  # 为0不要验证集

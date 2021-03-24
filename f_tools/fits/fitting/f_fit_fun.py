@@ -1,7 +1,10 @@
+import random
+
 import cv2
 import matplotlib
 import torch
 import numpy as np
+from torch.backends import cudnn
 
 from f_tools.GLOBAL_LOG import flog
 import socket
@@ -25,6 +28,14 @@ def init_od_e(cfg, seed=0):
     np.random.seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    # from yolo5 Speed-reproducibility tradeoff https://pytorch.org/docs/stable/notes/randomness.html
+    torch.manual_seed(seed)
+    if seed == 0:  # slower, more reproducible
+        cudnn.benchmark, cudnn.deterministic = False, True
+    else:  # faster, less reproducible
+        cudnn.benchmark, cudnn.deterministic = True, False
 
     if cfg.IS_MULTI_SCALE:
         cfg.tcfg_size = [640, 640]
@@ -199,7 +210,7 @@ def show_train_info(cfg, loader_train, loader_val_coco):
         flog.debug('%s dataset_val 数量: %s' % (cfg.PATH_TENSORBOARD, len(loader_val_coco.dataset)))
         flog.debug('loader_val_coco 类型 %s' % loader_val_coco.dataset.ids_classes)
     flog.debug('cfg.BATCH_SIZE---%s' % cfg.BATCH_SIZE)
-    flog.warning('cfg.LOSS_WEIGHT--- %s' % cfg.LOSS_WEIGHT)
+    # flog.warning('cfg.LOSS_WEIGHT--- %s' % cfg.LOSS_WEIGHT)
 
 
 if __name__ == '__main__':

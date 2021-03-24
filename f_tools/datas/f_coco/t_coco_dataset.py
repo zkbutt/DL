@@ -9,7 +9,7 @@ from f_tools.pic.f_show import f_show_3box4pil
 
 def data_clean(coco_obj, coco_img_ids, catid2clsid, path_img=None):
     '''
-
+    用于加载coco 查看和清理无效GT 后用于训练
     :param coco_obj:
     :param coco_img_ids:
     :param catid2clsid: {1: 0, 2: 1, 3: 2}
@@ -99,7 +99,8 @@ if __name__ == '__main__':
     file_json = path_root + '/coco/annotations/instances_train_5011.json'
     path_img = path_root + '/train/JPEGImages'
 
-    s_ids_cats = [3, 8, 12]  # 只选部分
+    # s_ids_cats = [3, 8, 12]  # 只选部分
+    s_ids_cats = [1, 2, 5, 14]  # 只选部分
     # s_ids_cats = []  # 只选部分
 
     coco_obj = COCO(file_json)
@@ -122,5 +123,5 @@ if __name__ == '__main__':
     print('共 %s 图' % len(coco_img_ids))
 
     # {'im_file': 'M:/AI/datas/VOC2007/train/JPEGImages\\008138.jpg', 'im_id': array([0]), 'h': 333.0, 'w': 500.0, 'is_crowd': array([[0]]), 'gt_class': array([[0]]), 'anno_id': [0], 'gt_bbox': array([[ 47.,  44., 389., 243.]], dtype=float32), 'gt_score': array([[1.]], dtype=float32), 'gt_poly': [[[47, 44, 47, 144.0, 47, 244, 218.5, 244, 390, 244, 390, 144.0, 390, 44, 218.5, 44]]]}
-    train_records = data_clean(coco_obj, coco_img_ids, idcat2idcls, path_img)
+    # train_records = data_clean(coco_obj, coco_img_ids, idcat2idcls, path_img)
     print()

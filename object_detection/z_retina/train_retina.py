@@ -5,8 +5,9 @@ import sys
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
+# sys.path.insert(0, '.') # 这个能否使用待测试
 from object_detection.z_retina.nets.net_retina import Retina2, Retina3
-from f_tools.datas.data_loader import cfg_type2
+from f_tools.datas.data_loader import cfg_type3, cfg_voc
 from f_tools.fits.fitting.f_fit_class_base import Train_1gpu
 from f_tools.GLOBAL_LOG import flog
 
@@ -20,13 +21,9 @@ from f_tools.fits.f_gpu.f_gpu_api import model_device_init
 from object_detection.z_retina.CONFIG_RETINAFACE import CFG
 
 '''
+tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_retina/runs_voc
+正反例  3614：1(未减正例)
 
-ap_55_33_conf0.3    
-ap_66_45_conf0.3    匹配加缩放系数 相当于对lxy损失系数放大10   lwh损失系数放大5
-ap_64_44_conf0.3    [5, 5, 1, 1, 1]
-ap_34_35_conf0.3    90轮 atss [1, 1, 1, 1, 1]
-ap_28_33_conf0.01   fl
-atss [3, 3, 1, 1, 1] 改成9个训不出来
 '''
 
 
@@ -38,31 +35,35 @@ def train_eval_set(cfg):
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
-    # batch = 32  # type
+    batch = 64  # type
     # batch = 16  # type
-    batch = 5  # type
+    # batch = 5  # type
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 2
         cfg.IS_COCO_EVAL = False
 
     size = (416, 416)  # type
-    cfg_type2(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    # cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    cfg_voc(cfg, batch=batch, image_size=size)  # 加载数据基础参数
 
     cfg.NUMS_EVAL = {10: 5, 100: 3, 150: 1}
-    # cfg.NUM_SAVE_INTERVAL = 100
 
+    '''特有参数'''
+    cfg.MODE_TRAIN = 1  # base  带conf 使用3倍难例挖掘
+    # cfg.MODE_TRAIN = 2  # 不带conf
+    cfg.NUM_REG = 1  # 这个是必须
+    cfg.KEEP_SIZE = False  # 有anc建议用这个
     cfg.variances = (0.1, 0.2)
 
     # type3 dark19
     # cfg.FILE_NAME_WEIGHT = 'zz/t_yolo2_type3_dark19c0.01-137_3.94_p73.5_r49.8' + '.pth'  # conf-0.01 nms-0.5
     # cfg.FILE_NAME_WEIGHT = 't_retina_type3-10_366.704' + '.pth'  # conf-0.01 nms-0.5
-    # cfg.FILE_NAME_WEIGHT = 't_retina_type3-50_220.132' + '.pth'  # conf-0.01 nms-0.5
-    # cfg.FILE_NAME_WEIGHT = 't_retina_type3-90_5.55' + '.pth'  # conf-0.01 nms-0.5
-    cfg.MAPS_VAL = [0.662, 0.458]  # 最高
+    # cfg.FILE_NAME_WEIGHT = 't_retina_type3_res50-10_6.695' + '.pth'
+    cfg.MAPS_VAL = [0.672, 0.48095764814812036]  # 最高
 
-    cfg.LR0 = 1e-3 / 1.5
-    cfg.DEL_TB = True
+    cfg.LR0 = 1e-3 / 2
     cfg.TB_WRITER = True
+    cfg.DEL_TB = True
     cfg.IS_FORCE_SAVE = False  # 强制记录
 
 
@@ -86,6 +87,7 @@ def init_model(cfg, device, id_gpu=None):
 
     cfg.FEATURE_MAP_STEPS = [8, 16, 32, 64, 128]
 
+    # 每层特图5个anc
     cfg.NUMS_ANC = [1, 1, 1, 1, 1]
     cfg.ANCS_SCALE = [[0.078, 0.07775],
                       [0.174, 0.164],
@@ -110,8 +112,8 @@ def init_model(cfg, device, id_gpu=None):
     #                   [0.61, 0.882],
     #                   [0.92, 0.74231]]
     # cfg.LOSS_WEIGHT = [1, 1, 1, 1, 1]  # conf_pos conf_neg cls loss_txty  loss_twth
-    # model = Retina2(model, cfg, device)
-    model = Retina3(model, cfg, device)
+    model = Retina2(model, cfg, device)
+    # model = Retina3(model, cfg, device)
 
     # cfg.NUMS_ANC = [3, 3, 3]
     # cfg.FEATURE_MAP_STEPS = [8, 16, 32]
@@ -128,7 +130,7 @@ def init_model(cfg, device, id_gpu=None):
     optimizer = optim.Adam(pg, lr=cfg.LR0)
     # 两次不上升，降低一半
     # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5, verbose=True)
-    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [50, 80, 120], 0.1)
+    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [50, 70, 100], 0.1)
     start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg

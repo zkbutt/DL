@@ -8,7 +8,7 @@ import torch
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_loader import DataLoader2
-from f_tools.datas.f_coco.convert_data.coco_dataset import CustomCocoDataset4cv
+from f_tools.datas.f_coco.coco_dataset import CustomCocoDataset4cv
 from f_tools.device.f_device import init_video
 from f_tools.fits.f_predictfun import label_nms
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4one, f_prod_vodeo
@@ -82,7 +82,7 @@ class Predicting_Base(nn.Module):
 
         :param outs: 通过pconf pcls 计算分数
         :return:
-            pscores : 这个用于判断
+            pscores : 这个用于判断 生成 mask_pos
             plabels : 这个用于二阶段
             pconf : 用于显示conf的统计值
         '''
@@ -103,6 +103,12 @@ class Predicting_Base(nn.Module):
         '''
 
     def forward(self, outs, imgs_ts=None):
+        '''
+
+        :param outs:
+        :param imgs_ts: 图片预处理输出
+        :return:
+        '''
         cfg = self.cfg
         outs, device = self.p_init(outs)
 
@@ -116,7 +122,7 @@ class Predicting_Base(nn.Module):
                                                                           ))
             return [None] * 5
 
-        _i = 500
+        _i = 500  # 这个是 topk 阀值
         if pscores.shape[1] > _i:
             # 最大1000个
             ids_topk = pscores.topk(_i, dim=-1)[1]  # torch.Size([32, 1000])

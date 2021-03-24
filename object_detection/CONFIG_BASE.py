@@ -40,18 +40,19 @@ class CfgBase:
     IS_VISUAL_PRETREATMENT = False  # 图片预处理
 
     IS_MIXTURE_FIX = True  # 这个不要动 半精度训练
-    EPOCH_WARMUP = 2
+    EPOCH_WARMUP = 1  # 这个控制热身的 epoch 1是只热身一次
     FORWARD_COUNT = 1  # 多次迭代再反向
 
-    tcfg_epoch = None
+    tcfg_epoch = None  # 多尺寸训练时用
+    MODE_TRAIN = 1  # 自定义多种训练方式  及损失函数 通过备注
     # import getpass
     # # 获取当前系统用户名
     # user_name = getpass.getuser()
     # # 获取当前系统用户目录
     # user_home = os.path.expanduser('~')
 
-    loss_args = {
-        's_match': 'log_g',  # 'log' 'whoned' 'log_g'
-        's_conf': 'ohem',  # 'mse' 'foc' 'ohem'
-        's_cls': 'bce',  # 'bce'  'ce'
-    }
+    # loss_args = {
+    #     's_match': 'log_g',  # 'log' 'whoned' 'log_g'
+    #     's_conf': 'ohem',  # 'mse' 'foc' 'ohem'
+    #     's_cls': 'bce',  # 'bce'  'ce'
+    # }

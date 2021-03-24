@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
-from f_tools.datas.f_coco.convert_data.coco_dataset import load_dataset_coco
+from f_tools.datas.f_coco.coco_dataset import load_dataset_coco
 from f_tools.f_general import show_time
 from f_tools.fun_od.f_boxes import ltrb2xywh
 from f_tools.fun_od.kmeans_anc.kmeans import kmeans, avg_iou
@@ -46,10 +46,13 @@ def load_coco_boxes(keep=False, is_calc_pic_mean=True):
     :return:
     '''
     mode = 'bbox'  # bbox segm keypoints caption
+
+    '''改这个的coco路径'''
     path_img, dataset = load_dataset_coco(mode)
     # path_img, dataset = load_raccoon(mode)
+
     print('len(dataset)', len(dataset))
-    coco = dataset.coco
+    # coco = dataset.coco_obj
 
     boxes_wh = []
     for data in tqdm(dataset):
@@ -109,14 +112,14 @@ if __name__ == '__main__':
     VOC2012 17125 18 Accuracy: 75.18%
     输出anc的归一化比例
     '''
-    clusters = 5
-    size_in = [416, 416]
+    clusters = 30
+    size_in = [300, 300]
     # size_in = [512, 512]
 
     '''-------------加载box--------------'''
     # data = load_voc_boxes() # voc直接计算,类型数据
-    data = load_coco_boxes(keep=False, is_calc_pic_mean=False)  # 基本用这个 coco_dataset
-    # data = load_coco_boxes(keep=False, is_calc_pic_mean=True)  # 基本用这个 coco_dataset
+    data = load_coco_boxes(keep=False, is_calc_pic_mean=False)  # 基本用这个keep=False coco_dataset
+    # data = load_coco_boxes(keep=False, is_calc_pic_mean=True)
     # 计算anc尺寸 和图片均值
     show_time(calc_anc_size, data, clusters, size_in)
 

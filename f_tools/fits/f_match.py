@@ -9,48 +9,122 @@ from f_tools.pic.f_show import f_show_od_np4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 from object_detection.z_center.utils import gaussian_radius, draw_gaussian
 
-'''-------------------------------解码--------------------------'''
+'''-------------------------------YOLO1 编解码--------------------------'''
+
+
+def boxes_encode4yolo1(gboxes_ltrb, grid_h, grid_w, device, cfg):
+    '''
+    编码 GT 直接预测特图的 wh
+    :param gboxes_ltrb: 归一化尺寸
+    :param grid_h:
+    :param grid_w:
+    :return: 返回特图回归系数
+    '''
+    # ltrb -> xywh 原图归一化   编码xy与yolo2一样的
+    gboxes_xywh = ltrb2xywh(gboxes_ltrb)
+    whs = gboxes_xywh[:, 2:]
+    # 算出中间点所在的格子
+    cxys = gboxes_xywh[:, :2]
+    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
+    index_colrow = (cxys * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xys = torch.true_divide(index_colrow, grid_h)  # 网络index 对应归一化的实距
+
+    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
+    twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 直接预测特图长宽 log减小差距
+    txywhs_g = torch.cat([txys, twhs], dim=-1)
+
+    # 小目标损失加重
+    weights = 2.0 - torch.prod(whs, dim=-1)
+    return txywhs_g, weights, index_colrow
 
 
 def boxes_decode4yolo1(ptxywh, grid_h, grid_w, cfg):
     '''
-    解码
+    解码出来是特图
     :param ptxywh: 预测的是在特图的 偏移 和 缩放比例
-    :param grid_h:
-    :param grid_w:
     :param cfg:
-    :return: 输出归一化
+    :return: 输出原图归一化
     '''
     device = ptxywh.device
+    # 单一格子偏移 + 特图格子偏移
     _xy_grid = torch.sigmoid(ptxywh[:, :, :2]) \
                + f_mershgrid(grid_h, grid_w, is_rowcol=False, num_repeat=cfg.NUM_ANC).to(device)
     hw_ts = torch.tensor((grid_h, grid_w), device=device)  # /13
-    ptxywh[:, :, :2] = torch.true_divide(_xy_grid, hw_ts)  # 原图归一化
-
-    if cfg.loss_args['s_match'] == 'whoned':
-        ptxywh[:, :, 2:4] = torch.sigmoid(ptxywh[:, :, 2:])
-    elif cfg.loss_args['s_match'] == 'log':
-        ptxywh[:, :, 2:4] = torch.exp(ptxywh[:, :, 2:]) / cfg.IMAGE_SIZE[0]  # wh log-exp
-    elif cfg.loss_args['s_match'] == 'log_g':
-        ptxywh[:, :, 2:4] = torch.exp(ptxywh[:, :, 2:]) / grid_h  # 原图归一化
-    else:
-        raise Exception('类型错误')
-    # return ptxywh
+    zxy = torch.true_divide(_xy_grid, hw_ts)  # 特图-》 原图归一化
+    zwh = torch.exp(ptxywh[:, :, 2:]) / grid_h  # 特图-》原图归一化
+    zxywh = torch.cat([zxy, zwh], -1)
+    zltrb = xywh2ltrb(zxywh)
+    return zltrb
 
 
-def boxes_decode4yolo2(ptxywh, grid_h, grid_w, cfg):
+'''-------------------------------YOLO2 编解码--------------------------'''
+
+
+def boxes_encode4yolo2(gboxes_ltrb_b, mask_p, grid_h, grid_w, device, cfg):
+    '''
+    编码GT
+    :param gboxes_ltrb_b: 归一化尺寸
+    :return:
+    '''
+    # ltrb -> xywh 原图归一化  编码xy与yolo1一样的
+    gboxes_xywh = ltrb2xywh(gboxes_ltrb_b)
+    whs = gboxes_xywh[:, 2:]
+    # 算出中间点所在的格子
+    cxys = gboxes_xywh[:, :2]
+    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
+    colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xys = torch.true_divide(colrows_index, grid_h)  # 网络index 对应归一化的实距
+    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
+
+    # twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
+    ancs_wh_ts = torch.tensor(cfg.ANCS_SCALE, device=device)[mask_p]
+    # torch.Size([1, 2]) ^ torch.Size([5, 2]) = [5,2]
+    twhs = (whs / ancs_wh_ts).log()  # 特图长宽 log减小差距
+
+    txywhs_g = torch.cat([txys, twhs], dim=-1)
+    # 正例的conf
+    weights = 2.0 - torch.prod(whs, dim=-1)
+    return txywhs_g, weights, colrows_index
+
+
+def boxes_encode4yolo2_4iou(gboxes_ltrb_b, preg_b, match_anc_ids, grid_h, grid_w, device, cfg):
+    '''
+    编码GT
+    :param gboxes_ltrb_b: 归一化尺寸
+    :param preg_b: yolo2只有一层 特图
+    :return:
+    '''
+    # ltrb -> xywh 原图归一化  编码xy与yolo1一样的
+    gboxes_xywh = ltrb2xywh(gboxes_ltrb_b)
+    whs = gboxes_xywh[:, 2:]
+
+    cxys = gboxes_xywh[:, :2]
+    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
+    colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
+    offset_xys = torch.true_divide(colrows_index, grid_h)  # 网络index 对应归一化的实距
+    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
+
+    # twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
+    ancs_wh_ts = torch.tensor(cfg.ANCS_SCALE, device=device)[match_anc_ids]
+    # torch.Size([1, 2]) ^ torch.Size([5, 2]) = [5,2]
+    twhs = (whs / ancs_wh_ts).log()  # 特图长宽 log减小差距
+
+    txywhs_g = torch.cat([txys, twhs], dim=-1)
+    # 正例的conf
+    weights = 2.0 - torch.prod(whs, dim=-1)
+    return txywhs_g, weights, colrows_index
+
+
+def boxes_decode4yolo2(preg, grid_h, grid_w, cfg):
     '''
     解码  4维 -> 3维
     用于计算 iou得conf   及 预测
-    :param ptxywh: 原始预测 torch.Size([32, 169, 5, 4]) -> [3, 169*5, 4]
-    :param grid_h:
-    :param grid_w:
-    :param cfg:
+    :param preg: 原始预测 torch.Size([32, 169, 5, 4]) -> [3, 169*5, 4]
     :return: 输出原图归一化 [3, 169*5, 4]
     '''
-    device = ptxywh.device
+    device = preg.device
     # 特图xy -> 原图
-    pxy = torch.sigmoid(ptxywh[:, :, :, :2]) \
+    pxy = torch.sigmoid(preg[:, :, :, :2]) \
           + f_mershgrid(grid_h, grid_w, is_rowcol=False, num_repeat=cfg.NUM_ANC) \
               .to(device).reshape(-1, cfg.NUM_ANC, 2)
     pxy = pxy / grid_h
@@ -58,14 +132,17 @@ def boxes_decode4yolo2(ptxywh, grid_h, grid_w, cfg):
     # 特图wh比例 -> 原图
     ancs_wh_ts = torch.tensor(cfg.ANCS_SCALE, device=device)
     # 比例 ( 比例不需要转换 ) * 特图anc_wh
-    pwh = torch.exp(ptxywh[:, :, :, 2:4]) * ancs_wh_ts  # torch.Size([3, 361, 5, 2])
+    pwh = torch.exp(preg[:, :, :, 2:4]) * ancs_wh_ts  # torch.Size([3, 361, 5, 2])
     # fdebug 可视化匹配的anc
     # pwh = ancs_ts.view(1, 1, *ancs_ts.shape).repeat(*ptxywh[:, :, :, 2:4].shape[:2], 1, 1)
 
     pxywh = torch.cat([pxy, pwh], -1)  # torch.Size([3, 169, 5, 4])
-    pxywh = pxywh.view(ptxywh.shape[0], -1, 4)  # 原图归一化 [3, 169, 5, 4] -> [3, 169*5, 4]
+    pxywh = pxywh.view(preg.shape[0], -1, 4)  # 原图归一化 [3, 169, 5, 4] -> [3, 169*5, 4]
     pltrb = xywh2ltrb(pxywh)
     return pltrb
+
+
+'''-------------------------------YOLO3 编解码--------------------------'''
 
 
 def boxes_decode4yolo3(ptxywh, cfg):
@@ -110,6 +187,60 @@ def boxes_decode4yolo3(ptxywh, cfg):
     return pltrb
 
 
+'''-------------------------------SSD 编解码--------------------------'''
+
+
+def boxes_encode4ssd(cfg, ancs_xywh, gboxes_xywh_match):
+    ''' 与 retina 一致 '''
+    txy = 10 * (gboxes_xywh_match[..., :2] - ancs_xywh[..., :2]) / ancs_xywh[..., 2:]
+    twh = 5 * (gboxes_xywh_match[..., 2:] / ancs_xywh[..., 2:]).log()
+    _gtxywh = torch.cat([txy, twh], dim=-1)
+    return _gtxywh
+
+
+def boxes_decode4ssd(cfg, preg, ancs_xywh):
+    gxy = 0.1 * preg[..., :2] * ancs_xywh[..., 2:] + ancs_xywh[..., :2]
+    gwh = (0.2 * preg[..., 2:]).exp() * ancs_xywh[..., 2:]
+    _gtxywh = torch.cat([gxy, gwh], dim=-1)
+    return _gtxywh
+
+
+'''-------------------------------retina 编解码--------------------------'''
+
+
+def boxes_encode4retina(cfg, anc_obj, gboxes_ltrb):
+    '''
+    用anc同维 和 已匹配的GT 计算差异
+    :param cfg: cfg.tnums_ceng cfg.NUMS_ANC [8112, 2028, 507]  用于动态层 dim 数
+    :param anc_obj:
+        ancs_xywh  (nn,4) torch.Size([1, 16800, 4]) torch.Size([10647, 4])
+        anc_obj.nums_dim_feature: [24336, 6084, 1521, 441, 144]
+    :param gboxes_ltrb: gt torch.Size([5, 16800, 4]) torch.Size([10647, 4])
+    :return: 计算差异值   对应xywh torch.Size([10647, 4])
+    '''
+    nums_ceng_np = np.array(anc_obj.nums_level, dtype=np.int32)
+    nums_anc_np = np.array(cfg.NUMS_ANC, dtype=np.float32)
+    grids_np = np.sqrt((nums_ceng_np / nums_anc_np))  # [ 52 26 13 7 4]
+    match_grids_ts = torch.tensor(np.repeat(grids_np, nums_ceng_np, axis=-1), device=anc_obj.device, dtype=torch.float)
+    match_grids_ts = match_grids_ts.view(-1, 1)  # torch.Size([32526, 1]) -> [32526, 4]
+
+    gxywh = ltrb2xywh(gboxes_ltrb)
+    gxywh_t = gxywh * match_grids_ts
+
+    if gboxes_ltrb.dim() == 2:
+        anc_xywh_t = anc_obj.ancs_xywh * match_grids_ts
+        _a = 10 * (gxywh_t[:, :2] - anc_xywh_t[:, :2]) / anc_xywh_t[:, 2:]
+        _b = 5 * (gxywh_t[:, 2:] / anc_xywh_t[:, 2:]).log()
+    elif gboxes_ltrb.dim() == 3:
+        anc_xywh_t = anc_obj.ancs_xywh.unsqueeze(0) * match_grids_ts
+        _a = 10 * (gxywh_t[:, :, :2] - anc_xywh_t[:, :, :2]) / anc_xywh_t[:, :, 2:]
+        _b = 5 * (gxywh_t[:, :, 2:] / anc_xywh_t[:, :, 2:]).log()
+    else:
+        raise Exception('维度错误', anc_obj.ancs_xywh.shape)
+    _gtxywh = torch.cat([_a, _b], dim=-1)
+    return _gtxywh
+
+
 def boxes_decode4retina(cfg, anc_obj, ptxywh, variances=(0.1, 0.2)):
     '''
     需要统一 一维和二维
@@ -133,25 +264,45 @@ def boxes_decode4retina(cfg, anc_obj, ptxywh, variances=(0.1, 0.2)):
         _anc_wh = anc_xywh_t[:, 2:]
         _pxy = ptxywh_t[:, :2]
         _pwh = ptxywh_t[:, 2:]
-        xy = _anc_xy + _pxy * variances[0] * _anc_wh
-        wh = _anc_wh * torch.exp(_pwh * variances[1])
-        # xy = _anc_xy + _pxy * _anc_wh
-        # wh = _anc_wh * torch.exp(_pwh)
     elif ptxywh.dim() == 3:
         anc_xywh_t = anc_obj.ancs_xywh.unsqueeze(0) * match_grids_ts
         _anc_xy = anc_xywh_t[:, :, :2]
         _anc_wh = anc_xywh_t[:, :, 2:]
         _pxy = ptxywh_t[:, :, :2]
         _pwh = ptxywh_t[:, :, 2:]
-        xy = _anc_xy + _pxy * variances[0] * _anc_wh
-        wh = _anc_wh * torch.exp(_pwh * variances[1])
-        # xy = _anc_xy + _pxy * _anc_wh
-        # wh = _anc_wh * torch.exp(_pwh)
     else:
         raise Exception('维度错误', anc_obj.ancs_xywh.shape)
+    xy = _anc_xy + _pxy * 0.1 * _anc_wh
+    wh = _anc_wh * torch.exp(_pwh * 0.2)
     _pxywh = torch.cat([xy, wh], dim=-1)
     _pxywh = _pxywh / match_grids_ts
     return _pxywh
+
+
+'''------------------------------- 其他 --------------------------'''
+
+
+def boxes_encode4distribute(cfg, anc_obj, gboxes_ltrb_match, max_dis):
+    '''
+    for dfl
+    :param cfg:
+    :param anc_obj:
+    :param gboxes_ltrb_match:
+    :param max_dis: 根据定义的向量数 限制在向量-1 值以内
+    :return:
+    '''
+    # anc 归一化 -> anc特图
+    match_grids_ts, anc_xywh_t = anc_obj.match_anc_grids()
+    gboxes_ltrb_t = gboxes_ltrb_match * match_grids_ts
+
+    pt_lt = anc_xywh_t[:, :2] - gboxes_ltrb_t[:, :2]
+    pt_rb = gboxes_ltrb_t[:, 2:] - anc_xywh_t[:, :2]
+    gt_ltrb_t = torch.cat([pt_lt, pt_rb], -1)
+
+    eps = torch.finfo(torch.float16).eps
+    gt_ltrb_t.clamp_(min=0, max=max_dis - eps)  # 无需计算梯度
+
+    return gt_ltrb_t
 
 
 def boxes_decode4gfl(cfg, anc_obj, preg_32d_b, is_clamp=False, gboxes_ltrb_match=None):
@@ -247,124 +398,6 @@ def boxes_decode4distribute(cfg, anc_obj, preg_32d_b, is_clamp=False, gboxes_ltr
         return boxes_ltrb, ious_zg
 
     return boxes_ltrb
-
-
-'''-------------------------------编码--------------------------'''
-
-
-def boxes_encode4yolo1(gboxes_ltrb, grid_h, grid_w, device, cfg):
-    '''
-    编码GT
-    :param gboxes_ltrb: 归一化尺寸
-    :param grid_h:
-    :param grid_w:
-    :param device:
-    :param cfg:
-    :return: 返回特图回归系数
-    '''
-    # ltrb -> xywh 原图归一化   编码xy与yolo2一样的
-    gboxes_xywh = ltrb2xywh(gboxes_ltrb)
-    whs = gboxes_xywh[:, 2:]
-
-    cxys = gboxes_xywh[:, :2]
-    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
-    index_colrow = (cxys * grids_ts).type(torch.int16)  # 网格7的index
-    offset_xys = torch.true_divide(index_colrow, grid_h)  # 网络index 对应归一化的实距
-
-    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
-    twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
-    txywhs_g = torch.cat([txys, twhs], dim=-1)
-
-    # 小目标损失加重
-    weights = 2.0 - torch.prod(whs, dim=-1)
-    return txywhs_g, weights, index_colrow
-
-
-def boxes_encode4yolo2(gboxes_ltrb, mask_p, grid_h, grid_w, device, cfg):
-    '''
-    编码GT
-    :param gboxes_ltrb: 归一化尺寸
-    :param grid_h:
-    :param grid_w:
-    :param device:
-    :param cfg:
-    :return:
-    '''
-    # ltrb -> xywh 原图归一化  编码xy与yolo1一样的
-    gboxes_xywh = ltrb2xywh(gboxes_ltrb)
-    whs = gboxes_xywh[:, 2:]
-
-    cxys = gboxes_xywh[:, :2]
-    grids_ts = torch.tensor([grid_h, grid_w], device=device, dtype=torch.int16)
-    colrows_index = (cxys * grids_ts).type(torch.int16)  # 网格7的index
-    offset_xys = torch.true_divide(colrows_index, grid_h)  # 网络index 对应归一化的实距
-    txys = (cxys - offset_xys) * grids_ts  # 特图偏移
-
-    # twhs = (whs * torch.tensor(grid_h, device=device)).log()  # 特图长宽 log减小差距
-    ancs_wh_ts = torch.tensor(cfg.ANCS_SCALE, device=device)[mask_p]
-    # torch.Size([1, 2]) ^ torch.Size([5, 2]) = [5,2]
-    twhs = (whs / ancs_wh_ts).log()  # 特图长宽 log减小差距
-
-    txywhs_g = torch.cat([txys, twhs], dim=-1)
-    # 正例的conf
-    weights = 2.0 - torch.prod(whs, dim=-1)
-    return txywhs_g, weights, colrows_index
-
-
-def boxes_encode4retina(cfg, anc_obj, gboxes_ltrb, variances=(0.1, 0.2)):
-    '''
-    用anc同维 和 已匹配的GT 计算差异
-    :param cfg: cfg.tnums_ceng cfg.NUMS_ANC [8112, 2028, 507]  用于动态层 dim 数
-    :param anc_obj:
-        ancs_xywh  (nn,4) torch.Size([1, 16800, 4]) torch.Size([10647, 4])
-        anc_obj.nums_dim_feature: [24336, 6084, 1521, 441, 144]
-    :param gboxes_ltrb: gt torch.Size([5, 16800, 4]) torch.Size([10647, 4])
-    :return: 计算差异值   对应xywh torch.Size([10647, 4])
-    '''
-    nums_ceng_np = np.array(anc_obj.nums_level, dtype=np.int32)
-    nums_anc_np = np.array(cfg.NUMS_ANC, dtype=np.float32)
-    grids_np = np.sqrt((nums_ceng_np / nums_anc_np))  # [ 52 26 13 7 4]
-    match_grids_ts = torch.tensor(np.repeat(grids_np, nums_ceng_np, axis=-1), device=anc_obj.device, dtype=torch.float)
-    match_grids_ts = match_grids_ts.view(-1, 1)  # torch.Size([32526, 1]) -> [32526, 4]
-
-    gxywh = ltrb2xywh(gboxes_ltrb)
-    gxywh_t = gxywh * match_grids_ts
-
-    if gboxes_ltrb.dim() == 2:
-        anc_xywh_t = anc_obj.ancs_xywh * match_grids_ts
-        _a = (gxywh_t[:, :2] - anc_xywh_t[:, :2]) / anc_xywh_t[:, 2:] / variances[0]
-        _b = (gxywh_t[:, 2:] / anc_xywh_t[:, 2:]).log() / variances[1]
-    elif gboxes_ltrb.dim() == 3:
-        anc_xywh_t = anc_obj.ancs_xywh.unsqueeze(0) * match_grids_ts
-        _a = (gxywh_t[:, :, :2] - anc_xywh_t[:, :, :2]) / anc_xywh_t[:, :, 2:] / variances[0]
-        _b = (gxywh_t[:, :, 2:] / anc_xywh_t[:, :, 2:]).log() / variances[1]
-    else:
-        raise Exception('维度错误', anc_obj.ancs_xywh.shape)
-    _gtxywh = torch.cat([_a, _b], dim=-1)
-    return _gtxywh
-
-
-def boxes_encode4distribute(cfg, anc_obj, gboxes_ltrb_match, max_dis):
-    '''
-    for dfl
-    :param cfg:
-    :param anc_obj:
-    :param gboxes_ltrb_match:
-    :param max_dis: 根据定义的向量数 限制在向量-1 值以内
-    :return:
-    '''
-    # anc 归一化 -> anc特图
-    match_grids_ts, anc_xywh_t = anc_obj.match_anc_grids()
-    gboxes_ltrb_t = gboxes_ltrb_match * match_grids_ts
-
-    pt_lt = anc_xywh_t[:, :2] - gboxes_ltrb_t[:, :2]
-    pt_rb = gboxes_ltrb_t[:, 2:] - anc_xywh_t[:, :2]
-    gt_ltrb_t = torch.cat([pt_lt, pt_rb], -1)
-
-    eps = torch.finfo(torch.float16).eps
-    gt_ltrb_t.clamp_(min=0, max=max_dis - eps)  # 无需计算梯度
-
-    return gt_ltrb_t
 
 
 '''------------------------------- 匹配 --------------------------'''
@@ -573,12 +606,11 @@ def matchs_gfl(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, preg_32d_b, mode='at
     return gretinas_one
 
 
-def matchs_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh_b=None, img_ts=None):
+def matchs_gt_b(cfg, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh_b=None, img_ts=None, num_atss_topk=9):
     '''
     cfg.NUMS_ANC = [3, 3, 3]
 
     :param cfg:
-    :param dim: iou1, cls-1, txywh-4, gltrb-4,  keypoint-nn  = 10 + nn
     :param gboxes_ltrb_b: torch.Size([ngt, 4])
     :param glabels_b: [ngt]
     :param anc_obj:
@@ -587,6 +619,7 @@ def matchs_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh
     :param mode: topk atss iou
     :param ptxywh_b: torch.Size([3614, 32])
     :param img_ts: [3, 416, 416]
+    :param num_atss_topk: 9
     :return:
     '''
     # mode = 'iou'  # topk atss iou
@@ -598,7 +631,7 @@ def matchs_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh
     # 计算 iou
     anc_xywh = anc_obj.ancs_xywh
     anc_ltrb = xywh2ltrb(anc_xywh)
-    num_anc = anc_xywh.shape[0]
+    # num_anc = anc_xywh.shape[0]
     # (anc 个,boxes 个) torch.Size([3, 10647])
     ious = calc_iou4ts(anc_ltrb, gboxes_ltrb_b)
     num_gt = gboxes_ltrb_b.shape[0]
@@ -608,18 +641,12 @@ def matchs_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh
     # 中间点绝对距离 多维广播 (anc 个,boxes 个)  torch.Size([32526, 7])
     distances = (anc_xywh[:, None, :2] - gboxes_xywh_b[None, :, :2]).pow(2).sum(-1).sqrt()
 
-    # conf-1, cls-3, txywh-4, keypoint-nn  = 8 + nn
-    gretinas_one = torch.zeros((num_anc, dim), device=device)  # 返回值
-    s_ = 1 + cfg.NUM_CLASSES  # 前面 两个是 conf-1, cls-3,
-
+    mask_neg, mash_ignore = None, None
     if mode == 'atss':
         ''' 使正例框数量都保持一致 保障小目标也能匹配到多个anc
         用最大一个iou的均值和标准差,计算阀值,用IOU阀值初选正样本
         确保anc中心点在gt框中
         '''
-        # 每层 anc 数是一致的
-        num_atss_topk = 9  # 这个 topk = 要 * 该层的anc数
-
         idxs_candidate = []
         index_start = 0  # 这是每层的anc偏移值
         for i, num_dim_feature in enumerate(anc_obj.nums_level):  # [24336, 6084, 1521, 441, 144]
@@ -688,13 +715,6 @@ def matchs_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh
         # (anc 个,boxes 个) torch.Size([3, 10647])
         anc_max_iou, boxes_index = ious.max(dim=1)  # 存的是 bboxs的index
 
-        gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
-
-        labels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
-        gretinas_one[mask_pos, 1:s_] = labels_b[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
-        _gtxywh = boxes_encode4retina(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
-        gretinas_one[mask_pos, s_:s_ + 4] = _gtxywh[mask_pos]
-
         # 匹配正例可视化
         # from f_tools.pic.enhance.f_data_pretreatment4pil import f_recover_normalization4ts
         # _img_ts = f_recover_normalization4ts(img_ts.clone())
@@ -709,7 +729,6 @@ def matchs_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh
 
     elif mode == 'topk':
         '''--- 简单匹配9个 用IOU和距离相关计算 每特图取9个最好的 ---'''
-        num_atss_topk = 9
         distances = distances / distances.max() / 1000
         mask_pos_candidate = torch.zeros_like(ious, dtype=torch.bool)  # torch.Size([32526, 2])
         for ng in range(num_gt):  # 遍历每一个GT匹配9个
@@ -730,13 +749,6 @@ def matchs_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh
 
         anc_max_iou, boxes_index = ious.max(dim=1)  # 存的是 bboxs的index
 
-        gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
-
-        labels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
-        gretinas_one[mask_pos, 1:s_] = labels_b[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
-        _gtxywh = boxes_encode4retina(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
-        gretinas_one[mask_pos, s_:s_ + 4] = _gtxywh[mask_pos]
-
     elif mode == 'iou':
         '''--- iou阀值来确定 正反忽略 通常 >0.5 <0.4 正例至少匹配1个 ---'''
         # (anc 个,boxes 个) torch.Size([3, 10647])
@@ -751,17 +763,11 @@ def matchs_gt_b(cfg, dim, gboxes_ltrb_b, glabels_b, anc_obj, mode='atss', ptxywh
         mash_ignore = torch.logical_not(torch.logical_or(mask_pos, mask_neg))
         # mask_neg 负例自动0
 
-        gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
-        gretinas_one[mash_ignore, 0] = torch.tensor(-1., device=device)
 
-        labels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
-        gretinas_one[mask_pos, 1:s_] = labels_b[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
-        _gtxywh = boxes_encode4retina(cfg, anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
-        gretinas_one[mask_pos, s_:s_ + 4] = _gtxywh[mask_pos]
     else:
         raise NotImplementedError
 
-    return gretinas_one
+    return boxes_index, mask_pos, mask_neg, mash_ignore
 
 
 @torch.no_grad()
@@ -840,7 +846,7 @@ def pos_match4yolo(ancs, bboxs, criteria):
     return pos_ancs_index, pos_bboxs_index, mask_neg, mask_ignore
 
 
-def pos_match_retina(cfg, dim, anc_obj, gboxes_ltrb_b, glabels_b, gkeypoints_b, ptxywh_b=None, img_ts=None):
+def pos_match_retina4conf(cfg, dim, anc_obj, gboxes_ltrb_b, glabels_b, gkeypoints_b, ptxywh_b=None, img_ts=None):
     '''
 
     :param cfg:
@@ -891,6 +897,72 @@ def pos_match_retina(cfg, dim, anc_obj, gboxes_ltrb_b, glabels_b, gkeypoints_b, 
     # 局部更新
     s_ = 1 + cfg.NUM_CLASSES  # 前面 两个是 conf-1, cls-3,
     gretinas_one[mask_pos, 1:s_] = labels_b[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
+    # 匹配的正box
+    _gboxes_mp = gboxes_ltrb_b[boxes_index]
+    # 解码
+    # gretinas_one.numpy()[np.argsort(gretinas_one.numpy()[:,1])] np某一列排序
+    _gtxywh = boxes_encode4retina(cfg, anc_obj, _gboxes_mp, variances=cfg.variances)
+    gretinas_one[mask_pos, s_:s_ + 4] = _gtxywh[mask_pos]
+    if gkeypoints_b is not None:
+        gretinas_one[:, -cfg.NUM_KEYPOINTS:] = gkeypoints_b[boxes_index]
+
+    return gretinas_one
+
+
+def pos_match_retina4cls(cfg, dim, anc_obj, gboxes_ltrb_b, glabels_b, gkeypoints_b, ptxywh_b=None, img_ts=None):
+    '''
+
+    :param cfg:
+    :param anc_obj: torch.Size([10647, 4])
+    :param gboxes_ltrb_b: torch.Size([xx, 4])
+    :param glabels_b: tensor([1, 1, 1])
+    :param gkeypoints_b: None
+    :param img_ts:
+    :param nums_dim_feature: 特图总个数
+    :return:
+    '''
+    anc_ltrb = xywh2ltrb(anc_obj.ancs_xywh)
+    # (boxes 个,anc 个) torch.Size([3, 10647])
+    iou = calc_iou4ts(gboxes_ltrb_b, anc_ltrb)
+    # 除维运行 anc对应box最大的  anc个 bbox_index
+    anc_max_iou, boxes_index = iou.max(dim=0)  # 存的是 bboxs的index
+
+    # box对应anc最大的  box个 anc_index
+    bbox_max_iou, anc_index = iou.max(dim=1)  # 存的是 anc的index
+
+    # 强制保留 将每一个bbox对应的最大的anc索引 的anc_bbox_iou值强设为2 大于阀值即可
+    anc_max_iou.index_fill_(0, anc_index, 1)  # 最大的为正例, 强制为conf 为1
+
+    # 一定层度上使gt均有对应的anc, 处理多个anc对一gt的问题, 若多个gt对一个anc仍不能解决(情况较少)会导致某GT学习不了...遍历每一个gt索引
+    gt_ids = torch.arange(0, anc_index.size(0), dtype=torch.int64).to(boxes_index)  # [0,1]
+    # gt对应最好的anc索引取出来
+    anc_ids = anc_index[gt_ids]
+    # 找到这些anc 写入gt
+    boxes_index[anc_ids] = gt_ids
+
+    # ----------正例的index 和 正例对应的bbox索引----------
+    mask_pos = anc_max_iou >= cfg.THRESHOLD_CONF_POS  # 0.5 [10647] anc 的正例 index 不管
+    mask_neg = anc_max_iou < cfg.THRESHOLD_CONF_NEG  # 0.4 anc 的反例 index
+    mash_ignore = torch.logical_not(torch.logical_or(mask_pos, mask_neg))
+
+    dim_total, _d4 = ptxywh_b.shape
+    device = ptxywh_b.device
+    labels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
+
+    ''' conf-1, cls-3,  与预测对应gt_ltrb-4 ,ious_zg-1 ,'''
+    gretinas_one = torch.zeros((dim_total, dim), device=device)  # 返回值
+
+    # 整体匹配 正例全部为1 默认为0
+    gretinas_one[:, -1] = anc_max_iou  # ious_zg
+
+    gretinas_one[mask_pos, 0] = torch.tensor(1., device=device)
+    gretinas_one[mash_ignore, 0] = torch.tensor(-1., device=device)
+    gretinas_one[:, 1] = anc_max_iou  # iou赋值
+
+    # 局部更新
+    s_ = 1 + cfg.NUM_CLASSES  # 前面 两个是 conf-1, cls-3,
+    gretinas_one[mask_pos, 1:s_] = labels_b[boxes_index][mask_pos].type(torch.float)  # 正例才匹配
+
     # 匹配的正box
     _gboxes_mp = gboxes_ltrb_b[boxes_index]
     # 解码

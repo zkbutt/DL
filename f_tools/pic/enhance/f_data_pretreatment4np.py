@@ -10,7 +10,7 @@ from f_tools.pic.f_show import f_show_od_np4plt
 
 
 def cre_transform_resize4np(cfg):
-    if cfg.KEEP_SIZE:
+    if cfg.KEEP_SIZE:  # 不进行随机缩放
         data_transform = {
             "train": Compose([
                 ConvertFromInts(),

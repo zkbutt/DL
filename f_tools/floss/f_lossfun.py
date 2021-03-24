@@ -2,11 +2,11 @@ import torch
 from torch import Tensor, nn
 
 import numpy as np
-from torch.nn import BCEWithLogitsLoss
+from torch.nn import BCEWithLogitsLoss, BCELoss
 import torch.nn.functional as F
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
-from f_tools.fits.f_match import fmatch_OHEM, pos_match_retina
+from f_tools.fits.f_match import fmatch_OHEM, pos_match_retina4conf
 from f_tools.fits.f_predictfun import batched_nms_auto
 from f_tools.fits.ghm2 import GHMC_Loss2, GHMC_Loss3
 from f_tools.floss.balanced_l1_loss import BalancedL1Loss
@@ -45,7 +45,7 @@ def x_smooth_l1_loss(input, target, beta=1. / 9, size_average=True):
     return loss.sum()
 
 
-def f_ohem(scores, num_neg_ts, mask_pos, mash_ignore, pboxes_ltrb=None, threshold_iou=0.7):
+def f_ohem(scores, num_neg_ts, mask_pos, mash_ignore=None, pboxes_ltrb=None, threshold_iou=0.5):
     '''
     选反例最大的
     :param pboxes_ltrb:  (batch,anc)
@@ -59,17 +59,20 @@ def f_ohem(scores, num_neg_ts, mask_pos, mash_ignore, pboxes_ltrb=None, threshol
     scores_neg = scores.clone().detach()
     ts0 = torch.tensor(0.0, device=scores_neg.device)
     # 正例 or 忽略 分数置0
-    scores_neg[torch.logical_or(mask_pos, mash_ignore)] = ts0
+    if mash_ignore is not None:
+        scores_neg[torch.logical_or(mask_pos, mash_ignore)] = ts0
+    else:
+        scores_neg[mask_pos] = ts0
 
     if pboxes_ltrb is None:
         return f_ohem_simpleness(scores_neg, num_neg_ts)
 
-    # 解码 ptxywh
+    # 下载几乎不用 --- 速度慢
     mask_neg_hard = torch.zeros_like(mask_pos, dtype=torch.bool, device=pboxes_ltrb.device)
     num_batch, dim_ancs, _ = pboxes_ltrb.shape
 
     # 只对框框和损失进行nms
-    for i in range(num_batch):
+    for i in range(num_batch):  # 每批NMS
         # 所有预测ltrb,
         keep = torch.ops.torchvision.nms(pboxes_ltrb[i], scores_neg[i], threshold_iou)
         keep = keep[:num_neg_ts[i]]
@@ -305,8 +308,17 @@ if __name__ == '__main__':
 
     np.random.seed(20201031)
 
-    t_多值交叉熵()
+    # t_多值交叉熵()
     # t_图形测试()
+
+    p = torch.tensor([-1.1, 1.4, 1.5])
+    # g = torch.tensor([0.03, 0.03, 0.7])
+    g = torch.tensor([0.03, 0.03, 0.9])
+    print(p.sigmoid())
+    print(F.binary_cross_entropy(p.sigmoid(), g, reduction='none'))
+    print(F.binary_cross_entropy_with_logits(p, g, reduction='none', pos_weight=torch.tensor(4)))
+    # BCEWithLogitsLoss
+    # BCELoss()
 
     # t_损失值测试()
     # pred = torch.Tensor([0, 2, 3])
