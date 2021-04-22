@@ -7,7 +7,7 @@ rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
 # sys.path.insert(0, '.') # 这个能否使用待测试
 from object_detection.z_retina.nets.net_retina import Retina2, Retina3
-from f_tools.datas.data_loader import cfg_type3, cfg_voc
+from f_tools.datas.data_loader import cfg_type3, cfg_voc, cfg_type4
 from f_tools.fits.fitting.f_fit_class_base import Train_1gpu
 from f_tools.GLOBAL_LOG import flog
 
@@ -44,13 +44,15 @@ def train_eval_set(cfg):
 
     size = (416, 416)  # type
     # cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
-    cfg_voc(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    # cfg_voc(cfg, batch=batch, image_size=size)  # 加载数据基础参数
 
     cfg.NUMS_EVAL = {10: 5, 100: 3, 150: 1}
 
     '''特有参数'''
     cfg.MODE_TRAIN = 1  # base  带conf 使用3倍难例挖掘
     # cfg.MODE_TRAIN = 2  # 不带conf
+    # cfg.MODE_TRAIN = 3  # 统一归一化计算
     cfg.NUM_REG = 1  # 这个是必须
     cfg.KEEP_SIZE = False  # 有anc建议用这个
     cfg.variances = (0.1, 0.2)
@@ -61,7 +63,8 @@ def train_eval_set(cfg):
     # cfg.FILE_NAME_WEIGHT = 't_retina_type3_res50-10_6.695' + '.pth'
     cfg.MAPS_VAL = [0.672, 0.48095764814812036]  # 最高
 
-    cfg.LR0 = 1e-3 / 2
+    # cfg.LR0 = 1e-3 / 2
+    cfg.LR0 = 0.0005
     cfg.TB_WRITER = True
     cfg.DEL_TB = True
     cfg.IS_FORCE_SAVE = False  # 强制记录

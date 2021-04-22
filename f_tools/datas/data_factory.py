@@ -607,14 +607,19 @@ def load_data4widerface(path_data_root, img_size_in, batch_size, mode='train', i
 
 
 def fun4dataloader(batch_datas):
-    # 数据组装
+    '''
+
+    :param batch_datas: img (3,416,416)      target 字典  boxes不定
+    :return:
+    '''
     _t = batch_datas[0][0]
-    # images = torch.empty((len(batch_datas), *_t.shape), device=_t.device)
+    # 包装整个图片数据集 (batch,3,416,416) 转换到显卡
     images = torch.empty((len(batch_datas), *_t.shape)).to(_t)
     targets = []
-    for i, (img, taget) in enumerate(batch_datas):
+    for i, (img, target) in enumerate(batch_datas):
+        # flog.warning('fun4dataloader测试  %s %s %s ', target, len(target['boxes']), len(target['labels']))
         images[i] = img
-        targets.append(taget)
+        targets.append(target)
     return images, targets
 
 

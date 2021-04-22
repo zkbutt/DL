@@ -20,6 +20,23 @@ def f_lr_cos(optimizer, start_epoch, end_epoch, lrf_scale):
     scheduler.last_epoch = start_epoch  # 指定从哪个epoch开始
     return scheduler
 
+def f_lr_one_cycle(optimizer, epoch, end_epoch, lrf_scale):
+    '''
+    自定义调整策略
+    :param optimizer:
+    :param start_epoch:
+    :param end_epoch: 总迭代次数
+    :param lrf_scale: 最终值
+    :return:
+    '''
+    def one_cycle(y1=0.0, y2=1.0, steps=100):
+    # lambda function for sinusoidal ramp from y1 to y2
+    fun =  lambda x: ((1 - math.cos(x * math.pi / steps)) / 2) * (y2 - y1) + y1
+
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=fun)
+    scheduler.last_epoch = start_epoch  # 指定从哪个epoch开始
+    return scheduler
+
 
 def f_lr_linearwarmup(num_iter, base_lr=0.0001, start_factor=0., steps=4000):
     k = (1.0 - start_factor) / steps

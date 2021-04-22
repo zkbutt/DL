@@ -33,7 +33,7 @@ def offxy2xy(xy, colrow_index, z_grids):
 
 def ltrb2xywh(bboxs):
     dim = len(bboxs.shape)
-    bboxs_ = empty_bboxes(bboxs)
+    bboxs_ = empty_bboxes(bboxs)  # 复制矩阵
     if dim == 3:  # 可优化
         bboxs_[:, :, 2:] = bboxs[:, :, 2:] - bboxs[:, :, :2]
         bboxs_[:, :, :2] = bboxs[:, :, :2] + 0.5 * bboxs[:, :, 2:]

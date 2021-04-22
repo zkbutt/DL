@@ -280,12 +280,21 @@ class CustomCocoDataset(Dataset):
             flog.warning('指定coco类型 %s', self.coco_obj.loadCats(s_ids_cats))
             self.s_ids_cats = s_ids_cats
             ids_img = []
-            for idc, num_cat in zip(s_ids_cats, nums_cat):
-                # 类型对应哪些文件 可能是一张图片多个类型
-                ids_ = self.coco_obj.getImgIds(catIds=idc)[:num_cat]
-                # ids_ = self.coco.getImgIds(catIds=idc)[:1000]
-                ids_img += ids_
-                # print(ids_)  # 这个只支持单个元素
+
+            if nums_cat is None:
+                for idc in zip(s_ids_cats):
+                    # 类型对应哪些文件 可能是一张图片多个类型
+                    ids_ = self.coco_obj.getImgIds(catIds=idc)
+                    ids_img += ids_
+            else:
+                # 限制每类的最大个数
+                for idc, num_cat in zip(s_ids_cats, nums_cat):
+                    # 类型对应哪些文件 可能是一张图片多个类型
+                    ids_ = self.coco_obj.getImgIds(catIds=idc)[:num_cat]
+                    # ids_ = self.coco.getImgIds(catIds=idc)[:1000]
+                    ids_img += ids_
+                    # print(ids_)  # 这个只支持单个元素
+
             self.ids_img = list(set(ids_img))  # 去重
         else:
             self.ids_img = self.coco_obj.getImgIds()  # 所有图片的id 画图数量
@@ -591,6 +600,9 @@ class CustomCocoDataset4cv(Dataset):
         else:
             img, target = self.open_img_tar(index)
 
+        if len(target['boxes']) != len(target['labels']):
+            flog.warning('!!! 数据有问题 1111  %s %s %s ', target, len(target['boxes']), len(target['labels']))
+
         '''---------------cocoAPI测试 查看图片在归一化前------------------'''
         if self.cfg is not None and self.cfg.IS_VISUAL_PRETREATMENT:
             # is_mosaic 这个用不起
@@ -604,11 +616,16 @@ class CustomCocoDataset4cv(Dataset):
             if self.is_img_np:
                 # f_plt_show_cv(img, gboxes_ltrb=target['boxes'])
                 img, boxes, labels = self.transform(img, target['boxes'], target['labels'])
+                # 这里会刷新 boxes, labels
                 # f_plt_show_cv(img, gboxes_ltrb=boxes)
                 target['boxes'] = boxes
+                target['labels'] = labels
             else:
                 # 预处理输入 PIL img 和 np的target
                 img, target = self.transform(img, target)
+
+        if len(target['boxes']) != len(target['labels']):
+            flog.warning('!!! 数据有问题 ttttttttt  %s %s %s ', target, len(target['boxes']), len(target['labels']))
 
         # target['boxes'] = torch.tensor(target['boxes'], dtype=torch.float)
         # target['labels'] = torch.tensor(target['labels'], dtype=torch.int64)
@@ -619,6 +636,10 @@ class CustomCocoDataset4cv(Dataset):
         if target['boxes'].shape[0] == 0:
             flog.debug('二次检查出错 %s', index)
             return self.__getitem__(index + 1)
+
+        if len(target['boxes']) != len(target['labels']):
+            flog.warning('!!! 数据有问题 22222  %s %s %s ', target, len(target['boxes']), len(target['labels']))
+        # flog.warning('数据debug 有问题 %s %s %s ', target, len(target['boxes']), len(target['labels']))
         return img, target
 
     def load_image(self, index):
@@ -629,6 +650,8 @@ class CustomCocoDataset4cv(Dataset):
         '''
         image_info = self.coco_obj.loadImgs(self.ids_img[index])[0]
         file_img = os.path.join(self.path_img, image_info['file_name'])
+        if not os.path.exists(file_img):
+            raise Exception('file_img 加载图片路径错误', file_img)
         if self.is_img_np:
             img = cv2.imread(file_img)
         else:
@@ -727,8 +750,9 @@ def load_dataset_coco(mode, transform=None):
     # file_json = os.path.join(path_root, 'coco/annotations') + '/instances_type4_train_753.json'  # 1096
     # path_img = os.path.join(path_root, 'train', 'JPEGImages')
 
-    file_json = os.path.join(path_root, 'coco/annotations') + '/instances_test_2972.json'  # 1096
-    path_img = os.path.join(path_root, 'val', 'JPEGImages')
+    ''' 这两个都要改 '''
+    file_json = os.path.join(path_root, 'coco/annotations') + '/instances_type4_train_994.json'  # 1096
+    path_img = os.path.join(path_root, 'train', 'JPEGImages')
 
     # -------raccoon200--------
     # file_json = r'M:/AI/datas/raccoon200/coco/annotations/instances_train2017.json'

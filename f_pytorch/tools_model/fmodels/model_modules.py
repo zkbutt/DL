@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
-from f_pytorch.tools_model.f_model_api import conv2d, conv_bn_no_relu, conv_bn, CBL
+from f_pytorch.tools_model.f_model_api import conv2d, conv_bn_no_relu, conv_bn, CBL, Conv
 
 
 class Hardswish(nn.Module):
@@ -373,3 +373,22 @@ class DCNv2(torch.nn.Module):
             out_C, in_C * kH * kW, 1, 1))  # [out_C, in_C, kH, kW] -> [out_C, in_C*kH*kW, 1, 1]  变成1x1卷积核
         out = F.conv2d(new_x, rw, stride=1)  # [N, out_C, out_H, out_W]
         return out
+
+
+class Focus(nn.Module):
+    '''
+    Focus wh information into c-space from yolo4 亚像素卷积的反向操作版本
+    作用: 通道扩充4倍,尺寸缩小一倍
+    横竖每隔一个像素拿到一个值, 再通道堆叠变成4倍通道
+    每4个小方块分为一组, 每组1234号, 所有组的1展平，所有组的2展平...
+    '''
+
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+        super(Focus, self).__init__()
+        self.conv = Conv(c1 * 4, c2, k, s, p, g, act)
+        # self.contract = Contract(gain=2)
+
+    def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
+        # 间隔为2取
+        return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
+        # return self.conv(self.contract(x))

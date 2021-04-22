@@ -1,6 +1,8 @@
 import os
 import sys
 
+from f_pytorch.tools_model.f_layer_get import ModelOut4Resnet50
+
 '''用户命令行启动'''
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
@@ -21,7 +23,7 @@ from torchvision import models
 '''
 
 linux用这个   python /AI/temp/tmp_pycharm/DL/object_detection/z_ssd/train_ssd.py
-tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_ssd/runs_type3
+tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_ssd/runs_type4
 '''
 
 
@@ -43,6 +45,7 @@ def train_eval_set(cfg):
     size = (300, 300)  # 多尺寸时这个用于预测
     cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+
     # cfg_voc(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_raccoon(cfg, batch=batch, image_size=size)  # 加载数据基础参数
 
@@ -99,15 +102,15 @@ def train_eval_set(cfg):
     cfg.NUM_ANC = 1
 
     # cfg.FILE_NAME_WEIGHT = 'zz/t_yolo1_type3_res18c0.01-110_4.47_p72.4_r46.2' + '.pth'  # conf-0.01 nms-0.5
-    # cfg.FILE_NAME_WEIGHT = 'nvidia_ssdpyt_fp32_190826' + '.pt'  # conf-0.01 nms-0.5
+    # cfg.FILE_NAME_WEIGHT = 'zz/nvidia_ssdpyt_fp32_190826' + '.pt'  # 这个要加 ffun
 
-    # cfg.FILE_NAME_WEIGHT = 't_ssd_type3c0.05-141_2.21_p64.7_r41.1' + '.pth'  # conf-0.01 nms-0.5
-    cfg.MAPS_VAL = [0.6371928080996411, 0.40522891081043455]
+    # cfg.FILE_NAME_WEIGHT = 't_ssd_type3c0.01-108_1.82_p71.6_r54.1' + '.pth'  # conf-0.01 nms-0.5
+    cfg.MAPS_VAL = [0.7701529493436998, 0.5902358858189817]  # type3
 
     # cfg.LR0 = 1e-3/2
     cfg.LR0 = 0.0005
     cfg.TB_WRITER = True
-    cfg.DEL_TB = False
+    cfg.DEL_TB = True
     cfg.IS_FORCE_SAVE = False  # 强制记录
 
 
@@ -149,6 +152,7 @@ def init_model(cfg, device, id_gpu=None):
     # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, lr_scheduler, device, is_mgpu=is_mgpu)
 
     ''' 定制逻辑 '''
+
     def ffun(pretrained_dict):
         dd = {}
         s1 = 'net.backbone.'
@@ -165,10 +169,13 @@ def init_model(cfg, device, id_gpu=None):
 
         return dd
 
-    start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu,
-                              ffun=None)
-    # start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, None, device, is_mgpu=is_mgpu,
-    #                           ffun=ffun)
+    if cfg.FILE_NAME_WEIGHT == 'nvidia_ssdpyt_fp32_190826.pt':
+        # 定制加载预训练模型
+        start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, None, None, device, is_mgpu=is_mgpu,
+                                  ffun=ffun)
+    else:
+        start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu,
+                                  ffun=None)
 
     model.cfg = cfg
     return model, optimizer, lr_scheduler, start_epoch

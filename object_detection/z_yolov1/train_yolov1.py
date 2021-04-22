@@ -25,21 +25,9 @@ from torchvision import models
 '''
 
 linux用这个   python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/train_yolov1.py
-tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_voc
+tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_type3
 正反例 169：1(未减正例)
 
-MODE_TRAIN=1
-mse 111轮 AP702_458 正反例系数5，1 ---666666666666
-mse+iou损失 120轮训练 1AP65_436
-focloss 训练 120轮开始收敛 AP64_39   正反例系数15，15 a=0.25
-focloss 训练 120轮开始收敛 AP65_40   正反例系数15，15 a=0.75
-focloss+iou 训练 102轮开始收敛 AP52_37   正反例系数15，15 a=0.5
-f_ohem 117轮 ap40_33 正反例系数3，3
-
-MODE_TRAIN=2 去conf 
-bce轮 AP AP66_402    正反例系数1，1
-focloss ap67_39
-focloss iou ap578_343
 '''
 
 
@@ -51,15 +39,15 @@ def train_eval_set(cfg):
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
-    batch = 64  # type
+    batch = 32  # type
     # batch = 2  # type
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 2
         cfg.IS_COCO_EVAL = False
 
     size = (416, 416)  # 多尺寸时这个用于预测
-    cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
-    # cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    # cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_voc(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_raccoon(cfg, batch=batch, image_size=size)  # 加载数据基础参数
 
@@ -69,6 +57,7 @@ def train_eval_set(cfg):
     # cfg.MODE_TRAIN = 2 # 去conf
     # cfg.MODE_TRAIN = 3 # 任意分布
     # cfg.MODE_TRAIN = 4  # IOU 损失及预测
+    # cfg.MODE_TRAIN = 5  # 归一
 
     cfg.NUMS_EVAL = {10: 10, 100: 3, 160: 2}
     # cfg.NUMS_EVAL = {100: 3, 160: 2}
@@ -86,11 +75,12 @@ def train_eval_set(cfg):
     cfg.NUM_ANC = 1
 
     # type3 resnet18
-    cfg.FILE_NAME_WEIGHT = 'zz/t_yolo1_type3_res18c0.01-110_4.47_p72.4_r46.2' + '.pth'  # conf-0.01 nms-0.5
+    # cfg.FILE_NAME_WEIGHT = 'zz/t_yolo1_type3_res18c0.01-110_4.47_p72.4_r46.2' + '.pth'  # conf-0.01 nms-0.5
     # cfg.FILE_NAME_WEIGHT = 't_yolo1_type4_res18-120_3.762' + '.pth'  # conf-0.01 nms-0.5
     cfg.MAPS_VAL = [0.705, 0.4586]
 
-    cfg.LR0 = 1e-3 / 2
+    cfg.LR0 = 1e-3
+    # cfg.LR0 = 0.0005
     cfg.TB_WRITER = True
     cfg.DEL_TB = True
     cfg.IS_FORCE_SAVE = False  # 强制记录

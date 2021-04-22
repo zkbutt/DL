@@ -1016,6 +1016,19 @@ def f_show_od_np4cv(img_np, boxes_ltrb, scores, plabels_text, is_showing=True):
 def f_show_od_np4plt(img_np_bgr, gboxes_ltrb=None, pboxes_ltrb=None, other_ltrb=None, is_recover_size=False,
                      glabels_text=None, plabels_text=None,
                      p_scores_float=None, grids=None):
+    '''
+
+    :param img_np_bgr:
+    :param gboxes_ltrb:  绿色
+    :param pboxes_ltrb: 红色
+    :param other_ltrb: 暗黄
+    :param is_recover_size:
+    :param glabels_text:
+    :param plabels_text:
+    :param p_scores_float:
+    :param grids:
+    :return:
+    '''
     current_axis = plt.gca()
     img_np_rgb = cv2.cvtColor(img_np_bgr, cv2.COLOR_BGR2RGB)
     plt.imshow(img_np_rgb)

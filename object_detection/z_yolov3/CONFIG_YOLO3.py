@@ -9,7 +9,7 @@ class CFG(CfgBase):
 
     IS_TRAIN = True
     IS_COCO_EVAL = True
-    IS_VISUAL = False
+    IS_VISUAL = True
     IS_TRAIN_DEBUG = True
 
     '''可视化'''

@@ -88,7 +88,7 @@ class LossSSD(nn.Module):
         # mask_neg_2d = glabel == 0 反例没用上
         # nums_neg = (mask_neg.sum(-1).to(torch.float)).clamp(min=torch.finfo(torch.float16).eps)
 
-        ''' ----------------回归损失   xy采用bce wh采用mes----------------- '''
+        ''' ---------------- 回归损失   ----------------- '''
         gboxes_ltrb_m_pos = gssd[:, :, 1:1 + 4][mask_pos_2d]
         ancs_xywh_m_pos = self.anc_obj.ancs_xywh.unsqueeze(0).repeat(batch, 1, 1)[mask_pos_2d]
         gtxywh_pos = boxes_encode4ssd(cfg, ancs_xywh_m_pos, ltrb2xywh(gboxes_ltrb_m_pos))

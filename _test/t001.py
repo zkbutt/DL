@@ -55,13 +55,7 @@ import cv2
 import torch
 import torchvision
 
-# gcc = subprocess.check_output('gcc --version | head -n1', shell=True)
-# gcc = gcc.decode('utf-8').strip()
-# print(gcc)
-a = torch.tensor([
-    [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1]],
-    [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1]]])
-print(a.shape)
-print(a[..., 1])
-a[:, :, 1] = 999
-print(a)
+path = r'C:\Users\feadre\Desktop\骑士horimax-20210420(1)\zz'
+listdir = os.listdir(path)
+for n in listdir:
+    print(n.split('.')[0])

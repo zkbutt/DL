@@ -16,12 +16,12 @@ from f_tools.fits.f_predictfun import label_nms
 from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import f_ohem, x_bce
 from f_tools.fits.f_match import boxes_decode4retina, pos_match_retina4conf, matchs_gt_b, matchs_gfl, \
-    pos_match_retina4cls, boxes_encode4retina
+    pos_match_retina4cls, boxes_encode4retina, boxes_encode4ssd, boxes_decode4ssd
 from f_tools.floss.focal_loss import focalloss, focalloss_simple, quality_focal_loss, distribution_focal_loss, \
     quality_focal_loss2
 from f_tools.fun_od.f_anc import FAnchors
 
-from f_tools.fun_od.f_boxes import xywh2ltrb
+from f_tools.fun_od.f_boxes import xywh2ltrb, ltrb2xywh
 from f_tools.pic.f_show import f_show_od_ts4plt
 from object_detection.z_retina.nets.net_ceng import RegressionModel, ClassificationModel
 
@@ -83,7 +83,9 @@ class LossRetina2(nn.Module):
                                                                              gboxes_ltrb_b=gboxes_ltrb_b,
                                                                              glabels_b=glabels_b,
                                                                              anc_obj=self.anc_obj,
-                                                                             mode='iou', ptxywh_b=ptxywh[i],
+                                                                             mode='iou',
+                                                                             # mode='atss',
+                                                                             ptxywh_b=ptxywh[i],
                                                                              img_ts=imgs_ts[i],
                                                                              num_atss_topk=9)
 
@@ -94,8 +96,9 @@ class LossRetina2(nn.Module):
 
             labels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
             gretinas[i][mask_pos_b, 1:s_] = labels_b[boxes_index][mask_pos_b].type(torch.float)  # 正例才匹配
-            _gtxywh = boxes_encode4retina(cfg, self.anc_obj, gboxes_ltrb_b[boxes_index], variances=cfg.variances)
-            gretinas[i][mask_pos_b, s_:s_ + 4] = _gtxywh[mask_pos_b]
+            # _gtxywh = boxes_encode4retina(cfg, self.anc_obj, gboxes_ltrb_b[boxes_index])
+            # _gtxywh = boxes_encode4ssd(cfg, self.anc_obj, gboxes_ltrb_b[boxes_index])
+            gretinas[i][mask_pos_b, s_:s_ + 4] = gboxes_ltrb_b[boxes_index][mask_pos_b]
 
             # gretinas[i] = pos_match_retina(cfg, dim=gdim, gkeypoints_b=None,
             #                                gboxes_ltrb_b=gboxes_ltrb_b, glabels_b=glabels_b, anc_obj=self.anc_obj,
@@ -147,13 +150,13 @@ class LossRetina2(nn.Module):
         # loss_conf_pos = (l_pos.sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[0]
         # loss_conf_neg = l_neg.sum(-1).mean() * cfg.LOSS_WEIGHT[1]
 
-        ''' ---------------- box损失 ----------------- '''
+        ''' ---------------- 回归损失 ----------------- '''
         # 正例筛选后计算
-        gtxywh = gretinas[:, :, s_:s_ + 4]
-        # _loss_val = F.mse_loss(ptxywh, gtxywh, reduction="none") * mask_pos.unsqueeze(-1)
-        _loss_val = F.smooth_l1_loss(ptxywh, gtxywh, reduction="none") * mask_pos_2d.unsqueeze(-1)
-        # _loss_val = torch.abs(ptxywh - gtxywh) * mask_pos.unsqueeze(-1)
-        l_box = (_loss_val.sum(-1).sum(-1) / nums_pos).mean()
+        gboxes_ltrb_m_pos = gretinas[:, :, s_:s_ + 4][mask_pos_2d]
+        ancs_xywh_m_pos = self.anc_obj.ancs_xywh.unsqueeze(0).repeat(batch, 1, 1)[mask_pos_2d]
+        gtxywh_pos = boxes_encode4ssd(cfg, ancs_xywh_m_pos, ltrb2xywh(gboxes_ltrb_m_pos))
+        _loss_val = F.smooth_l1_loss(ptxywh[mask_pos_2d], gtxywh_pos, reduction="none")
+        l_box = _loss_val.sum(-1).mean()
 
         log_dict = OrderedDict()
         loss_total = l_conf_pos + l_conf_neg + l_cls + l_box
@@ -199,8 +202,12 @@ class PredictRetina2(Predicting_Base):
 
     def get_stage_res(self, outs, mask_pos, pscores, plabels):
         ptxywh, pcls = outs
+        batch, hw, c = ptxywh.shape
         ids_batch1, _ = torch.where(mask_pos)
-        pxywh = boxes_decode4retina(self.cfg, self.anc_obj, ptxywh)
+        ancs_xywh_3d = self.anc_obj.ancs_xywh.unsqueeze(0).repeat(batch, 1, 1)
+        pxywh = boxes_decode4ssd(self.cfg, ptxywh, ancs_xywh_3d)
+
+        # pxywh = boxes_decode4retina(self.cfg, self.anc_obj, ptxywh)
         pboxes_ltrb1 = xywh2ltrb(pxywh[mask_pos])
         pscores1 = pscores[mask_pos]
         plabels1 = plabels[mask_pos]
@@ -283,6 +290,7 @@ class Retina2(nn.Module):
     def __init__(self, backbone, cfg, device):
         super(Retina2, self).__init__()
 
+        ''' 组装anc '''
         ancs_scale = []
         s = 0
         for num in cfg.NUMS_ANC:
@@ -294,7 +302,7 @@ class Retina2(nn.Module):
                                 anchors_clip=True, is_xymid=True, is_real_size=False,
                                 device=device)
 
-        if cfg.MODE_TRAIN == 1:
+        if cfg.MODE_TRAIN == 1 or cfg.MODE_TRAIN == 3:
             self.net = Retina_Net2(backbone, cfg, cfg.NUM_CLASSES + 1)
             self.losser = LossRetina2(cfg, self.anc_obj)
             self.preder = PredictRetina2(cfg, self.anc_obj)

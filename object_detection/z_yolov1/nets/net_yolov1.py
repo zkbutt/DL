@@ -279,8 +279,8 @@ class LossYOLOv1(nn.Module):
             gtxty = gyolos[:, :, s_:s_ + 2]  # torch.Size([5, 169, 2])
             gtwth = gyolos[:, :, s_ + 2:s_ + 4]
 
-            _loss_val = x_bce(ptxty_sigmoid, gtxty, reduction="none")
-            # _loss_val = F.mse_loss(ptxty, gtxty, reduction="none")
+            # _loss_val = x_bce(ptxty_sigmoid, gtxty, reduction="none")
+            _loss_val = F.mse_loss(ptxty_sigmoid, gtxty, reduction="none")
             l_txty = ((_loss_val.sum(-1) * mask_pos * weight).sum(-1) / nums_pos).mean()
             _loss_val = F.mse_loss(ptwth, gtwth, reduction="none")
             l_twth = ((_loss_val.sum(-1) * mask_pos * weight).sum(-1) / nums_pos).mean()

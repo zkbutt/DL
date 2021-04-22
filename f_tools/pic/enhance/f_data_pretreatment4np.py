@@ -5,15 +5,19 @@ import numpy as np
 import types
 from numpy import random
 
+from f_tools.GLOBAL_LOG import flog
 from f_tools.pic.enhance.f_data_pretreatment4pil import BasePretreatment
 from f_tools.pic.f_show import f_show_od_np4plt
+import matplotlib.pyplot as plt
+
+FDEBUG = False
 
 
 def cre_transform_resize4np(cfg):
     if cfg.KEEP_SIZE:  # 不进行随机缩放
         data_transform = {
             "train": Compose([
-                ConvertFromInts(),
+                ConvertFromInts(),  # image int8转换成float [0,256)
                 # ToAbsoluteCoords(), # 恢复真实尺寸
                 PhotometricDistort(),  # 图片集合
                 # Expand(cfg.PIC_MEAN),  # 放大缩小图片
@@ -110,6 +114,8 @@ class Compose(BasePretreatment):
         # f_plt_show_cv(image,boxes)
         for t in self.transforms:
             img, boxes, labels = t(img, boxes, labels)
+            if len(boxes) != len(labels):
+                flog.warning('!!! 数据有问题 Compose  %s %s %s ', len(boxes), len(labels), t)
         return img, boxes, labels
 
 
@@ -183,6 +189,9 @@ class Resize(object):
 
     def __call__(self, image, boxes=None, labels=None):
         w_ratio, h_ratio = np.array(image.shape[:2][::-1]) / np.array(self.size)
+        if FDEBUG:
+            plt.imshow(image)
+            plt.show()
         if boxes is not None:
             boxes[:, [0, 2]] = boxes[:, [0, 2]] / w_ratio
             boxes[:, [1, 3]] = boxes[:, [1, 3]] / h_ratio
@@ -301,6 +310,9 @@ class ToTensor(object):
         if boxes is not None and self.is_box_oned:
             whwh = np.tile(cvimage.shape[:2][::-1], 2)
             boxes[:, :] = boxes[:, :] / whwh
+        if FDEBUG:
+            plt.imshow(cvimage)
+            plt.show()
         # (h,w,c -> c,h,w) = bgr
         return torch.from_numpy(cvimage.astype(np.float32)).permute(2, 0, 1), boxes, labels
 

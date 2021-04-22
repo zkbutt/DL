@@ -72,8 +72,19 @@ def f转换():
 if __name__ == '__main__':
     # f转换()
     file_img = r'D:\tb\tb\ai_code\DL\_test_pic\2007_000042.jpg'  # 500 335
-    img_pil = Image.open(file_img).convert('RGB')  #
-    img_tensor = F.to_tensor(img_pil)  # c,h,w == c,row,col
+    ''' pil方式 '''
+    # wh 500*335
+    # img_pil = Image.open(file_img).convert('RGB')
+    # print(img_pil.size)
+    # img_pil.show()
+    # wh -> c,h,w == c,row,col
+    # img_tensor = F.to_tensor(img_pil)
+
+    # (h,w,3)
+    img_np = cv2.imread(file_img)
+    print(img_np.shape)
+    # (h,w,c)->(c,h,w)
+    img_tensor = torch.from_numpy(img_np.astype(np.float32)).permute(2, 0, 1)
     print(img_tensor.shape)
-    print(img_pil.size)
+
     pass

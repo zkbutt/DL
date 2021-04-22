@@ -7,7 +7,7 @@ class CFG(CfgBase):
     IS_LOCK_BACKBONE_WEIGHT = False  # 锁定 BACKBONE_WEIGHT keypoints 不能使用
     END_EPOCH = 120
 
-    IS_TRAIN = False
+    IS_TRAIN = True
     IS_COCO_EVAL = True
     IS_VISUAL = False
     IS_TRAIN_DEBUG = True

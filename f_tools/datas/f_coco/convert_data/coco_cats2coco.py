@@ -18,21 +18,28 @@ if __name__ == '__main__':
     '''
     path_host = 'M:'
 
-    s_ids_cats = [1, 2, 5, 14]  # aeroplane bicycle bottle motorbike
-    nums_cat = [1000, 1000, 1000]  # 类型的最大数量
+    # s_ids_cats = [1, 2, 5, 14]  # aeroplane bicycle bottle motorbike
+    s_ids_cats = [8, 12, 18]  # cat dog sofa
+    # nums_cat = [1000, 1000, 1000]  # 类型的最大数量
     path_root = path_host + r'/AI/datas/VOC2007'
+
     # type_json = 'train'  # train, val, test
     # file_json = path_root + '/coco/annotations/instances_train_5011.json'
     # path_img = path_root + '/train/JPEGImages'
 
-    path_img = path_root + '/val/JPEGImages'
+    path_img = path_root + '/val/JPEGImages'  # 这个是公用的
+
     # type_json = 'val'  # train, val, test
     # file_json = path_root + '/coco/annotations/instances_val_1980.json'
 
     type_json = 'test'  # train, val, test
     file_json = path_root + '/coco/annotations/instances_test_2972.json'
-    name = 'type4' + '_' + type_json  # 文件名
-    file = os.path.join(path_root, 'classes_name_type4.txt')  # 指定类别文件,需创建
+
+    '''--- 这里要改 ---'''
+    name = 'type3' + '_' + type_json  # 文件名
+    file = os.path.join(path_root, 'classes_name_type3.txt')  # 指定类别文件,需创建
+    # name = 'type4' + '_' + type_json  # 文件名
+    # file = os.path.join(path_root, 'classes_name_type4.txt')  # 指定类别文件,需创建
 
     mode = 'bbox'  # bbox segm keypoints caption
 
@@ -41,9 +48,10 @@ if __name__ == '__main__':
         path_img=path_img,
         mode=mode,
         s_ids_cats=s_ids_cats,
-        nums_cat=nums_cat
+        # nums_cat=nums_cat
     )
 
+    # 读取类别信息
     classes_ids = {}  # name int
     ids_classes = {}  # name int
     classes_name = []
@@ -53,7 +61,7 @@ if __name__ == '__main__':
         ids_classes[cat_id] = cat_name
         classes_name.append(cat_name)
 
-    if not os.path.exists(file):
+    if not os.path.exists(file):  # 保存这个文件
         with open(file, 'w') as f:
             f.write(' '.join(classes_name))
 
@@ -68,6 +76,16 @@ if __name__ == '__main__':
         file_name = info_img['file_name']
         ids_ann = coco.getAnnIds(id_img)
         infos_ann = coco.loadAnns(ids_ann)
+
+        # anns = []
+        # for ann in infos_ann:
+        #     if ann['category_id'] in s_ids_cats:
+        #         anns.append(ann)
+        #     else:
+        #         flog.warning('未在选定的类别中 %s', ann)
+        #
+        # if len(anns) == 0:
+        #     continue
 
         file_img = os.path.join(path_img, file_name)
         img_pil = Image.open(file_img).convert('RGB')
@@ -85,11 +103,13 @@ if __name__ == '__main__':
                 # show_bbox4pil(img_pil, torch.tensor(bbox_ltrb))
             else:
                 no_match.append([info_img, info_ann])
+
     if len(annotations) == 0:
         raise Exception('len(annotations)==0 没有这个类型 %s' % s_ids_cats)
     # flog.debug('no_match : %s', no_match)
     annotations = np.array(annotations)
     # # 文件名, ltrb + keys 类型名
 
-    to_coco_v2(annotations, classes_ids, path_img, path_root, mode, is_copy=False, is_move=False,
+    to_coco_v2(annotations, classes_ids, path_img, path_root, mode,
+               is_copy=False, is_move=False,
                type=name + '_' + str(len(dataset.ids_img)))

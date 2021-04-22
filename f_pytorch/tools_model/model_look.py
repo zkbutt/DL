@@ -84,11 +84,11 @@ def other():
 
 
 def f_look_tw(model, input=(1, 3, 416, 416), name='model_look'):
-    import tensorwatch as tw
-
     # 用这个即可---查看网络的统计结果---
     args_pd = tw.model_stats(model, input)
     args_pd.to_excel(name + '.xlsx')
+    script_models = torch.jit.trace(model, input)
+    script_models.save(name + '_jit' + '.pt')
     flog.info('文件生成成功 %s', name + '.xlsx')
 
 
@@ -184,7 +184,7 @@ if __name__ == '__main__':
     # model = models.inception_v3(pretrained=True)  # 能力 22.55 6.44
 
     '''-----------------模型分析 开始-----------------------'''
-    # import tensorwatch as tw
+    import tensorwatch as tw
 
     # 用这个即可---查看网络的统计结果---
     # args_pd = tw.model_stats(model, data_inputs_list)

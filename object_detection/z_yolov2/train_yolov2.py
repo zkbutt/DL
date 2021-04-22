@@ -39,15 +39,15 @@ def train_eval_set(cfg):
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
     # batch = 16  # type
-    batch = 64
+    batch = 32
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 2
         cfg.IS_COCO_EVAL = False
 
     size = (416, 416)  # type
-    cfg_voc(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    # cfg_voc(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
-    # cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_raccoon(cfg, batch=batch, image_size=size)  # 加载数据基础参数
 
     # anc重写
@@ -66,10 +66,10 @@ def train_eval_set(cfg):
 
     # type3 dark19
     # cfg.FILE_NAME_WEIGHT = 'zz/t_yolo2_type3_dark19c0.01-137_3.94_p73.5_r49.8' + '.pth'  # conf-0.01 nms-0.5
-    cfg.FILE_NAME_WEIGHT = 't_yolo2__voc_res18-50_5.492' + '.pth'  # conf-0.01 nms-0.5
+    # cfg.FILE_NAME_WEIGHT = 't_yolo2__voc_res18-50_5.492' + '.pth'  # conf-0.01 nms-0.5
     cfg.MAPS_VAL = [0.71, 0.46]  # 最高
 
-    cfg.LR0 = 1e-3 / 2
+    cfg.LR0 = 1e-3
     cfg.TB_WRITER = True
     cfg.DEL_TB = True
     cfg.IS_FORCE_SAVE = False  # 强制记录

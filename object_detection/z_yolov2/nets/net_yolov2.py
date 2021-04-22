@@ -345,50 +345,6 @@ class PredictYOLO_v2(Predicting_Base):
 
         return ids_batch1, pboxes_ltrb1, plabels1, pscores1
 
-    def forward(self, pyolos, imgs_ts=None):
-        cfg = self.cfg
-        device = pyolos.device
-        batch, c, h, w = pyolos.shape
-
-        # 解码txywh
-        s_ = 1 + cfg.NUM_CLASSES
-        # [3, 40, 13, 13] -> [3, 8, 5, 13*13] -> [3, 169, 5, 8]
-        pyolos = pyolos.view(batch, s_ + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
-
-        _pyolos = pyolos.view(batch, -1, s_ + 4)  # [3, 845, 8]
-        pconf = _pyolos[:, :, 0].sigmoid()
-        cls_conf, plabels = _pyolos[:, :, 1:s_].sigmoid().max(-1)
-        pscores = cls_conf * pconf
-
-        mask_pos = pscores > cfg.THRESHOLD_PREDICT_CONF  # b,hw
-        if not torch.any(mask_pos):  # 如果没有一个对象
-            print('该批次没有找到目标 max:{0:.2f} min:{0:.2f} mean:{0:.2f}'.format(pconf.max().item(),
-                                                                          pconf.min().item(),
-                                                                          pconf.mean().item(),
-                                                                          ))
-            return [None] * 5
-
-        ids_batch1, _ = torch.where(mask_pos)
-
-        # torch.Size([3, 169, 5, 8]) -> [3, 169, 5, 4]
-        ptxywh = pyolos[:, :, :, s_:s_ + 4]
-        pltrb = boxes_decode4yolo2(ptxywh, h, w, cfg)  # 预测 -> ltrb [3, 845, 4]
-
-        pboxes_ltrb1 = pltrb[mask_pos]
-        pboxes_ltrb1 = torch.clamp(pboxes_ltrb1, min=0., max=1.)
-
-        pscores1 = pscores[mask_pos]
-        plabels1 = plabels[mask_pos]
-        plabels1 = plabels1 + 1
-
-        ids_batch2, p_boxes_ltrb2, p_labels2, p_scores2 = label_nms(ids_batch1,
-                                                                    pboxes_ltrb1,
-                                                                    plabels1,
-                                                                    pscores1,
-                                                                    device,
-                                                                    cfg.THRESHOLD_PREDICT_NMS)
-
-        return ids_batch2, p_boxes_ltrb2, None, p_labels2, p_scores2,
 
 
 class Yolo_v2_Net(nn.Module):

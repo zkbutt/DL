@@ -84,7 +84,7 @@ def f_mershgrid(row, col, is_rowcol=True, num_repeat=1):
     :param col:  x 需要加 col
     :param is_rowcol:
     :param num_repeat:
-    :return:
+    :return: torch.Size([8112, 2])
     '''
     a = torch.arange(row)  # 3行 4列
     b = torch.arange(col)

@@ -46,6 +46,7 @@ class DataLoader2:
             # device = torch.device("cpu")
 
         self.cfg.DATA_NUM_WORKERS = min([os.cpu_count(), self.cfg.DATA_NUM_WORKERS])
+        # self.cfg.DATA_NUM_WORKERS = 0  # 这里设置数据线程
 
         # 检查保存权重文件夹是否存在，不存在则创建
         if not os.path.exists(self.cfg.PATH_SAVE_WEIGHT):
@@ -287,23 +288,30 @@ def cfg_type3(cfg, batch=40, image_size=(448, 448)):
     # 训练
     cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
-    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_1096.json'
+    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_1066.json'
 
     # 验证
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_val_416.json'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_val_413.json'
 
     # 测试
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_test_621.json'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_test_637.json'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
     # Accuracy: 73.32%  [3,3,2]
-    cfg.ANCS_SCALE = [[0.06, 0.06], [0.122, 0.20], [0.2, 0.12],
-                      [0.382, 0.251], [0.262, 0.378], [0.408, 0.529],
-                      [0.861, 0.675], [0.742, 0.824], [0.97, 0.73]]
+    cfg.ANCS_SCALE = [[0.136, 0.126],
+                      [0.22, 0.282],
+                      [0.392, 0.232],
+                      [0.342, 0.432],
+                      [0.548, 0.338],
+                      [0.574, 0.562],
+                      [0.82, 0.43],
+                      [0.64696, 0.862],
+                      [0.942, 0.662], ]
+
     cfg.ANCHORS_CLIP = True  # 是否剔除超边界
     cfg.NUMS_ANC = [3, 3, 3]
 
@@ -340,23 +348,30 @@ def cfg_type4(cfg, batch=40, image_size=(448, 448)):
     # 训练
     cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
-    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type4_train_753.json'
+    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type4_train_994.json'
 
     # 验证
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type4_val_284.json'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type4_val_369.json'
 
     # 测试
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type4_test_407.json'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type4_test_550.json'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
     # Accuracy: 73.32%  [3,3,2]
-    cfg.ANCS_SCALE = [[0.06, 0.06], [0.122, 0.20], [0.2, 0.12],
-                      [0.382, 0.251], [0.262, 0.378], [0.408, 0.529],
-                      [0.861, 0.675], [0.742, 0.824], [0.97, 0.73]]
+    cfg.ANCS_SCALE = [[0.028, 0.044],
+                      [0.034, 0.084],
+                      [0.056, 0.14],
+                      [0.122, 0.092],
+                      [0.1, 0.24],
+                      [0.238, 0.178],
+                      [0.297, 0.362],
+                      [0.671, 0.336],
+                      [0.836, 0.624], ]
+
     cfg.ANCHORS_CLIP = True  # 是否剔除超边界
     cfg.NUMS_ANC = [3, 3, 3]
 
