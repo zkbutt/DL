@@ -11,24 +11,24 @@ from f_tools.fits.f_predictfun import batched_nms_auto
 from f_tools.fits.ghm2 import GHMC_Loss2, GHMC_Loss3
 from f_tools.floss.balanced_l1_loss import BalancedL1Loss
 from f_tools.fun_od.f_boxes import xywh2ltrb, ltrb2ltwh, ltrb2xywh, calc_iou4ts, \
-    bbox_iou4one, offxy2xy
+    bbox_iou4one
 from f_tools.pic.f_show import f_show_3box4pil, show_anc4pil
 import matplotlib.pyplot as plt
 
 torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
 
 
-def x_bce(pconf, gconf, weight=1., reduction='none'):
+def x_bce(pconf_sigmoid, gconf, weight=1., reduction='none'):
     '''
     只支持二维
-    :param pconf: 值必须为0~1之间 float
+    :param pconf_sigmoid: 值必须为0~1之间 float
     :param gconf: 值为 float
     :return:
     '''
     eps = torch.finfo(torch.float16).eps
-    pconf = pconf.clamp(min=eps, max=1 - eps)
+    pconf_sigmoid = pconf_sigmoid.clamp(min=eps, max=1 - eps)
     # loss = np.round(-(gconf * np.log(pconf) + (1 - gconf) * np.log(1 - pconf)), 4)
-    loss = -(torch.log(pconf) * gconf + torch.log(1 - pconf) * (1 - gconf)) * weight
+    loss = -(torch.log(pconf_sigmoid) * gconf + torch.log(1 - pconf_sigmoid) * (1 - gconf)) * weight
     return loss
 
 

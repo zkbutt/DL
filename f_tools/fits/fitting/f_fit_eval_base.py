@@ -231,189 +231,198 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
             #     coco_gt = data_loader.dataset.coco
             #     f_show_coco_pics(coco_gt, data_loader.dataset.path_img, ids_img=[target['image_id']])
 
-        ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4, g_targets)
-        if p_labels is None or len(p_labels) == 0:
-            num_no_pos += len(data_loader)
-            flog.info('本批没有目标 num_no_pos 3次后出 当前: %s', num_no_pos)
-            # if num_no_pos > 3:  # 如果3个批都没有目标则放弃
-            #     return
-            # else:  # 没有目标就下一个
-            #     num_no_pos += 1
-            pbar.set_description("未-%s" % num_no_pos)
-            continue
-
-        _res_t = {}  # 每一批的结果
-        # 每一张图的 id 与批次顺序保持一致 选出匹配
-        for i, (size, image_id) in enumerate(zip(_sizes, _ids)):
-            mask = ids_batch == i  # 构建 batch 次的mask
-            if torch.any(mask):  # 如果最终有目标存在 将写出info中
-                if cfg.IS_VISUAL:
-                    img_ts = img_ts4[i]
-                    # flog.debug('nms后 预测共有多少个目标: %s' % p_boxes_ltrb[mask].shape[0])
-                    # from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
-                    # img_ts = f_recover_normalization4ts(img_ts)
-                    # from torchvision.transforms import functional as transformsF
-                    # img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
-                    # # 处理完后尺寸
-                    # _size = torch.tensor(cfg.IMAGE_SIZE * 2)
-                    # p_boxes_ltrb_f = p_boxes_ltrb[mask].cpu() * _size
-                    # f_plt_od(img_pil, p_boxes_ltrb_f,
-                    #          g_boxes_ltrb=targets[i]['boxes'].cpu(),  # gbox 默认不归一化
-                    #          ids2classes=data_loader.dataset.ids_classes,
-                    #          labels=p_labels[mask],
-                    #          scores=p_scores[mask].tolist(),
-                    #          is_recover_size=False
-                    #          )
-
-                    _size = torch.tensor(cfg.IMAGE_SIZE * 2)
-                    coco = data_loader.dataset.coco_obj
-                    img_info = coco.loadImgs([image_id])
-                    file_img = os.path.join(data_loader.dataset.path_img, img_info[0]['file_name'])
-
-                    img_np = cv2.imread(file_img)
-                    img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
-                    # import skimage.io as io
-                    # h,w,c
-                    # img_np = io.imread(file_img)
-                    whwh = np.tile(np.array(img_np.shape[:2][::-1]), 2)
-
-                    p_boxes_ltrb_f = p_boxes_ltrb[mask].cpu() * whwh
-                    f_plt_od_np(img_np, p_boxes_ltrb_f,
-                                g_boxes_ltrb=targets[i]['boxes'].cpu() / _size * whwh,  # gbox 默认不归一化
-                                ids2classes=data_loader.dataset.ids_classes,
-                                labels=p_labels[mask],
-                                scores=p_scores[mask].tolist(),
-                                is_recover_size=False
-                                )
-
-                # 恢复真实尺寸(原装未处理) coco需要 ltwh
-                boxes_ltwh = ltrb2ltwh(p_boxes_ltrb[mask] * size.repeat(2)[None])
-                _res_t[image_id] = {
-                    'boxes': boxes_ltwh,
-                    'labels': p_labels[mask],
-                    'scores': p_scores[mask],
-                }
-                # 更新进度条值
-                d = {
-                    'pos': len(boxes_ltwh),
-                    'max': round(p_scores[mask].max().item() * 100, 1),
-                    # 'min': round(p_scores.min().item(), 1),
-                    'mean': round(p_scores[mask].mean().item() * 100, 1),
-                }
-                pbar.set_postfix(**d)
-
-            else:
-                # flog.warning('没有预测出框 %s', files_txt)
-                num_no_pos += 1
+        if cfg.CUSTOM_EVEL:  # 在net_center需要对应修改
+            model(img_ts4, g_targets, _ids, _sizes, data_loader.dataset.coco_obj)
+            maps_val = [0, 0]
+            return maps_val
+        else:
+            ids_batch, p_boxes_ltrb, p_keypoints, p_labels, p_scores = model(img_ts4, g_targets)
+            if p_labels is None or len(p_labels) == 0:
+                num_no_pos += len(data_loader)
+                flog.info('本批没有目标 num_no_pos 3次后出 当前: %s', num_no_pos)
+                # if num_no_pos > 3:  # 如果3个批都没有目标则放弃
+                #     return
+                # else:  # 没有目标就下一个
+                #     num_no_pos += 1
                 pbar.set_description("未-%s" % num_no_pos)
+                continue
 
-        if len(_res_t) > 0:
-            res_.update(_res_t)  # 扩展单个
+            _res_t = {}  # 每一批的结果
 
-    # if len(res_)
-    # 重组数据
-    res_coco = []
+            # 每一张图的 id 与批次顺序保持一致 选出匹配
+            for i, (size, image_id) in enumerate(zip(_sizes, _ids)):
+                mask = ids_batch == i  # 构建 batch 次的mask
+                if torch.any(mask):  # 如果最终有目标存在 将写出info中
+                    if cfg.IS_VISUAL or cfg.tcfg_show_pic < cfg.NUM_EVAL_SHOW_PIC:
+                        cfg.tcfg_show_pic += 1
+                        # img_ts = img_ts4[i]
+                        # flog.debug('nms后 预测共有多少个目标: %s' % p_boxes_ltrb[mask].shape[0])
+                        # from f_tools.pic.enhance.f_data_pretreatment import f_recover_normalization4ts
+                        # img_ts = f_recover_normalization4ts(img_ts)
+                        # from torchvision.transforms import functional as transformsF
+                        # img_pil = transformsF.to_pil_image(img_ts).convert('RGB')
+                        # # 处理完后尺寸
+                        # _size = torch.tensor(cfg.IMAGE_SIZE * 2)
+                        # p_boxes_ltrb_f = p_boxes_ltrb[mask].cpu() * _size
+                        # f_plt_od(img_pil, p_boxes_ltrb_f,
+                        #          g_boxes_ltrb=targets[i]['boxes'].cpu(),  # gbox 默认不归一化
+                        #          ids2classes=data_loader.dataset.ids_classes,
+                        #          labels=p_labels[mask],
+                        #          scores=p_scores[mask].tolist(),
+                        #          is_recover_size=False
+                        #          )
 
-    '''这里处理多 GPU 数据同步 '''
-    if fis_mgpu():
-        # 这里未考虑 res_ 为空的优化
-        d = {}
-        d['res_'] = res_
-        d['ids_coco'] = ids_coco
-        d['num_no_pos'] = num_no_pos
-        data_list = dict_all_gather(d)  # 任务类型同步
-        if not is_main_process():
-            # 其它 GPU 进程退出
-            flog.debug('get_rank %s 已退出', get_rank())
-            return None
-        res_.clear()  # 重组多GPU的数据
-        ids_coco.clear()
-        num_no_pos = 0
-        for d in data_list:
-            res_.update(d['res_'])
-            ids_coco.extend(d['ids_coco'])
-            num_no_pos += d['num_no_pos']
+                        _size = torch.tensor(cfg.IMAGE_SIZE * 2)
+                        coco = data_loader.dataset.coco_obj
+                        img_info = coco.loadImgs([image_id])
+                        file_img = os.path.join(data_loader.dataset.path_img, img_info[0]['file_name'])
 
-    for i, (image_id, target) in enumerate(res_.items()):
-        labels = target['labels'].type(torch.int).tolist()
-        boxes_ltwh = target['boxes'].tolist()
-        score = target['scores'].tolist()
-        for i in range(len(labels)):
-            res_coco.append({"image_id": image_id, "category_id": labels[i], "bbox": boxes_ltwh[i], "score": score[i]})
+                        img_np = cv2.imread(file_img)
+                        img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+                        # import skimage.io as io
+                        # h,w,c
+                        # img_np = io.imread(file_img)
+                        whwh = np.tile(np.array(img_np.shape[:2][::-1]), 2)
 
-    maps_val = []
-    if len(res_coco) > 0:  # 有 coco 结果
-        coco_gt = data_loader.dataset.coco_obj
-        # 第一个元素指示操作该临时文件的安全级别，第二个元素指示该临时文件的路径
-        _, tmp = tempfile.mkstemp()
-        json.dump(res_coco, open(tmp, 'w'))
-        coco_dt = coco_gt.loadRes(tmp)
-        '''
-        _summarizeDets()->_summarize() 
-            _summarizeDets 函数中调用了12次 _summarize
-            结果在 self.eval['precision'] , self.eval['recall']中 
-        '''
-        # coco_eval_obj = COCOeval(coco_gt, coco_dt, ann_type)
-        coco_eval_obj = FCOCOeval(coco_gt, coco_dt, ann_type)
-        coco_eval_obj.params.imgIds = ids_coco  # 多显卡id合并更新
-        coco_eval_obj.evaluate()
-        coco_eval_obj.accumulate()
-        # coco_eval_obj.summarize() # 原装生成 coco_eval_obj.stats
+                        p_boxes_ltrb_f = p_boxes_ltrb[mask].cpu() * whwh
+                        f_plt_od_np(img_np, p_boxes_ltrb_f,
+                                    g_boxes_ltrb=targets[i]['boxes'].cpu() / _size * whwh,  # gbox 默认不归一化
+                                    ids2classes=data_loader.dataset.ids_classes,
+                                    labels=p_labels[mask],
+                                    scores=p_scores[mask].tolist(),
+                                    is_recover_size=False
+                                    )
 
-        coco_stats, print_coco = coco_eval_obj.summarize()
-        print(print_coco)
-        coco_eval_obj.stats = coco_stats
+                    # 恢复真实尺寸(原装未处理) coco需要 ltwh
+                    boxes_ltwh = ltrb2ltwh(p_boxes_ltrb[mask] * size.repeat(2)[None])
+                    _res_t[image_id] = {
+                        'boxes': boxes_ltwh,
+                        'labels': p_labels[mask],
+                        'scores': p_scores[mask],
+                    }
+                    # 更新进度条值
+                    d = {
+                        'pos': len(boxes_ltwh),
+                        'max': round(p_scores[mask].max().item() * 100, 1),
+                        # 'min': round(p_scores.min().item(), 1),
+                        'mean': round(p_scores[mask].mean().item() * 100, 1),
+                    }
+                    pbar.set_postfix(**d)
 
-        clses_name = list(data_loader.dataset.classes_ids)
-        coco_eval_obj.print_clses(clses_name)
+                else:
+                    # flog.warning('没有预测出框 %s', files_txt)
+                    num_no_pos += 1
+                    pbar.set_description("未-%s" % num_no_pos)
 
-        maps_val.append(coco_eval_obj.stats[1])
-        maps_val.append(coco_eval_obj.stats[7])
+            if len(_res_t) > 0:
+                res_.update(_res_t)  # 扩展单个
 
-        if tb_writer is not None:
-            # Precision_iou
-            _d = {
-                'IoU=0.50:0.95': coco_eval_obj.stats[0],
-                'IoU=0.50': coco_eval_obj.stats[1],
-                'IoU=0.75': coco_eval_obj.stats[2],
-            }
-            tb_writer.add_scalars('mAP/Precision_iou', _d, epoch + 1)
+        cfg.tcfg_show_pic = 0  # 置0
+        # if len(res_)
+        # 重组数据
+        res_coco = []
 
-            # Recall_iou
-            _d = {
-                'maxDets=  1': coco_eval_obj.stats[6],
-                'maxDets= 10': coco_eval_obj.stats[7],
-                'maxDets=100': coco_eval_obj.stats[8],
-            }
-            tb_writer.add_scalars('mAP/Recall_iou', _d, epoch + 1)
+        '''这里处理多 GPU 数据同步 '''
+        if fis_mgpu():
+            # 这里未考虑 res_ 为空的优化
+            d = {}
+            d['res_'] = res_
+            d['ids_coco'] = ids_coco
+            d['num_no_pos'] = num_no_pos
+            data_list = dict_all_gather(d)  # 任务类型同步
+            if not is_main_process():
+                # 其它 GPU 进程退出
+                flog.debug('get_rank %s 已退出', get_rank())
+                return None
+            res_.clear()  # 重组多GPU的数据
+            ids_coco.clear()
+            num_no_pos = 0
+            for d in data_list:
+                res_.update(d['res_'])
+                ids_coco.extend(d['ids_coco'])
+                num_no_pos += d['num_no_pos']
 
-            # 小中大
-            _d = {
-                'p_large': coco_eval_obj.stats[5],
-                'r_large': coco_eval_obj.stats[11],
-            }
-            tb_writer.add_scalars('mAP/large', _d, epoch + 1)
+        for i, (image_id, target) in enumerate(res_.items()):
+            labels = target['labels'].type(torch.int).tolist()
+            boxes_ltwh = target['boxes'].tolist()
+            score = target['scores'].tolist()
+            for i in range(len(labels)):
+                res_coco.append(
+                    {"image_id": image_id, "category_id": labels[i], "bbox": boxes_ltwh[i], "score": score[i]})
 
-            _d = {
-                'p_medium': coco_eval_obj.stats[4],
-                'r_medium': coco_eval_obj.stats[10],
-            }
-            tb_writer.add_scalars('mAP/medium', _d, epoch + 1)
+        maps_val = []
+        if len(res_coco) > 0:  # 有 coco 结果
+            coco_gt = data_loader.dataset.coco_obj
+            # 第一个元素指示操作该临时文件的安全级别，第二个元素指示该临时文件的路径
+            _, tmp = tempfile.mkstemp()
+            json.dump(res_coco, open(tmp, 'w'))
+            coco_dt = coco_gt.loadRes(tmp)
+            '''
+            _summarizeDets()->_summarize() 
+                _summarizeDets 函数中调用了12次 _summarize
+                结果在 self.eval['precision'] , self.eval['recall']中 
+            '''
+            # coco_eval_obj = COCOeval(coco_gt, coco_dt, ann_type)
+            coco_eval_obj = FCOCOeval(coco_gt, coco_dt, ann_type)
+            coco_eval_obj.params.imgIds = ids_coco  # 多显卡id合并更新
+            coco_eval_obj.evaluate()
+            coco_eval_obj.accumulate()
+            # coco_eval_obj.summarize() # 原装生成 coco_eval_obj.stats
 
-            _d = {
-                'p_small': coco_eval_obj.stats[3],
-                'r_small': coco_eval_obj.stats[9],
-            }
-            tb_writer.add_scalars('mAP/small', _d, epoch + 1)
+            coco_stats, print_coco = coco_eval_obj.summarize()
+            print(print_coco)
+            coco_eval_obj.stats = coco_stats
 
-            # 一个图只有一个值
-            tb_writer.add_scalar('mAP/num_no_pos', num_no_pos, epoch + 1)  # 未检出的图片数
+            clses_name = list(data_loader.dataset.classes_ids)
+            coco_eval_obj.print_clses(clses_name)
 
-    else:  # 没有 coco 结果
-        if tb_writer is not None:
-            tb_writer.add_scalar('mAP/num_no_pos', num_no_pos, epoch + 1)  # 未检出的图片数
-        maps_val = [0, 0]
-    return maps_val
+            maps_val.append(coco_eval_obj.stats[1])
+            maps_val.append(coco_eval_obj.stats[7])
+
+            if tb_writer is not None:
+                # Precision_iou
+                _d = {
+                    'IoU=0.50:0.95': coco_eval_obj.stats[0],
+                    'IoU=0.50': coco_eval_obj.stats[1],
+                    'IoU=0.75': coco_eval_obj.stats[2],
+                }
+                tb_writer.add_scalars('mAP/Precision_iou', _d, epoch + 1)
+
+                # Recall_iou
+                _d = {
+                    'maxDets=  1': coco_eval_obj.stats[6],
+                    'maxDets= 10': coco_eval_obj.stats[7],
+                    'maxDets=100': coco_eval_obj.stats[8],
+                }
+                tb_writer.add_scalars('mAP/Recall_iou', _d, epoch + 1)
+
+                # 小中大
+                _d = {
+                    'p_large': coco_eval_obj.stats[5],
+                    'r_large': coco_eval_obj.stats[11],
+                }
+                tb_writer.add_scalars('mAP/large', _d, epoch + 1)
+
+                _d = {
+                    'p_medium': coco_eval_obj.stats[4],
+                    'r_medium': coco_eval_obj.stats[10],
+                }
+                tb_writer.add_scalars('mAP/medium', _d, epoch + 1)
+
+                _d = {
+                    'p_small': coco_eval_obj.stats[3],
+                    'r_small': coco_eval_obj.stats[9],
+                }
+                tb_writer.add_scalars('mAP/small', _d, epoch + 1)
+
+                # 一个图只有一个值
+                tb_writer.add_scalar('mAP/num_no_pos', num_no_pos, epoch + 1)  # 未检出的图片数
+
+        else:  # 没有 coco 结果
+            if tb_writer is not None:
+                tb_writer.add_scalar('mAP/num_no_pos', num_no_pos, epoch + 1)  # 未检出的图片数
+            maps_val = [0, 0]
+        return maps_val
 
 
 # def _polt_boxes(img_pil, p_boxes_ltrb, szie_scale4bbox, p_scores, p_labels, labels_lsit):

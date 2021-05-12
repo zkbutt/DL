@@ -12,7 +12,6 @@ from PIL import Image, ImageDraw
 from tqdm import tqdm
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.f_coco.coco_dataset import CocoDataset
 from f_tools.pic.enhance.f_mosaic import f_mosaic_pics_ts
 
 
@@ -622,59 +621,6 @@ def fun4dataloader(batch_datas):
         targets.append(target)
     return images, targets
 
-
-def load_od4voc(cfg, data_transform, is_mgpu, ids2classes):
-    dataset_train, dataset_val = [None] * 2
-    if cfg.IS_TRAIN:
-        dataset_train = CocoDataset(
-            path_coco_target=cfg.PATH_COCO_TARGET_TRAIN,
-            path_img=cfg.PATH_IMG_TRAIN,
-            # mode='keypoints',
-            mode='bbox',
-            data_type='train2017',
-            transform=data_transform['train'],
-            is_mosaic=cfg.IS_MOSAIC,
-            is_mosaic_keep_wh=cfg.IS_MOSAIC_KEEP_WH,
-            is_mosaic_fill=cfg.IS_MOSAIC_FILL,
-            is_debug=cfg.DEBUG,
-            cfg=cfg
-        )
-    if cfg.IS_COCO_EVAL:
-        dataset_val = CocoDataset(
-            path_coco_target=cfg.PATH_COCO_TARGET_EVAL,
-            path_img=cfg.PATH_IMG_EVAL,
-            # mode='keypoints',
-            mode='bbox',
-            data_type='val2017',
-            transform=data_transform['val'],
-            is_mosaic=False,  # 必须为 False 否则ID出错
-            is_debug=cfg.DEBUG,
-            cfg=cfg
-        )
-
-    loader_train, loader_val_coco, train_sampler, eval_sampler = init_dataloader(
-        cfg,
-        dataset_train, dataset_val,
-        is_mgpu)
-
-    loader_val_fmap = None
-    if cfg.IS_FMAP_EVAL:
-        dataset_val = MapDataSet(path_imgs=cfg.PATH_EVAL_IMGS,
-                                 path_eval_info=cfg.PATH_EVAL_INFO,
-                                 ids2classes=ids2classes,
-                                 transforms=data_transform['val'],
-                                 is_debug=cfg.DEBUG)
-        loader_val_fmap = torch.utils.data.DataLoader(
-            dataset_val,
-            batch_size=cfg.BATCH_SIZE,
-            num_workers=cfg.DATA_NUM_WORKERS,
-            # shuffle=True,
-            pin_memory=True,  # 不使用虚拟内存 GPU要报错
-            # drop_last=True,  # 除于batch_size余下的数据
-            collate_fn=fun4dataloader,
-        )
-
-    return loader_train, loader_val_fmap, loader_val_coco, train_sampler, eval_sampler
 
 
 def init_dataloader(cfg, dataset_train, dataset_val, is_mgpu, use_mgpu_eval=True):

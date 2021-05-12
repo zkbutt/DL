@@ -353,6 +353,34 @@ def gaussian_focal_loss(pcls_sigmoid, gcls, alpha=2.0, gamma=4.0, is_debug=False
     return l_pos + l_neg
 
 
+class HeatmapLoss(nn.Module):
+    def __init__(self, weight=None, alpha=2, beta=4, reduction='mean'):
+        super(HeatmapLoss, self).__init__()
+        self.alpha = alpha
+        self.beta = beta
+
+    def forward(self, inputs, targets):
+        inputs = torch.sigmoid(inputs)
+        center_id = (targets == 1.0).float()
+        other_id = (targets != 1.0).float()
+        center_loss = -center_id * (1.0 - inputs) ** self.alpha * torch.log(inputs + 1e-14)
+        other_loss = -other_id * (1 - targets) ** self.beta * (inputs) ** self.alpha * torch.log(1.0 - inputs + 1e-14)
+
+        return center_loss + other_loss
+
+
+class BCE_focal_loss(nn.Module):
+    def __init__(self, gamma=2):
+        super(BCE_focal_loss, self).__init__()
+        self.gamma = gamma
+
+    def forward(self, inputs, targets):
+        loss = (1.0 - inputs) ** self.gamma * (targets) * torch.log(inputs + 1e-14) + \
+               (inputs) ** self.gamma * (1.0 - targets) * torch.log(1.0 - inputs + 1e-14)
+        loss = -torch.sum(torch.sum(loss, dim=-1), dim=-1)
+        return loss
+
+
 if __name__ == '__main__':
     # t图()
     pred_sigmoid = torch.Tensor([[0.1, .5, .7], [0.12, .4, .6]])

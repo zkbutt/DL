@@ -2,6 +2,8 @@
 import os
 import sys
 
+from object_detection.z_yolov3.nets.Layer_yolo3 import CSPDarknet_slim
+
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
@@ -33,18 +35,18 @@ def train_eval_set(cfg):
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
-    # batch = 32  # type
-    batch = 3
+    batch = 64  # type
+    # batch = 3
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 2
         cfg.IS_COCO_EVAL = False
 
     size = (416, 416)  # type
-    # cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
-    cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    # cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg.NUM_ANC = len(cfg.ANCS_SCALE) # cfg_type2 已有
 
-    cfg.NUMS_EVAL = {10: 5, 100: 3, 160: 2}
+    cfg.NUMS_EVAL = {10: 10, 100: 3, 160: 2}
     # cfg.NUM_SAVE_INTERVAL = 100
 
     '''特有参数'''
@@ -78,6 +80,10 @@ def init_model(cfg, device, id_gpu=None):
     dims_out = (128, 256, 512)
     model = ModelOuts4Resnet(model, dims_out)
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_res18'
+
+    # model = CSPDarknet_slim()
+    # model.dims_out = (128, 256, 512)
+    # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_csspds'
 
     model = Yolo_v3(backbone=model, cfg=cfg)
     # f_look_model(model, input=(1, 3, *cfg.IMAGE_SIZE))

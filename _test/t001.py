@@ -55,7 +55,13 @@ import cv2
 import torch
 import torchvision
 
-path = r'C:\Users\feadre\Desktop\骑士horimax-20210420(1)\zz'
-listdir = os.listdir(path)
-for n in listdir:
-    print(n.split('.')[0])
+_t = 51/512
+a = torch.tensor(_t, dtype=torch.float32)
+b = torch.tensor(_t, dtype=torch.float16)
+# a1 = torch.true_divide(a, 512)
+# b1 = torch.true_divide(b, 512)
+print(a, b)
+print(a.item() * 128, b.item() * 128)
+
+print(111//2)
+print(111%2)

@@ -46,8 +46,8 @@ def train_eval_set(cfg):
         cfg.IS_COCO_EVAL = False
 
     size = (416, 416)  # 多尺寸时这个用于预测
-    # cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
-    cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    # cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_voc(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_raccoon(cfg, batch=batch, image_size=size)  # 加载数据基础参数
 

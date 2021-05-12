@@ -9,7 +9,7 @@ from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import f_ohem, x_bce
 from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1
 from f_tools.floss.focal_loss import focalloss
-from f_tools.fun_od.f_boxes import xywh2ltrb, bbox_iou4one, calc_iou4ts, bbox_iou4y, xywh2ltrb4ts, ltrb2xywh
+from f_tools.fun_od.f_boxes import xywh2ltrb, bbox_iou4one, calc_iou4ts, bbox_iou4y,  ltrb2xywh
 from f_tools.pic.f_show import f_show_od_np4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 

@@ -1,5 +1,6 @@
 import os
 import sys
+import tensorwatch as tw
 
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
@@ -184,7 +185,6 @@ if __name__ == '__main__':
     # model = models.inception_v3(pretrained=True)  # 能力 22.55 6.44
 
     '''-----------------模型分析 开始-----------------------'''
-    import tensorwatch as tw
 
     # 用这个即可---查看网络的统计结果---
     # args_pd = tw.model_stats(model, data_inputs_list)

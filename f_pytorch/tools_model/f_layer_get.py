@@ -109,6 +109,53 @@ class ModelOuts4Resnet(nn.Module):
         # return hook
 
 
+class ModelOuts4Resnet_4(nn.Module):
+
+    def __init__(self, model, dims_out=(512, 1024, 2048)):
+        super().__init__()
+        self.dims_out = dims_out
+
+        self.model_hook = model
+        self.model_hook._forward_impl = types.MethodType(self.foverwrite, model)
+        # self.model_hook.classifier = NoneLayer()  # 直接输出层
+        self.model_hook.layer2[0].conv1.register_forward_hook(self.fun_layer1)
+        self.model_hook.layer3[0].conv1.register_forward_hook(self.fun_layer2)
+        self.model_hook.layer4[0].conv1.register_forward_hook(self.fun_layer3)
+        # model.features[18][2].register_forward_hook(self.fun_layer3)
+
+        self.dims_out = dims_out
+        self.out_layout1, self.out_layout2 = [0] * 2
+
+    def foverwrite(self, model, x):
+        # 重写流程 model 替换self
+        x = model.conv1(x)
+        x = model.bn1(x)
+        x = model.relu(x)
+        x = model.maxpool(x)
+
+        x = model.layer1(x)
+        x = model.layer2(x)
+        x = model.layer3(x)
+        x = model.layer4(x)
+        return x
+
+    def fun_layer1(self, module, input, output):
+        '''input是默认tuple '''
+        self.out_layout1 = input[0]
+
+    def fun_layer2(self, module, input, output):
+        self.out_layout2 = input[0]
+
+    def fun_layer3(self, module, input, output):
+        self.out_layout3 = input[0]
+
+    def forward(self, inputs):
+        outs = self.model_hook(inputs)
+        # torch.Size([10, 192, 52, 52]))  torch.Size([10, 576, 26, 26]) torch.Size([10, 1280, 13, 13])
+        return self.out_layout1, self.out_layout2, self.out_layout3, outs
+        # return hook
+
+
 class ModelOuts4Densenet121(nn.Module):
 
     def __init__(self, backbone, layer_name, ret_name_dict, dims_out=[512, 1024, 1024]):

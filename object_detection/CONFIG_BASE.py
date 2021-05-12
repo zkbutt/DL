@@ -4,6 +4,7 @@ import socket
 class CfgBase:
     START_EVAL = 10
     END_EVAL = 50  # 结束每轮验证
+    PTOPK = 500
     EVAL_INTERVAL = 3  # 间隙
     MAPS_VAL = [0.1, 0.1]
     LR0 = 1e-3
@@ -24,6 +25,7 @@ class CfgBase:
 
     '''data_pretreatment'''
     KEEP_SIZE = False
+    USE_BASE4NP = False  # 使用最基本的预处理(无任务图形增强)
 
     host_name = socket.gethostname()
     if host_name == 'Feadre-NB':
@@ -44,7 +46,12 @@ class CfgBase:
     FORWARD_COUNT = 1  # 多次迭代再反向
 
     tcfg_epoch = None  # 多尺寸训练时用
+    tcfg_show_pic = 0  # 显示图片次数
+    NUM_EVAL_SHOW_PIC = 2  # 每次验证显示两张 与 tcfg_show_pic 配合
+
     MODE_TRAIN = 1  # 自定义多种训练方式  及损失函数 通过备注
+    CUSTOM_EVEL = False  # 自定义验证方法
+
     # import getpass
     # # 获取当前系统用户名
     # user_name = getpass.getuser()

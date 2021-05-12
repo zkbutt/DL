@@ -1,11 +1,10 @@
 import os
 
 import torch
-
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.fitting.f_fit_class_base import Predicted_Video
-from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
-from object_detection.z_yolov2.train_yolov2 import train_eval_set, init_model
+from object_detection.z_center.CONFIG_CENTER import CFG
+from object_detection.z_center.train_center import train_eval_set, init_model
 
 if __name__ == '__main__':
     '''------------------系统配置---------------------'''

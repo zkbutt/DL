@@ -189,6 +189,45 @@ def mgpu_init():
     return args, device
 
 
+# def mgpu_process0_init(args, cfg, loader_train, loader_val_coco, model, device):
+#     '''支持 add_graph'''
+#     # 主进程任务
+#     flog.info('多GPU参数: %s' % args)
+#     if not os.path.exists(cfg.PATH_SAVE_WEIGHT):
+#         try:
+#             os.makedirs(cfg.PATH_SAVE_WEIGHT)
+#         except Exception as e:
+#             flog.error(' %s %s', cfg.PATH_SAVE_WEIGHT, e)
+#     # tensorboard --logdir=runs_widerface --host=192.168.0.199
+#     # tensorboard --logdir=runs_voc --host=192.168.0.199
+#     # print('"tensorboard --logdir=runs_raccoon200 --host=192.168.0.199", view at http://192.168.0.199:6006/'
+#     #       % cfg.PATH_TENSORBOARD)
+#
+#     path = os.path.join(cfg.PATH_PROJECT_ROOT, cfg.PATH_TENSORBOARD)
+#
+#     img_ = None
+#     if os.path.exists(path):
+#         if cfg.DEL_TB and cfg.PATH_HOST == '':
+#             # os.remove(path)  # 删除空文件夹 shutil.rmtree(path, ignore_errors=True)
+#             os.system("rm -rf %s" % path)  # Linux下调用bash命令
+#             img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 删除后需要
+#             import time
+#             while os.path.exists(path):
+#                 time.sleep(1)
+#             else:
+#                 flog.error('tb_writer 删除成功: %s', path)
+#             pass
+#     else:
+#         img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 不存在时需要
+#
+#     tb_writer = SummaryWriter(path)
+#
+#     # if img_ is not None:
+#     #     tb_writer.add_graph(model, img_)
+#
+#     return tb_writer
+
+
 def mgpu_process0_init(args, cfg, loader_train, loader_val_coco, model, device):
     '''支持 add_graph'''
     # 主进程任务
@@ -202,23 +241,25 @@ def mgpu_process0_init(args, cfg, loader_train, loader_val_coco, model, device):
     # tensorboard --logdir=runs_voc --host=192.168.0.199
     # print('"tensorboard --logdir=runs_raccoon200 --host=192.168.0.199", view at http://192.168.0.199:6006/'
     #       % cfg.PATH_TENSORBOARD)
+    import time
+    c_time = time.strftime('%Y-%m-%d_%H_%M_%S', time.localtime(time.time()))
+    path = os.path.join(cfg.PATH_PROJECT_ROOT, 'log', cfg.PATH_TENSORBOARD, c_time)
+    os.makedirs(path, exist_ok=True)
 
-    path = os.path.join(cfg.PATH_PROJECT_ROOT, cfg.PATH_TENSORBOARD)
-
-    img_ = None
-    if os.path.exists(path):
-        if cfg.DEL_TB and cfg.PATH_HOST == '':
-            # os.remove(path)  # 删除空文件夹 shutil.rmtree(path, ignore_errors=True)
-            os.system("rm -rf %s" % path)  # Linux下调用bash命令
-            img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 删除后需要
-            import time
-            while os.path.exists(path):
-                time.sleep(1)
-            else:
-                flog.error('tb_writer 删除成功: %s', path)
-            pass
-    else:
-        img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 不存在时需要
+    # img_ = None
+    # if os.path.exists(path):
+    #     if cfg.DEL_TB and cfg.PATH_HOST == '':
+    #         # os.remove(path)  # 删除空文件夹 shutil.rmtree(path, ignore_errors=True)
+    #         os.system("rm -rf %s" % path)  # Linux下调用bash命令
+    #         img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 删除后需要
+    #         import time
+    #         while os.path.exists(path):
+    #             time.sleep(1)
+    #         else:
+    #             flog.error('tb_writer 删除成功: %s', path)
+    #         pass
+    # else:
+    #     img_ = torch.zeros((1, 3, *cfg.IMAGE_SIZE), device=device)  # 不存在时需要
 
     tb_writer = SummaryWriter(path)
 

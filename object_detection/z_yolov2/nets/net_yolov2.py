@@ -15,7 +15,7 @@ from f_tools.fits.f_predictfun import label_nms
 from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import x_bce
 from f_tools.floss.focal_loss import focalloss
-from f_tools.fun_od.f_boxes import xywh2ltrb, calc_iou4ts, ltrb2xywh, bbox_iou4one, xywh2ltrb4ts, bbox_iou4y
+from f_tools.fun_od.f_boxes import xywh2ltrb, calc_iou4ts, ltrb2xywh, bbox_iou4one, bbox_iou4y
 from f_tools.pic.f_show import f_show_od_np4plt, f_show_od_ts4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 
@@ -272,7 +272,7 @@ class LossYOLO_v2(nn.Module):
             pwh_pos_scale = torch.exp(preg_pos[..., 2:4]) * match_ancs * h  # 恢复到特图
             pzxywh = torch.cat([pxy_pos_sigmoid, pwh_pos_scale], -1)
 
-            iou_zg = bbox_iou4one(xywh2ltrb4ts(pzxywh), gltrb_pos_tx, is_giou=True)
+            iou_zg = bbox_iou4one(xywh2ltrb(pzxywh), gltrb_pos_tx, is_giou=True)
             # iou_zg = bbox_iou4y(xywh2ltrb4ts(pzxywh), gltrb_pos_tx, GIoU=True)
             # print(iou_zg)
             l_reg = (1 - iou_zg).mean() * 2
@@ -316,10 +316,10 @@ class PredictYOLO_v2(Predicting_Base):
 
     def p_init(self, pyolos):
         self.batch, self.c, self.h, self.w = pyolos.shape
-        self.s_ = 1 + cfg.NUM_CLASSES
+        self.s_ = 1 + self.cfg.NUM_CLASSES
         # [3, 40, 13, 13] -> [3, 8, 5, 13*13] -> [3, 169, 5, 8]
-        pyolos = pyolos.view(self.batch, self.s_ + 4, cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
-        return pyolos
+        pyolos = pyolos.view(self.batch, self.s_ + 4, self.cfg.NUM_ANC, - 1).permute(0, 3, 2, 1).contiguous()
+        return pyolos, pyolos.device
 
     def get_pscores(self, pyolos):
         _pyolos = pyolos.view(self.batch, -1, self.s_ + 4)  # [3, 845, 8]
@@ -344,7 +344,6 @@ class PredictYOLO_v2(Predicting_Base):
         plabels1 = plabels1 + 1
 
         return ids_batch1, pboxes_ltrb1, plabels1, pscores1
-
 
 
 class Yolo_v2_Net(nn.Module):

@@ -8,7 +8,7 @@ import torch
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_loader import DataLoader2
-from f_tools.datas.f_coco.coco_dataset import CustomCocoDataset4cv
+from f_tools.datas.f_coco.coco_dataset import CustomCocoDataset
 from f_tools.device.f_device import init_video
 from f_tools.fits.f_predictfun import label_nms
 from f_tools.fits.fitting.f_fit_eval_base import f_prod_pic4one, f_prod_vodeo
@@ -61,6 +61,10 @@ def fdatas_l2(batch_data, device, cfg, epoch, model):
 
 
 class Predicting_Base(nn.Module):
+    '''
+    由 f_fit_eval_base 运行至net模型主Center 再由模型主Center调用
+    返回到 f_fit_eval_base
+    '''
 
     def __init__(self, cfg) -> None:
         super(Predicting_Base, self).__init__()
@@ -114,7 +118,7 @@ class Predicting_Base(nn.Module):
 
         pscores, plabels, pconf = self.get_pscores(outs)
 
-        mask_pos = pscores > cfg.THRESHOLD_PREDICT_CONF  # b,hw
+        mask_pos = pscores > cfg.THRESHOLD_PREDICT_CONF  # b,hw 二维mask
         if not torch.any(mask_pos):  # 如果没有一个对象
             print('该批次没有找到目标 max:{0:.2f} min:{0:.2f} mean:{0:.2f}'.format(pconf.max().item(),
                                                                           pconf.min().item(),
@@ -122,8 +126,8 @@ class Predicting_Base(nn.Module):
                                                                           ))
             return [None] * 5
 
-        _i = 500  # 这个是 topk 阀值
-        if pscores.shape[1] > _i:
+        _i = cfg.PTOPK  # 这个是 topk 阀值
+        if pscores.shape[-1] > _i:  # 并行取top100 与mask_pos 进行and操作
             # 最大1000个
             ids_topk = pscores.topk(_i, dim=-1)[1]  # torch.Size([32, 1000])
             mask_topk = torch.zeros_like(mask_pos)
@@ -214,7 +218,7 @@ class Predicted_Base(FBase):
         cfg.FILE_FIT_WEIGHT = os.path.join(cfg.PATH_SAVE_WEIGHT, cfg.FILE_NAME_WEIGHT)
 
         # 这里是原图
-        self.dataset_test = CustomCocoDataset4cv(
+        self.dataset_test = CustomCocoDataset(
             file_json=cfg.FILE_JSON_TEST,
             path_img=cfg.PATH_IMG_EVAL,
             mode=cfg.MODE_COCO_EVAL,

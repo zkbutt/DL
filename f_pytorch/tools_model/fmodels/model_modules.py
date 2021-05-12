@@ -392,3 +392,30 @@ class Focus(nn.Module):
         # 间隔为2取
         return self.conv(torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1))
         # return self.conv(self.contract(x))
+
+
+class DeConv(nn.Module):
+    ''' 反向卷积 增加尺寸 '''
+
+    def __init__(self, in_channels, out_channels, ksize, stride=2, leaky=False):
+        super(DeConv, self).__init__()
+        # deconv basic config
+        if ksize == 4:
+            padding = 1
+            output_padding = 0
+        elif ksize == 3:
+            padding = 1
+            output_padding = 1
+        elif ksize == 2:
+            padding = 0
+            output_padding = 0
+
+        self.convs = nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, ksize, stride=stride, padding=padding,
+                               output_padding=output_padding),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(0.1, inplace=True) if leaky else nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        return self.convs(x)

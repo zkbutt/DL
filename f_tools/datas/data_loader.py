@@ -4,10 +4,10 @@ import socket
 import torch
 import numpy as np
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_factory import load_od4voc, init_dataloader
-from f_tools.datas.f_coco.coco_dataset import CocoDataset, CustomCocoDataset, CustomCocoDataset4cv
+from f_tools.datas.data_factory import  init_dataloader
+from f_tools.datas.f_coco.coco_dataset import CustomCocoDataset
 from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_recover_gt
-from f_tools.pic.enhance.f_data_pretreatment4np import cre_transform_resize4np
+from f_tools.pic.enhance.f_data_pretreatment4np import cre_transform_resize4np, cre_transform_base4np
 
 
 class DataLoader2:
@@ -17,7 +17,10 @@ class DataLoader2:
         self.cfg = cfg
 
         self.set_init()  # 初始化方法
-        self.data_transform = cre_transform_resize4np(cfg)  # 写死用这个
+        if not cfg.USE_BASE4NP:
+            self.data_transform = cre_transform_resize4np(cfg)  # 写死用这个
+        else:
+            self.data_transform = cre_transform_base4np(cfg)  # 写死用这个
 
     def set_init(self):
         host_name = socket.gethostname()
@@ -56,7 +59,7 @@ class DataLoader2:
                 flog.error(' %s %s', self.cfg.PATH_SAVE_WEIGHT, e)
 
     def get_test_dataset(self):
-        dataset_val = CustomCocoDataset4cv(
+        dataset_val = CustomCocoDataset(
             file_json=self.cfg.FILE_JSON_TEST,
             path_img=self.cfg.PATH_IMG_EVAL,
             mode=self.cfg.MODE_COCO_EVAL,
@@ -72,7 +75,7 @@ class DataLoader2:
         return dataset_val
 
     def get_train_eval_datas(self, is_mgpu):
-        dataset_train = CustomCocoDataset4cv(
+        dataset_train = CustomCocoDataset(
             file_json=self.cfg.FILE_JSON_TRAIN,
             path_img=self.cfg.PATH_IMG_TRAIN,
             mode=self.cfg.MODE_COCO_TRAIN,
@@ -84,7 +87,7 @@ class DataLoader2:
             cfg=self.cfg
         )
 
-        dataset_val = CustomCocoDataset4cv(
+        dataset_val = CustomCocoDataset(
             file_json=self.cfg.FILE_JSON_TEST,
             path_img=self.cfg.PATH_IMG_EVAL,
             mode=self.cfg.MODE_COCO_EVAL,
@@ -299,6 +302,66 @@ def cfg_type3(cfg, batch=40, image_size=(448, 448)):
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
     cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_test_637.json'
+
+    cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
+    # Accuracy: 73.32%  [3,3,2]
+    cfg.ANCS_SCALE = [[0.136, 0.126],
+                      [0.22, 0.282],
+                      [0.392, 0.232],
+                      [0.342, 0.432],
+                      [0.548, 0.338],
+                      [0.574, 0.562],
+                      [0.82, 0.43],
+                      [0.64696, 0.862],
+                      [0.942, 0.662], ]
+
+    cfg.ANCHORS_CLIP = True  # 是否剔除超边界
+    cfg.NUMS_ANC = [3, 3, 3]
+
+    cfg.PIC_MEAN = (0.406, 0.456, 0.485)
+    cfg.PIC_STD = (0.225, 0.224, 0.229)
+
+
+def cfg_type3_t(cfg, batch=3, image_size=(448, 448)):
+    # _cfg_base(cfg)
+    cfg.IMAGE_SIZE = image_size
+
+    cfg.BATCH_SIZE = batch
+    cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
+
+    cfg.PRINT_FREQ = 10  # BATCH_SIZE * PRINT_FREQ 张图片
+
+    cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
+    cfg.START_EVAL = 10  # 1第一轮
+
+    cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
+    cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
+    cfg.IS_MOSAIC_FILL = True
+
+    cfg.NUM_CLASSES = 3
+    cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
+    cfg.DATA_NUM_WORKERS = 4
+
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'type3'
+    cfg.PATH_TENSORBOARD = 'runs_type3'
+
+    # cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2012'
+    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2007'
+
+    # 训练
+    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
+    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_3.json'
+
+    # 验证
+    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_3.json'
+
+    # 测试
+    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
+    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_3.json'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
     # Accuracy: 73.32%  [3,3,2]

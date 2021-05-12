@@ -2,41 +2,43 @@ import torch
 from torch.nn import functional as F
 
 
-def gaussian_radius(sizes, min_overlap=0.7):
+def gaussian_radius(gwhs, min_overlap=0.7):
     '''
     根据长宽 尽量保存能 IOU>0.7 求半径
-    :param sizes : bbox torch.Size([nn, 2])
+    :param gwhs : bbox torch.Size([nn, 2])
     :param min_overlap: 覆盖面积 1为最大 这个越小半径越大
     :return: 最小的半径，其保证iou>=min_overlap
         [nn] 个最小半径 tensor([1.3666, 0.4733, 0.6581])
     '''
-    hh, ww = sizes[:, 0], sizes[:, 1]
+    hh, ww = gwhs[:, 0], gwhs[:, 1]
 
     a1 = 1
     b1 = (hh + ww)
     c1 = ww * hh * (1 - min_overlap) / (1 + min_overlap)
     sq1 = torch.sqrt(b1 ** 2 - 4 * a1 * c1)
-    r1 = (b1 + sq1) / 2
+    r1 = (b1 + sq1) / 2  # (ngt)
 
     a2 = 4
     b2 = 2 * (hh + ww)
     c2 = (1 - min_overlap) * ww * hh
     sq2 = torch.sqrt(b2 ** 2 - 4 * a2 * c2)
-    r2 = (b2 + sq2) / 2
+    r2 = (b2 + sq2) / 2  # (ngt)
 
     a3 = 4 * min_overlap
     b3 = -2 * min_overlap * (hh + ww)
     c3 = (min_overlap - 1) * ww * hh
     sq3 = torch.sqrt(b3 ** 2 - 4 * a3 * c3)
-    r3 = (b3 + sq3) / 2
+    r3 = (b3 + sq3) / 2  # (ngt)
     # r3 = (b3 + sq3) / 2 * a3 # 这里可以除以2a,待实验
+
+    # (ngt) -> (1,ngt) ^^ -> (3,ngt) -> (ngt,3) -> (ngt)
     val_min, _ = torch.min(torch.cat([r1.unsqueeze(0), r2.unsqueeze(0), r3.unsqueeze(0)], dim=0).T, dim=1)
     return val_min
 
 
 def cre_grid(rwh, sigma=torch.tensor((1, 2))):
     '''
-    根据半径生成
+    根据半径生成 高期图
     :param rwh: 这里需转成int 确保中心点为1
     :param sigma:
     :return:
@@ -49,7 +51,7 @@ def cre_grid(rwh, sigma=torch.tensor((1, 2))):
     hh = torch.arange(-h, h + 1, device=rwh.device).unsqueeze(-1)
 
     h = torch.exp(-((ww * ww).true_divide(2 * sigma[1] ** 2) + (hh * hh).true_divide(2 * sigma[1] ** 2)))
-    h[h < torch.finfo(h.dtype).eps * h.max()] = 0
+    h[h < torch.finfo(h.dtype).eps * h.max()] = 0 # 确保为正
     return h
 
 

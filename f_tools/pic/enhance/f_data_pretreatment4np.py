@@ -12,40 +12,81 @@ import matplotlib.pyplot as plt
 
 FDEBUG = False
 
+'''
+输入：
+    原图 uint8 
+    boxes 为真实图片的ltrb值
+输出：
+    正则化变通道后的RGB图 
+'''
+
 
 def cre_transform_resize4np(cfg):
-    if cfg.KEEP_SIZE:  # 不进行随机缩放
+    if cfg.USE_BASE4NP:
+        flog.error('使用的是 USE_BASE4NP 模式 %s', cfg.USE_BASE4NP)
         data_transform = {
             "train": Compose([
                 ConvertFromInts(),  # image int8转换成float [0,256)
-                # ToAbsoluteCoords(), # 恢复真实尺寸
-                PhotometricDistort(),  # 图片集合
-                # Expand(cfg.PIC_MEAN),  # 放大缩小图片
-                # RandomSampleCrop(),  # 随机剪切定位
-                RandomMirror(),
-                # ToPercentCoords(), # 归一化尺寸
                 Resize(cfg.IMAGE_SIZE),
                 Normalize(cfg.PIC_MEAN, cfg.PIC_STD),
                 ConvertColor(current='BGR', transform='RGB'),
-                ToTensor(is_box_oned=True),
+                ToTensor(is_box_oned=False),
             ], cfg)
         }
     else:
-        data_transform = {
-            "train": Compose([
-                ConvertFromInts(),
-                # ToAbsoluteCoords(), # 恢复真实尺寸
-                PhotometricDistort(),  # 图片集合
-                Expand(cfg.PIC_MEAN),  # 放大缩小图片
-                RandomSampleCrop(),  # 随机剪切定位
-                RandomMirror(),
-                # ToPercentCoords(), # 归一化尺寸
-                Resize(cfg.IMAGE_SIZE),
-                Normalize(cfg.PIC_MEAN, cfg.PIC_STD),
-                ConvertColor(current='BGR', transform='RGB'),
-                ToTensor(is_box_oned=True),
-            ], cfg)
-        }
+        if cfg.KEEP_SIZE:  # 不进行随机缩放 不改变图片的位置和大小
+            data_transform = {
+                "train": Compose([
+                    ConvertFromInts(),  # image int8转换成float [0,256)
+                    # ToAbsoluteCoords(), # 恢复真实尺寸
+                    PhotometricDistort(),  # 图片集合
+                    # Expand(cfg.PIC_MEAN),  # 放大缩小图片
+                    # RandomSampleCrop(),  # 随机剪切定位
+                    RandomMirror(),
+                    # ToPercentCoords(),  # boxes 按原图归一化 最后ToTensor 统一归一
+                    Resize(cfg.IMAGE_SIZE),  # 定义模型输入尺寸 处理img和boxes
+                    Normalize(cfg.PIC_MEAN, cfg.PIC_STD),  # 正则化图片
+                    ConvertColor(current='BGR', transform='RGB'),
+                    ToTensor(is_box_oned=True),  # img 及 boxes(可选,前面已归一)归一  转tensor
+                ], cfg)
+            }
+        else:
+            data_transform = {
+                "train": Compose([
+                    ConvertFromInts(),  # image int8转换成float [0,256)
+                    # ToAbsoluteCoords(),  # 输入已是原图不需要恢复 boxes 恢复原图尺寸
+                    PhotometricDistort(),  # 图片集合
+                    Expand(cfg.PIC_MEAN),  # 放大缩小图片
+                    RandomSampleCrop(),  # 随机剪切定位
+                    RandomMirror(),
+                    # ToPercentCoords(),  # boxes 按原图归一化 最后统一归一 最后ToTensor 统一归一
+                    Resize(cfg.IMAGE_SIZE),
+                    Normalize(cfg.PIC_MEAN, cfg.PIC_STD),
+                    ConvertColor(current='BGR', transform='RGB'),
+                    ToTensor(is_box_oned=True),
+                ], cfg)
+            }
+
+    data_transform["val"] = Compose([
+        Resize(cfg.IMAGE_SIZE),
+        Normalize(cfg.PIC_MEAN, cfg.PIC_STD),
+        ConvertColor(current='BGR', transform='RGB'),
+        ToTensor(is_box_oned=False),
+    ], cfg)
+
+    return data_transform
+
+
+def cre_transform_base4np(cfg):
+    flog.warning('预处理使用 cre_transform_base4np', )
+    data_transform = {
+        "train": Compose([
+            Resize(cfg.IMAGE_SIZE),
+            Normalize(cfg.PIC_MEAN, cfg.PIC_STD),
+            ConvertColor(current='BGR', transform='RGB'),
+            ToTensor(is_box_oned=True),
+        ], cfg)
+    }
 
     data_transform["val"] = Compose([
         Resize(cfg.IMAGE_SIZE),
@@ -114,8 +155,9 @@ class Compose(BasePretreatment):
         # f_plt_show_cv(image,boxes)
         for t in self.transforms:
             img, boxes, labels = t(img, boxes, labels)
-            if len(boxes) != len(labels):
-                flog.warning('!!! 数据有问题 Compose  %s %s %s ', len(boxes), len(labels), t)
+            if labels is not None:
+                if len(boxes) != len(labels):
+                    flog.warning('!!! 数据有问题 Compose  %s %s %s ', len(boxes), len(labels), t)
         return img, boxes, labels
 
 
@@ -132,7 +174,7 @@ class Lambda(object):
 
 class ConvertFromInts(object):
     def __call__(self, image, boxes=None, labels=None):
-        '''默认是uint8'''
+        '''cv打开的np 默认是uint8'''
         return image.astype(np.float32), boxes, labels
 
 
@@ -151,7 +193,7 @@ class Normalize(object):
 
 
 class ToAbsoluteCoords(object):
-    '''归一化尺寸转原图  ToAbsoluteCoords 相反'''
+    ''' boxes 恢复原图尺寸  归一化尺寸转原图  ToAbsoluteCoords 相反'''
 
     def __call__(self, image, boxes=None, labels=None):
         '''

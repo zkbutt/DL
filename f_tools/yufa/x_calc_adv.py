@@ -112,6 +112,28 @@ def f_mershgrid(row, col, is_rowcol=True, num_repeat=1):
     return stack
 
 
+def fcre_gaussian(index_colrow, fsize_wh, sigma_wh):
+    '''
+
+    :param index_colrow: 指定高期中点
+    :param fsize_wh: index不能越界
+    :param sigma_wh:
+    :return:
+    '''
+    device = index_colrow.device
+    row = torch.arange(fsize_wh[1], device=device)
+    col = torch.arange(fsize_wh[0], device=device)
+
+    #  torch.Size([10, 12])  f1先取b   f2先取a
+    f1, f2 = torch.meshgrid(row, col)
+    trow = torch.true_divide((f1 - index_colrow[1]) ** 2, 2 * sigma_wh[1] ** 2)
+    tcol = torch.true_divide((f2 - index_colrow[0]) ** 2, 2 * sigma_wh[0] ** 2)
+    heatmap = torch.exp(- tcol - trow)
+    # print(heatmap)
+
+    return heatmap
+
+
 def t_ids2bool():
     # topk索引
     a = torch.arange(9).reshape(3, 3).type(torch.float)
@@ -142,4 +164,12 @@ if __name__ == '__main__':
     # a = torch.arange(5)
     # b = torch.arange(5, 10)
     # print(torch.stack([a, b], dim=1))  # 升级连接
-    t_ids2bool()
+    # t_ids2bool()
+
+    index_colrow = torch.tensor([4, 3])
+    sigma_wh = [1, 0.5]
+    fsize_wh = [12, 10]
+
+    #  torch.Size([10, 12])  f1先取b   f2先取a
+    heatmap = fcre_gaussian(index_colrow=index_colrow, fsize_wh=fsize_wh, sigma_wh=sigma_wh)
+    print(heatmap)

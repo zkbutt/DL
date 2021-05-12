@@ -123,6 +123,7 @@ def f_gather():
 
 
 def topk索引():
+    ''' top index 转 mask '''
     a = torch.randn((6, 5))
     print('a', a)
 
@@ -139,8 +140,10 @@ def topk索引():
     print(val)
     print(ind)
     print(val.shape)  # torch.Size([6, 2])
-    a[torch.arange(val.shape[0])[:, None], ind] = 999
-    print(a)
+    mask = torch.zeros_like(a).to(torch.bool)
+
+    mask[torch.arange(val.shape[0]).unsqueeze(-1), ind] = True
+    print(mask)
     # val, ind = a.topk(2, dim=1)
 
 
