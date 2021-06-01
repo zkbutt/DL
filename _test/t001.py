@@ -22,7 +22,7 @@ import sys
 import logging
 from tqdm import trange
 
-from f_tools.fun_od.f_boxes import bbox_iou4one
+from f_tools.fun_od.f_boxes import bbox_iou4one_2d
 
 # a = torch.randn((6, 5))
 # print('a', a)
@@ -55,13 +55,6 @@ import cv2
 import torch
 import torchvision
 
-_t = 51/512
-a = torch.tensor(_t, dtype=torch.float32)
-b = torch.tensor(_t, dtype=torch.float16)
-# a1 = torch.true_divide(a, 512)
-# b1 = torch.true_divide(b, 512)
-print(a, b)
-print(a.item() * 128, b.item() * 128)
-
-print(111//2)
-print(111%2)
+a = torch.tensor([132.37500, 201.37500, 192.37500, 276.50000]).view(1, -1)
+b = torch.tensor([91.13490, 111.55963, 237.08778, 250.51987]).view(1, -1)
+print(1-bbox_iou4one_2d(a, b))

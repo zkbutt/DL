@@ -125,9 +125,9 @@ def bbox_iou4np(bbox_a, bbox_b):
     return area_i / _area_all  # (2002,2)
 
 
-def bbox_iou4one(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=False):
+def bbox_iou4one_2d(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=False):
     '''
-    这个是一一对应  box1  box2
+    建议使用  bbox_iou4one_3d
     :param box1_ltrb: 多个预测框 (n,4)
     :param box2_ltrb: 多个标定框 (n,4)
     iou: 目标框不相交时全为0 不能反映如何相交的  --- 重叠面积
@@ -136,17 +136,18 @@ def bbox_iou4one(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=Fal
     ciou: --- 长宽比  CIOU有点不一致
     :return: n
     '''
+    eps = torch.finfo(torch.float16).eps
     max_lt = torch.max(box1_ltrb[:, :2], box2_ltrb[:, :2])  # left-top [N,M,2] 多维组合用法
     min_rb = torch.min(box1_ltrb[:, 2:], box2_ltrb[:, 2:])  # right-bottom [N,M,2]
-    inter_wh = (min_rb - max_lt).clamp(min=0)  # [N,M,2]
+    inter_wh = (min_rb - max_lt).clamp(min=0)  # [N,M,2] 为负则表示不相交
     # inter_area = inter_wh[:, 0] * inter_wh[:, 1]  # [N,M] 降维
-    inter_area = torch.prod(inter_wh, dim=1)
+    inter_area = torch.prod(inter_wh, dim=-1)
 
-    # 并的面积
-    area1 = box_area(box1_ltrb)  # 降维 n
-    area2 = box_area(box2_ltrb)  # 降维 m
-    union_area = area1 + area2 - inter_area  # A+B-交=并
-    union_area = union_area.clamp(min=torch.finfo(torch.float16).eps)
+    # 并的面积 (r-l)*(b-t) = w*h 这里面积 可能为负
+    area1 = (box1_ltrb[..., 2] - box1_ltrb[..., 0]) * (box1_ltrb[..., 3] - box1_ltrb[..., 1])
+    area2 = (box2_ltrb[..., 2] - box2_ltrb[..., 0]) * (box2_ltrb[..., 3] - box2_ltrb[..., 1])
+    ''' 确保这个不为负 '''
+    union_area = area1 + area2 - inter_area + eps  # A+B-交=并
 
     iou = inter_area / union_area  # 交一定小于并
     # flog.debug('iou %s', iou)
@@ -159,11 +160,12 @@ def bbox_iou4one(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=Fal
         max_rb = torch.max(box1_ltrb[:, 2:], box2_ltrb[:, 2:])
         max_wh = max_rb - min_lt
         if is_giou:
-            max_area = (max_wh[:, 0] * max_wh[:, 1]).clamp(min=torch.finfo(torch.float16).eps)
+            ''' 确保这个不为负 '''
+            max_area = max_wh[..., 0] * max_wh[..., 1] + eps
             giou = iou - (max_area - union_area) / max_area
             return giou
 
-        c2 = max_wh[:, 0] ** 2 + max_wh[:, 1] ** 2 + torch.finfo(torch.float16).eps  # 最大矩形的矩离的平方
+        c2 = max_wh[:, 0] ** 2 + max_wh[:, 1] ** 2 + eps  # 最大矩形的矩离的平方
         box1_xywh = ltrb2xywh(box1_ltrb)
         box2_xywh = ltrb2xywh(box2_ltrb)
         xw2_xh2 = torch.pow(box1_xywh[:, :2] - box2_xywh[:, :2], 2)  # 中心点距离的平方
@@ -179,6 +181,73 @@ def bbox_iou4one(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=Fal
             box2_atan_wh = torch.atan(box2_xywh[:, 2:3] / box2_xywh[:, 3:])
             # torch.Size([3, 1])
             v = torch.pow(box1_atan_wh[:, :] - box2_atan_wh, 2) * (4 / math.pi ** 2)
+            v = torch.squeeze(v, -1)  # m,n,1 -> m,n 去掉最后一维
+            # v.squeeze_(-1)  # m,n,1 -> m,n 去掉最后一维
+            with torch.no_grad():
+                alpha = v / (1 - iou + v)
+            ciou = iou - (dxy + v * alpha)
+            return ciou
+
+
+def bbox_iou4one_3d(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=False):
+    '''
+    这个是一一对应  box1  box2 支持2D和3D
+    :param box1_ltrb:
+    :param box2_ltrb:
+    iou: 目标框不相交时全为0 不能反映如何相交的  --- 重叠面积
+    giou: 当目标框完全包裹预测框的时候 退化为iou   --- 中心点距离
+    diou: 提高收敛速度及全包裹优化
+    ciou: --- 长宽比  CIOU有点不一致
+    :return: n
+    '''
+    eps = torch.finfo(torch.float16).eps
+    # torch.Size([2, 845, 2])
+    max_lt = torch.max(box1_ltrb[..., :2], box2_ltrb[..., :2])  # left-top [N,M,2] 多维组合用法
+    min_rb = torch.min(box1_ltrb[..., 2:], box2_ltrb[..., 2:])  # right-bottom [N,M,2]
+    inter_wh = (min_rb - max_lt).clamp(min=0)  # [N,M,2]
+    # inter_wh = (min_rb - max_lt).clamp(min=0)  # [N,M,2]
+    # inter_area = inter_wh[:, 0] * inter_wh[:, 1]  # [N,M] 降维
+    inter_area = torch.prod(inter_wh, dim=-1)
+
+    # 并的面积
+    area1 = (box1_ltrb[..., 2] - box1_ltrb[..., 0]) * (box1_ltrb[..., 3] - box1_ltrb[..., 1])
+    area2 = (box2_ltrb[..., 2] - box2_ltrb[..., 0]) * (box2_ltrb[..., 3] - box2_ltrb[..., 1])
+    ''' 确保这个不为负 '''
+    union_area = area1 + area2 - inter_area + eps  # A+B-交=并
+
+    iou = inter_area / union_area  # 交一定小于并
+    # flog.debug('iou %s', iou)
+
+    if not (is_giou or is_diou or is_ciou):
+        return iou
+    else:
+        # 最大矩形面积
+        min_lt = torch.min(box1_ltrb[..., :2], box2_ltrb[..., :2])
+        max_rb = torch.max(box1_ltrb[..., 2:], box2_ltrb[..., 2:])
+        max_wh = max_rb - min_lt
+        if is_giou:
+            ''' 确保这个不为负 '''
+            max_area = max_wh[..., 0] * max_wh[..., 1] + eps
+            giou = iou - (max_area - union_area) / max_area
+            return giou
+
+        ''' 确保这个不为负 '''
+        c2 = max_wh[..., 0] ** 2 + max_wh[..., 1] ** 2 + eps  # 最大矩形的矩离的平方
+        box1_xywh = ltrb2xywh(box1_ltrb)
+        box2_xywh = ltrb2xywh(box2_ltrb)
+        xw2_xh2 = torch.pow(box1_xywh[..., :2] - box2_xywh[..., :2], 2)  # 中心点距离的平方
+        d2 = xw2_xh2[..., 0] + xw2_xh2[..., 1]
+        dxy = d2 / c2  # 中心比例距离
+        if is_diou:
+            diou = iou - dxy
+            return diou
+
+        if is_ciou:
+            # [3, 1] / [3, 1]  => [3, 1]
+            box1_atan_wh = torch.atan(box1_xywh[..., 2:3] / box1_xywh[..., 3:])
+            box2_atan_wh = torch.atan(box2_xywh[..., 2:3] / box2_xywh[..., 3:])
+            # torch.Size([3, 1])
+            v = torch.pow(box1_atan_wh - box2_atan_wh, 2) * (4 / math.pi ** 2)
             v = torch.squeeze(v, -1)  # m,n,1 -> m,n 去掉最后一维
             # v.squeeze_(-1)  # m,n,1 -> m,n 去掉最后一维
             with torch.no_grad():
@@ -251,7 +320,8 @@ def bbox_iou4y(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False):
 
 
 def box_area(boxes):
-    return torch.abs(boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+    ''' boxes 一定有个面积 '''
+    return torch.abs(boxes[..., 2] - boxes[..., 0]) * (boxes[..., 3] - boxes[..., 1])
 
 
 def calc_iou4ts(box1, box2, is_giou=False, is_diou=False, is_ciou=False):

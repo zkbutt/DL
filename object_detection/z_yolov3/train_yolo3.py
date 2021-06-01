@@ -62,7 +62,7 @@ def train_eval_set(cfg):
     cfg.MAPS_VAL = [0.70, 0.47]  # 最高
 
     cfg.LR0 = 1e-3
-    cfg.DEL_TB = True
+    # cfg.DEL_TB = True 已弃用
     cfg.TB_WRITER = True
     cfg.IS_FORCE_SAVE = False  # 强制记录
 

@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from f_pytorch.tools_model.f_model_api import CBL
+from f_pytorch.tools_model.f_model_api import FConv2d
 from f_pytorch.tools_model.fmodels.model_modules import BottleneckCSP, SAM, SPPv2
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
@@ -9,7 +9,7 @@ from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import f_ohem, x_bce
 from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1
 from f_tools.floss.focal_loss import focalloss
-from f_tools.fun_od.f_boxes import xywh2ltrb, bbox_iou4one, calc_iou4ts, bbox_iou4y,  ltrb2xywh
+from f_tools.fun_od.f_boxes import xywh2ltrb, bbox_iou4one_2d, calc_iou4ts, bbox_iou4y, ltrb2xywh
 from f_tools.pic.f_show import f_show_od_np4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 
@@ -260,7 +260,7 @@ class LossYOLOv1(nn.Module):
             pwh_pos = torch.exp(preg_pos[..., 2:])
             pzxywh = torch.cat([pxy_pos_toff, pwh_pos], -1)
 
-            iou_zg = bbox_iou4one(xywh2ltrb4ts(pzxywh), gltrb_pos_tx, is_giou=True)
+            iou_zg = bbox_iou4one_2d(xywh2ltrb4ts(pzxywh), gltrb_pos_tx, is_giou=True)
             # iou_zg = bbox_iou4y(xywh2ltrb4ts(pzxywh), gltrb_pos_tx, GIoU=True)
             # print(iou_zg)
             l_reg = (1 - iou_zg).mean() * 2
@@ -469,7 +469,7 @@ class LossYOLOv1_cr(nn.Module):
         # 这个是批量解码 3D 故解码出来再筛选
         zltrb_pos = boxes_decode4yolo1(ptxywh_pos, h, h, cfg)[mask_pos_2d]
         gltrb_pos = gyolos_pos[:, cfg.NUM_CLASSES + 4 + 1:cfg.NUM_CLASSES + 4 + 1 + 4]
-        iou_zg = bbox_iou4one(zltrb_pos, gltrb_pos, is_ciou=True)
+        iou_zg = bbox_iou4one_2d(zltrb_pos, gltrb_pos, is_ciou=True)
         l_reg = (1 - iou_zg).mean()
 
         ''' ---------------- loss完成 ----------------- '''
@@ -529,11 +529,11 @@ class YOLOv1_Net(nn.Module):
         dim_layer = backbone.dim_out  # 512
         dim256 = int(dim_layer / 2)
         self.spp = nn.Sequential(
-            CBL(dim_layer, dim256, ksize=1),
+            FConv2d(dim_layer, dim256, k=1),
             SPPv2(),
             BottleneckCSP(dim256 * 4, dim_layer, n=1, shortcut=False)
         )
-        self.sam = SAM(dim_layer)
+        self.sam = SAM(dim_layer)  # 有点类似 silu
         self.conv_set = BottleneckCSP(dim_layer, dim_layer, n=3, shortcut=False)
 
         self.head_conf_cls = nn.Conv2d(dim_layer, num_classes, 1)

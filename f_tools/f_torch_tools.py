@@ -34,7 +34,11 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None,
         checkpoint = torch.load(file_weight, map_location=device)
 
         '''对多gpu的k进行修复'''
-        pretrained_dict = checkpoint['model']
+        if 'model' in checkpoint:
+            pretrained_dict_y = checkpoint['model']
+        else:
+            pretrained_dict_y = checkpoint
+
         # 特殊处理
         # if True:
         #     del pretrained_dict['module.head_yolov1.weight']
@@ -50,7 +54,9 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None,
 
         ''' debug '''
         if ffun is not None:
-            pretrained_dict = ffun(pretrained_dict)
+            pretrained_dict = ffun(pretrained_dict_y)
+        else:
+            pretrained_dict = pretrained_dict_y
 
         dd = {}
 
@@ -61,25 +67,30 @@ def load_weight(file_weight, model, optimizer=None, lr_scheduler=None,
                 if ss not in k:
                     dd[ss + k] = v
                 else:
-                    dd = pretrained_dict
+                    dd = pretrained_dict_y
                     break
                     # dd[k] = v
             else:
                 dd[k.replace(ss, '')] = v
-                
+
         '''重组权重'''
         # load_weights_dict = {k: v for k, v in weights_dict.items()
         #                      if model.state_dict()[k].numel() == v.numel()}
 
         keys_missing, keys_unexpected = model.load_state_dict(dd, strict=False)
         if len(keys_missing) > 0 or len(keys_unexpected):
-            flog.error('missing_keys %s', keys_missing)
-            flog.error('unexpected_keys %s', keys_unexpected)
+            flog.error('missing_keys %s', keys_missing)  # 这个是 model 的属性
+            flog.error('unexpected_keys %s', keys_unexpected)  # 这个是 pth 的属性
         if optimizer:
             optimizer.load_state_dict(checkpoint['optimizer'])
         if lr_scheduler and checkpoint['lr_scheduler']:
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-        start_epoch = checkpoint['epoch'] + 1
+
+        if 'epoch' in checkpoint:
+            start_epoch = checkpoint['epoch'] + 1
+        else:
+            start_epoch = 0
+
         flog.warning('已加载 feadre 权重文件为 %s', file_weight)
     else:
         # raise Exception(' 未加载 feadre权重文件 ')

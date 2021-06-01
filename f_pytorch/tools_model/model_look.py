@@ -165,8 +165,7 @@ if __name__ == '__main__':
 
     # f替换(model)
 
-    # f_look_tw(model, data_inputs_list)
-    # f_look2(model, data_inputs_list[-3:])
+    f_look_tw(model, data_inputs_list, name='f_look_tw')
 
     # model = darknet53()
     # modelsize(model, torch.rand(1, 3, 416, 416))

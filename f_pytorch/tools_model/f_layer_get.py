@@ -224,6 +224,28 @@ class ModelOuts4DarkNet19(nn.Module):
         return outs
 
 
+class ModelOuts4DarkNet19_Tiny(nn.Module):
+    def __init__(self, model, dims_out=(128, 256, 512)):
+        super().__init__()
+        del model.conv_6
+        del model.avgpool
+        self.model_hook = model
+        self.model_hook._forward_impl = types.MethodType(self.foverwrite, model)
+        self.dims_out = dims_out
+
+    def foverwrite(self, model, x):
+        x = model.conv_1(x)
+        x = model.conv_2(x)
+        ceng1 = model.conv_3(x)
+        ceng2 = model.conv_4(ceng1)
+        ceng3 = model.conv_5(ceng2)
+        return ceng1, ceng2, ceng3
+
+    def forward(self, inputs):
+        outs = self.model_hook(inputs)
+        return outs
+
+
 class ModelOuts4DarkNet53(nn.Module):
     def __init__(self, model, dims_out=(256, 512, 1024)):
         super().__init__()

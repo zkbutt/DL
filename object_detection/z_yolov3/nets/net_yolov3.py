@@ -14,7 +14,7 @@ from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import x_bce, f_ohem
 from f_tools.floss.focal_loss import focalloss
 
-from f_tools.fun_od.f_boxes import xywh2ltrb, ltrb2xywh, calc_iou4ts, bbox_iou4one, xywh2ltrb4ts
+from f_tools.fun_od.f_boxes import xywh2ltrb, ltrb2xywh, calc_iou4ts, bbox_iou4one_2d, xywh2ltrb4ts
 import torch.nn.functional as F
 import math
 
@@ -159,7 +159,7 @@ class LossYOLO_v3(nn.Module):
             ptwth_sigmoid_pos = (ptxywh[mask_pos_2d][:, 2:4].sigmoid() * 2) ** 2 * _ancwh_pos  # [0~4]
             pxywh_pos = torch.cat([ptxty_sigmoid_pos, ptwth_sigmoid_pos], -1)
 
-            iou_zg = bbox_iou4one(xywh2ltrb4ts(pxywh_pos), xywh2ltrb4ts(gxywh_pos), is_giou=True)
+            iou_zg = bbox_iou4one_2d(xywh2ltrb4ts(pxywh_pos), xywh2ltrb4ts(gxywh_pos), is_giou=True)
             # iou_zg = bbox_iou4y(xywh2ltrb4ts(pzxywh), gltrb_pos_tx, GIoU=True)
             # print(iou_zg)
             l_reg = (1 - iou_zg).mean()

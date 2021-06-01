@@ -148,7 +148,7 @@ def cfg_voc(cfg, batch=40, image_size=(448, 448)):
     # 验证
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
     cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/val/JPEGImages'
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_test_4952.json'
+    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val_1980.json'
 
     # 暂无需测试集
 

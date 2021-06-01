@@ -110,7 +110,7 @@ def train_eval_set(cfg):
     # cfg.LR0 = 1e-3/2
     cfg.LR0 = 0.0005
     cfg.TB_WRITER = True
-    cfg.DEL_TB = True
+    # cfg.DEL_TB = True 已弃用
     cfg.IS_FORCE_SAVE = False  # 强制记录
 
 

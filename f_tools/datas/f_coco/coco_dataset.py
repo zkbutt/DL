@@ -93,7 +93,7 @@ class CustomCocoDataset(Dataset):
         image_id = self.ids_img[index]
         # bboxs, labels,keypoints
 
-        tars_ = self.load_anns(index)
+        tars_ = self.load_anns(index, img_wh=img.shape[:2][::-1])
 
         # 动态构造target
         target = {}
@@ -211,7 +211,7 @@ class CustomCocoDataset(Dataset):
             img = Image.open(file_img).convert('RGB')  # 原图数据
         return img
 
-    def load_anns(self, index):
+    def load_anns(self, index, img_wh):
         '''
         ltwh --> ltrb
         :param index:
@@ -231,12 +231,15 @@ class CustomCocoDataset(Dataset):
 
         coco_anns = self.coco_obj.loadAnns(annotation_ids)
         for a in coco_anns:
-            # skip the annotations with width or height < 1
-            if a['bbox'][2] < 1 or a['bbox'][3] < 1:
-                ''' 
-                还有其它情况也有没问题未处理 
-                例如:xy小于0或大于图片wh ; wh超出图片
-                '''
+            x, y, box_w, box_h = a['bbox']  # ltwh
+            # 得 ltrb
+            x1 = max(0, x)  # 修正lt最小为0 左上必须在图中
+            y1 = max(0, y)
+            x2 = min(img_wh[0] - 1, x1 + max(0, box_w - 1))  # 右下必须在图中
+            y2 = min(img_wh[1] - 1, y1 + max(0, box_h - 1))
+            if a['area'] > 0 and x2 >= x1 and y2 >= y1:
+                a['bbox'] = [x1, y1, x2, y2]  # 修正 并写入ltrb
+            else:
                 flog.warning('标记框有问题 %s', a)
                 continue
 
@@ -255,12 +258,12 @@ class CustomCocoDataset(Dataset):
 
                 keypoints = np.append(keypoints, k_[None,], axis=0)
 
-        # ltwh --> ltrb
-        bboxs = ltwh2ltrb(bboxs)
+        # bboxs = ltwh2ltrb(bboxs) # 前面 已转
         if bboxs.shape[0] == 0:
             flog.error('这图标注 不存在 %s', coco_anns)
             # raise Exception('这图标注 不存在 %s', coco_anns)
 
+        # 转tensor
         if self.mode == 'bbox':
             return [torch.tensor(bboxs, dtype=torch.float), torch.tensor(labels, dtype=torch.float)]
         elif self.mode == 'keypoints':

@@ -11,7 +11,7 @@ from f_tools.fits.f_predictfun import batched_nms_auto
 from f_tools.fits.ghm2 import GHMC_Loss2, GHMC_Loss3
 from f_tools.floss.balanced_l1_loss import BalancedL1Loss
 from f_tools.fun_od.f_boxes import xywh2ltrb, ltrb2ltwh, ltrb2xywh, calc_iou4ts, \
-    bbox_iou4one
+    bbox_iou4one_2d
 from f_tools.pic.f_show import f_show_3box4pil, show_anc4pil
 import matplotlib.pyplot as plt
 

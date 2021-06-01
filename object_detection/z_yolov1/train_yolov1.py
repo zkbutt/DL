@@ -39,8 +39,8 @@ def train_eval_set(cfg):
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
-    batch = 32  # type
-    # batch = 2  # type
+    # batch = 32  # type
+    batch = 2  # type
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 2
         cfg.IS_COCO_EVAL = False
@@ -82,7 +82,7 @@ def train_eval_set(cfg):
     cfg.LR0 = 1e-3
     # cfg.LR0 = 0.0005
     cfg.TB_WRITER = True
-    cfg.DEL_TB = True
+    # cfg.DEL_TB = True 已弃用
     cfg.IS_FORCE_SAVE = False  # 强制记录
 
 

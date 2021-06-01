@@ -5,6 +5,10 @@ import torch.nn as nn
 
 from collections import OrderedDict
 
+from f_pytorch.tools_model.fmodels.init_weights import kaiming_init, constant_init
+from f_pytorch.tools_model.fun_regulariz import AffineChannel
+from f_pytorch.tools_model.f_fun_activation import Mish, SiLU
+
 '''-----------------模型方法区-----------------------'''
 
 
@@ -67,55 +71,103 @@ def finit_weights(model):
             nn.init.uniform_(m.weight.data, -a, a)
 
 
-def conv2d(filter_in, filter_out, kernel_size):
-    pad = (kernel_size - 1) // 2 if kernel_size else 0
-    return nn.Sequential(OrderedDict([
-        ("conv", nn.Conv2d(filter_in, filter_out, kernel_size=kernel_size, stride=1, padding=pad, bias=False)),
-        ("bn", nn.BatchNorm2d(filter_out)),
-        ("relu", nn.LeakyReLU()),
-    ]))
-
-
-def conv_bn(inp, oup, stride=1, leaky=0):
-    return nn.Sequential(
-        nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
-        nn.BatchNorm2d(oup),
-        nn.LeakyReLU(negative_slope=leaky, inplace=True)
-    )
-
-
-def conv_bn_no_relu(inp, oup, stride):
-    return nn.Sequential(
-        nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
-        nn.BatchNorm2d(oup),
-    )
-
-
-def conv_bn1X1(inp, oup, stride, leaky=0):
-    return nn.Sequential(
-        nn.Conv2d(inp, oup, 1, stride, padding=0, bias=False),
-        nn.BatchNorm2d(oup),
-        nn.LeakyReLU(negative_slope=leaky, inplace=True)
-    )
-
-
 '''-----------------模型层区-----------------------'''
 
 
-class CBL(nn.Module):
-    '''基础层'''
+class FConv2d(torch.nn.Module):
+    def __init__(self, in_channels, out_channels,
+                 k,  # kernel_size
+                 s=1,  # stride
+                 p=None,  # padding
+                 d=1,  # dilation空洞
+                 g=1,  # g groups 一般不动
+                 is_bias=True,
+                 norm='bn',  # bn,gn,af
+                 act='leaky',  # relu leaky mish silu
+                 is_freeze=False,
+                 use_dcn=False):
+        '''
+        有 bn 建议不要 bias
+        # 同维
+        Conv2dUnit(in_channels_list[0], out_channels, k=1, bn=True, act='leaky', is_bias=False)
+        # 降维
+        Conv2dUnit(in_channels_list[2], feature_size, k=3, s=2, p=1, bn=True, act='leaky', is_bias=False)
+        '''
+        super(FConv2d, self).__init__()
+        self.groups = g
+        self.act = act
+        self.is_freeze = is_freeze
+        self.use_dcn = use_dcn
 
-    def __init__(self, in_channels, out_channels, ksize, stride=1, padding=0, dilation=1, groups=1, leakyReLU=True):
-        super(CBL, self).__init__()
-        self.convs = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, ksize, stride=stride, padding=padding, dilation=dilation,
-                      groups=groups),
-            nn.BatchNorm2d(out_channels),
-            nn.LeakyReLU(0.1, inplace=True) if leakyReLU else nn.ReLU(inplace=True)
-        )
+        if p is None:
+            # conv默认为0
+            p = conv_same(k)
+
+        # conv
+        if use_dcn:
+            pass
+        else:
+            self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size=k, stride=s,
+                                        padding=p, dilation=d, bias=is_bias)
+        # 正则化方式 normalization
+        if norm == 'bn':
+            self.normalization = torch.nn.BatchNorm2d(out_channels)
+        elif norm == 'gn':
+            self.normalization = torch.nn.GroupNorm(num_groups=g, num_channels=out_channels)
+        elif norm == 'af':
+            self.normalization = AffineChannel(out_channels)
+        else:
+            self.normalization = None
+
+        # act
+        if act == 'relu':
+            self.act = torch.nn.ReLU(inplace=True)
+        elif act == 'leaky':
+            self.act = torch.nn.LeakyReLU(0.1)
+        elif act == 'mish':
+            self.act = Mish()
+        elif act == 'silu':
+            self.act = SiLU()
+        else:
+            self.act = None
+
+        self.name_act = act
+
+        if is_freeze:
+            self.freeze()
+
+    def init_weights(self):
+        if self.name_act == 'leaky':
+            nonlinearity = 'leaky_relu'
+        elif self.name_act == 'leaky':
+            nonlinearity = 'relu'
+        else:
+            raise Exception('self.name_act 错误%s' % self.name_act)
+
+        kaiming_init(self.conv, nonlinearity=nonlinearity)
+        if self.bn:
+            constant_init(self.norm, 1, bias=0)
+
+    def freeze(self):
+        # 冻结
+        self.conv.weight.requires_grad = False
+        if self.conv.bias is not None:
+            self.conv.bias.requires_grad = False
+        if self.bn is not None:
+            self.bn.weight.requires_grad = False
+            self.bn.bias.requires_grad = False
+        if self.gn is not None:
+            self.gn.weight.requires_grad = False
+            self.gn.bias.requires_grad = False
+        if self.af is not None:
+            self.af.weight.requires_grad = False
+            self.af.bias.requires_grad = False
 
     def forward(self, x):
-        return self.convs(x)
+        x = self.conv(x)
+        if self.normalization is not None:
+            x = self.normalization(x)
+        return x
 
 
 class NoneLayer(nn.Module):
@@ -126,43 +178,9 @@ class NoneLayer(nn.Module):
         return x
 
 
-class BasicBlock(nn.Module):
-    '''
-    CBAM
-    Convolutional bottleneck attention module
-    '''
-    expansion = 1
-
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
-        super(BasicBlock, self).__init__()
-        self.conv1 = _conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = _conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.ca = ChannelAttention(planes)
-        self.sa = SpatialAttention()
-        self.downsample = downsample
-        self.stride = stride
-
-    def forward(self, x):
-        residual = x
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out = self.ca(out) * out  # 广播机制
-        out = self.sa(out) * out  # 广播机制
-        if self.downsample is not None:
-            residual = self.downsample(x)
-        out += residual
-        out = self.relu(out)
-        return out
-
-
 class Flatten(nn.Module):
     # Use after nn.AdaptiveAvgPool2d(1) to remove last 2 dimensions
+    # 在全局平均池化以后使用，去掉2个维度
     def forward(self, x):
         return x.view(x.size(0), -1)
 
@@ -206,10 +224,8 @@ class ReorgLayer(nn.Module):
         return x
 
 
-def autopad(k, p=None):  # kernel, padding
-    # Pad to 'same' 默认为自动same
-    if p is None:
-        p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
+def conv_same(k):
+    p = k // 2 if isinstance(k, int) else [x // 2 for x in k]  # auto-pad
     return p
 
 
@@ -218,7 +234,7 @@ class Conv(nn.Module):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True, bias=True):
         # ch_in, ch_out, kernel, stride, padding, groups
         super(Conv, self).__init__()
-        self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p), groups=g, bias=bias)
+        self.conv = nn.Conv2d(c1, c2, k, s, conv_same(k), groups=g, bias=bias)
         self.bn = nn.BatchNorm2d(c2)
         self.act = nn.LeakyReLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
         # self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())

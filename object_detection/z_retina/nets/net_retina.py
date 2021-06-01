@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torchvision import models
 
 from f_pytorch.tools_model.f_model_api import f_freeze_bn
-from f_pytorch.tools_model.fmodels.model_fpns import FPN_out3, FPN_out5
+from f_pytorch.tools_model.fmodels.model_fpns import FPN_out3, FPN_out_v2
 from f_pytorch.tools_model.fmodels.model_modules import SSH
 from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
@@ -229,7 +229,7 @@ class Retina_Net2(nn.Module):
         self.backbone = backbone
         self.cfg = cfg
 
-        self.fpn = FPN_out5(backbone.dims_out, out_channels_fpn)
+        self.fpn = FPN_out_v2(backbone.dims_out, out_channels_fpn)
 
         num_anc = cfg.NUMS_ANC[0]
         self.regressionModel = RegressionModel(out_channels_fpn, num_anchors=num_anc,

@@ -151,6 +151,17 @@ def focalloss(pcls_sigmoid, gcls, mask_pos, mash_ignore=None,
     return loss_val
 
 
+def focalloss_fcos(pcls_sigmoid, gcls, alpha=0.25, gamma=2):
+    mask_pos_3d = gcls == 1
+    eps = torch.finfo(torch.float16).eps
+    pcls_sigmoid = pcls_sigmoid.clamp(min=eps, max=1 - eps)
+    l_pos = mask_pos_3d.float() * (0 - torch.log(pcls_sigmoid)) * torch.pow(1 - pcls_sigmoid, gamma) * alpha
+    l_neg = (1.0 - mask_pos_3d.float()) * (0 - torch.log(1 - pcls_sigmoid)) * torch.pow(pcls_sigmoid, gamma) * (
+                1 - alpha)
+
+    return l_pos, l_neg
+
+
 def quality_focal_loss(pcls_sigmoid, gcls, score_iou, mask_pos, mash_ignore=None, beta=2.0, is_debug=False):
     '''
     用于连续label的 score_iou
@@ -375,8 +386,11 @@ class BCE_focal_loss(nn.Module):
         self.gamma = gamma
 
     def forward(self, inputs, targets):
-        loss = (1.0 - inputs) ** self.gamma * (targets) * torch.log(inputs + 1e-14) + \
-               (inputs) ** self.gamma * (1.0 - targets) * torch.log(1.0 - inputs + 1e-14)
+        eps = torch.finfo(torch.float16).eps
+        inputs = inputs.clamp(min=eps, max=1 - eps)
+
+        loss = (1.0 - inputs) ** self.gamma * (targets) * torch.log(inputs) + \
+               (inputs) ** self.gamma * (1.0 - targets) * torch.log(1.0 - inputs)
         loss = -torch.sum(torch.sum(loss, dim=-1), dim=-1)
         return loss
 

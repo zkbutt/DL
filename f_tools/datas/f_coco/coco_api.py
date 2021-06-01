@@ -1,3 +1,4 @@
+import json
 import os
 
 import cv2
@@ -9,6 +10,22 @@ import pylab
 
 from f_tools.GLOBAL_LOG import flog
 import skimage.io as io
+
+CLSID2CATID = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11, 11: 13, 12: 14, 13: 15, 14: 16,
+               15: 17, 16: 18, 17: 19, 18: 20, 19: 21, 20: 22, 21: 23, 22: 24, 23: 25, 24: 27, 25: 28, 26: 31,
+               27: 32, 28: 33, 29: 34, 30: 35, 31: 36, 32: 37, 33: 38, 34: 39, 35: 40, 36: 41, 37: 42, 38: 43,
+               39: 44, 40: 46, 41: 47, 42: 48, 43: 49, 44: 50, 45: 51, 46: 52, 47: 53, 48: 54, 49: 55, 50: 56,
+               51: 57, 52: 58, 53: 59, 54: 60, 55: 61, 56: 62, 57: 63, 58: 64, 59: 65, 60: 67, 61: 70, 62: 72,
+               63: 73, 64: 74, 65: 75, 66: 76, 67: 77, 68: 78, 69: 79, 70: 80, 71: 81, 72: 82, 73: 84, 74: 85,
+               75: 86, 76: 87, 77: 88, 78: 89, 79: 90}
+
+CATID2CLSID = {1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9, 11: 10, 13: 11, 14: 12, 15: 13, 16: 14,
+               17: 15, 18: 16, 19: 17, 20: 18, 21: 19, 22: 20, 23: 21, 24: 22, 25: 23, 27: 24, 28: 25, 31: 26,
+               32: 27, 33: 28, 34: 29, 35: 30, 36: 31, 37: 32, 38: 33, 39: 34, 40: 35, 41: 36, 42: 37, 43: 38,
+               44: 39, 46: 40, 47: 41, 48: 42, 49: 43, 50: 44, 51: 45, 52: 46, 53: 47, 54: 48, 55: 49, 56: 50,
+               57: 51, 58: 52, 59: 53, 60: 54, 61: 55, 62: 56, 63: 57, 64: 58, 65: 59, 67: 60, 70: 61, 72: 62,
+               73: 63, 74: 64, 75: 65, 76: 66, 77: 67, 78: 68, 79: 69, 80: 70, 81: 71, 82: 72, 84: 73, 85: 74,
+               86: 75, 87: 76, 88: 77, 89: 78, 90: 79}
 
 
 def f_show_coco_net_pic():
@@ -114,14 +131,45 @@ def t_coco_json():
 
 def t_coco_json2():
     path_host = 'M:'
-    path_root = path_host + r'/AI/datas/VOC2007'
+    # path_root = path_host + r'/AI/datas/VOC2007'
+    path_root = path_host + r'/AI/datas/coco2017'
     # path_root = path_host + r'/AI/datas/raccoon200'
-    file_json = path_root + '/coco/annotations/instances_train_5011.json'
+    file_json = path_root + '/annotations/instances_val2017.json'
+    # file_json = path_root + '/coco/annotations/instances_train_5011.json'
     # file_json = path_root + '/coco/annotations/instances_type3_train_1096.json'
     # file_json = path_root + '/coco/annotations/instances_train_5011.json'
-    path_img = path_root + '/VOCdevkit/JPEGImages'
+    # path_img = path_root + '/VOCdevkit/JPEGImages'
+    path_img = path_root + '/images/train2017'
     coco = COCO(file_json)
     return coco, path_img
+
+
+def cre_coco_cls_file(path):
+    '''
+    生成 coco_cls 文件
+    :param path:
+    :return:
+    '''
+    coco, path_img = t_coco_json2()
+    cats = coco.loadCats(coco.getCatIds())
+    cls_names = []
+    ids_cls = {}
+    cls_ids = {}
+    for i, ds in enumerate(cats):
+        cls_names.append(ds['name'])
+        ids_cls[ds['id']] = ds['name']
+        cls_ids[ds['name']] = ds['id']
+
+    fh = open(os.path.join(path, 'classes_name.txt'), 'w', encoding='utf-8')
+    fh.write('&&'.join(cls_names))
+    fh.close()
+
+    with open(os.path.join(path, 'ids_cls.json'), 'w', encoding='utf-8') as f:
+        json.dump(ids_cls, f, ensure_ascii=False, )
+
+    with open(os.path.join(path, 'cls_ids.json'), 'w', encoding='utf-8') as f:
+        data = json.dumps(cls_ids)
+        f.write(data)
 
 
 if __name__ == '__main__':
@@ -129,6 +177,8 @@ if __name__ == '__main__':
     coco出来是 ltwh
     关联 coco_dataset
     '''
+    cre_coco_cls_file('M:\AI\datas\coco2017')
+
     pylab.rcParams['figure.figsize'] = (8.0, 10.0)
     # 加载coco数据集
     # coco, path_img = t_coco_json()

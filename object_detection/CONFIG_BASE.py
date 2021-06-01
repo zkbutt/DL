@@ -13,7 +13,7 @@ class CfgBase:
     '''----TB_WRITER设备-----'''
     NUMS_EVAL = {10: 5, 100: 3, 160: 2}
     TB_WRITER = True
-    DEL_TB = False
+    # DEL_TB = False 已弃用
     LOSS_EPOCH = True  # False表示iter
 
     MODE_COCO_TRAIN = 'bbox'  # bbox segm keypoints caption

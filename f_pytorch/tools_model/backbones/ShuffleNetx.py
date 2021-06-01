@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 
-from f_pytorch.tools_model.backbones.darknet import _load_weight_base
+from f_pytorch.tools_model.backbones.darknet import fload_weight_base
 
 '''
 model	top1 acc	top5 acc
@@ -189,7 +189,7 @@ def snet49(pretrained=True, device='cpu', **kwargs):
     if pretrained:
         print('Loading the snet49 ...')
         file_weight = '/AI/weights/pytorch/snet/snet49_57.3.pth'
-        model = _load_weight_base(model, file_weight, device)
+        model = fload_weight_base(model, file_weight, device)
 
     return model
 
@@ -204,7 +204,7 @@ def snet146(pretrained=True, device='cpu', **kwargs):
     if pretrained:
         print('Loading the snet146 ...')
         file_weight = '/AI/weights/pytorch/snet/snet146_65.58.pth'
-        model = _load_weight_base(model, file_weight, device)
+        model = fload_weight_base(model, file_weight, device)
 
     return model
 
@@ -219,7 +219,7 @@ def snet535(pretrained=True, device='cpu', **kwargs):
     if pretrained:
         print('Loading the snet535 ...')
         file_weight = '/AI/weights/pytorch/snet/snet535_70.35.pth'
-        model = _load_weight_base(model, file_weight, device)
+        model = fload_weight_base(model, file_weight, device)
 
     return model
 

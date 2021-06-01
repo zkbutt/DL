@@ -1,53 +1,19 @@
+import math
+
 import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
-from f_pytorch.tools_model.f_model_api import conv2d, conv_bn_no_relu, conv_bn, CBL, Conv
 
-
-class Hardswish(nn.Module):
-    @staticmethod
-    def forward(x):
-        return x * F.relu6(x + 3.0) / 6.0
-
-
-class SSH(nn.Module):
-    '''
-    与SPP类似 多尺寸卷积堆叠
-    长宽不变 深度不变
-    '''
-
-    def __init__(self, in_channel, out_channel):
-        super(SSH, self).__init__()
-        assert out_channel % 4 == 0
-        leaky = 0
-        if (out_channel <= 64):
-            leaky = 0.1
-        self.conv3X3 = conv_bn_no_relu(in_channel, out_channel // 2, stride=1)
-
-        self.conv5X5_1 = conv_bn(in_channel, out_channel // 4, stride=1, leaky=leaky)
-        self.conv5X5_2 = conv_bn_no_relu(out_channel // 4, out_channel // 4, stride=1)
-
-        self.conv7X7_2 = conv_bn(out_channel // 4, out_channel // 4, stride=1, leaky=leaky)
-        self.conv7x7_3 = conv_bn_no_relu(out_channel // 4, out_channel // 4, stride=1)
-
-    def forward(self, inputs):
-        conv3X3 = self.conv3X3(inputs)
-
-        conv5X5_1 = self.conv5X5_1(inputs)
-        conv5X5 = self.conv5X5_2(conv5X5_1)
-
-        conv7X7_2 = self.conv7X7_2(conv5X5_1)
-        conv7X7 = self.conv7x7_3(conv7X7_2)
-
-        out = torch.cat([conv3X3, conv5X5, conv7X7], dim=1)
-        out = torch.relu(out)
-        return out
+from f_pytorch.tools_model.f_model_api import FConv2d
 
 
 class SPPv2(torch.nn.Module):
     '''
+    同尺寸同维
+    多池化混合 通道增加4倍 尺寸不变
     一个输入 由多个尺寸的核 池化后 再进行堆叠
+    增加感受野，分离出最显著的上下文特征
     '''
 
     def __init__(self, seq='asc'):
@@ -58,12 +24,42 @@ class SPPv2(torch.nn.Module):
     def __call__(self, x):
         x_1 = x
         x_2 = F.max_pool2d(input=x, kernel_size=5, stride=1, padding=2)
+        # x_3 = F.max_pool2d(x, pool_size, 1, pool_size//2)
         x_3 = F.max_pool2d(x, 9, 1, 4)
         x_4 = F.max_pool2d(x, 13, 1, 6)
         if self.seq == 'desc':
             out = torch.cat([x_4, x_3, x_2, x_1], dim=1)
         else:
             out = torch.cat([x_1, x_2, x_3, x_4], dim=1)
+        return out
+
+
+class SPPv3(torch.nn.Module):
+    '''
+    SPPv2 加入通道 压缩转换 参数量更少
+    '''
+
+    def __init__(self, in_channels, seq='asc'):
+        super(SPPv3, self).__init__()
+        assert seq in ['desc', 'asc']
+        self.seq = seq
+
+        _t = in_channels // 2
+
+        self.cbs1 = FConv2d(in_channels, _t, k=1, act='silu')
+        self.cbs2 = FConv2d(_t * (3 + 1), in_channels, k=1, act='silu')
+
+    def __call__(self, x):
+        x = self.cbs1(x)
+        x_1 = x
+        x_2 = F.max_pool2d(input=x, kernel_size=5, stride=1, padding=2)
+        x_3 = F.max_pool2d(x, 9, 1, 4)
+        x_4 = F.max_pool2d(x, 13, 1, 6)
+        if self.seq == 'desc':
+            out = torch.cat([x_4, x_3, x_2, x_1], dim=1)
+        else:
+            out = torch.cat([x_1, x_2, x_3, x_4], dim=1)
+        out = self.cbs2(out)
         return out
 
 
@@ -148,12 +144,17 @@ class SAM(nn.Module):
 
 
 class _Bottleneck(nn.Module):
-    # Standard bottleneck
+    '''
+    Standard bottleneck
+    结构见 Bottleneck.jpg
+    减小通道后 恢复
+    '''
+
     def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
         super(_Bottleneck, self).__init__()
         c_ = int(c2 * e)  # hidden channels
-        self.cv1 = CBL(c1, c_, ksize=1)
-        self.cv2 = CBL(c_, c2, ksize=3, padding=1, groups=g)
+        self.cv1 = FConv2d(c1, c_, k=1)
+        self.cv2 = FConv2d(c_, c2, k=3, p=1, g=g)
         self.add = shortcut and c1 == c2
 
     def forward(self, x):
@@ -161,14 +162,19 @@ class _Bottleneck(nn.Module):
 
 
 class BottleneckCSP(nn.Module):
-    # CSP Bottleneck https://github.com/WongKinYiu/CrossStagePartialNetworks
+    '''
+    结构见 BottleneckCSP.jpg
+    BottleneckCSP-CSP瓶颈层
+    CSP Bottleneck https://github.com/WongKinYiu/CrossStagePartialNetworks
+    '''
+
     def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
         super(BottleneckCSP, self).__init__()
         c_ = int(c2 * e)  # hidden channels
-        self.cv1 = CBL(c1, c_, ksize=1)
+        self.cv1 = FConv2d(c1, c_, k=1)
         self.cv2 = nn.Conv2d(c1, c_, kernel_size=1, bias=False)
         self.cv3 = nn.Conv2d(c_, c_, kernel_size=1, bias=False)
-        self.cv4 = CBL(2 * c_, c2, ksize=1)
+        self.cv4 = FConv2d(2 * c_, c2, k=1)
         self.bn = nn.BatchNorm2d(2 * c_)  # applied to cat(cv2, cv3)
         self.act = nn.LeakyReLU(0.1, inplace=True)
         self.m = nn.Sequential(*[_Bottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)])
@@ -378,14 +384,15 @@ class DCNv2(torch.nn.Module):
 class Focus(nn.Module):
     '''
     Focus wh information into c-space from yolo4 亚像素卷积的反向操作版本
-    作用: 通道扩充4倍,尺寸缩小一倍
-    横竖每隔一个像素拿到一个值, 再通道堆叠变成4倍通道
+    作用: 将数据通道扩充4倍,尺寸缩小一倍,完成后进行CBS进行通道转换
+    横竖每隔一个像素拿到一个值, 形成4份(2倍下采样) 再通道堆叠变成4倍通道
     每4个小方块分为一组, 每组1234号, 所有组的1展平，所有组的2展平...
+    把宽度w和高度h的信息整合到c空间中
     '''
 
-    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
+    def __init__(self, c1, c2, k=1):  # ch_in, ch_out, kernel, stride, padding, groups
         super(Focus, self).__init__()
-        self.conv = Conv(c1 * 4, c2, k, s, p, g, act)
+        self.conv = FConv2d(c1 * 4, c2, k=1, act='silu')
         # self.contract = Contract(gain=2)
 
     def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
@@ -419,3 +426,8 @@ class DeConv(nn.Module):
 
     def forward(self, x):
         return self.convs(x)
+
+
+def DWConv(c1, c2, k=1, s=1):
+    # Depthwise convolution math.gcd() 返回的是最大公约数
+    return FConv2d(c1, c2, k=k, s=s, g=math.gcd(c1, c2))

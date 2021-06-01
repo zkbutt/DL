@@ -1,15 +1,19 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
 
 from f_pytorch.tools_model.f_layer_get import ModelOuts4Resnet
-from f_pytorch.tools_model.f_model_api import CBL, FModelBase
-from f_pytorch.tools_model.model_look import f_look_tw
-from f_tools.fits.f_match import match4fcos, boxes_decode4fcos
+from f_pytorch.tools_model.f_model_api import CBL, FModelBase, FConv2d
+from f_pytorch.tools_model.fmodels.model_fpns import FPN_out_v2
+from f_tools.GLOBAL_LOG import flog
+from f_tools.fits.f_match import match4fcos, boxes_decode4fcos, match4fcos_v2
 from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
-from f_tools.floss.focal_loss import BCE_focal_loss
-from f_tools.fun_od.f_boxes import bbox_iou4one, bbox_iou4fcos
+from f_tools.floss.f_lossfun import x_bce
+from f_tools.floss.focal_loss import BCE_focal_loss, focalloss_fcos
+from f_tools.fun_od.f_boxes import bbox_iou4one_2d, bbox_iou4fcos, bbox_iou4one_3d
 from f_tools.yufa.x_calc_adv import f_mershgrid
 from object_detection.fcos.CONFIG_FCOS import CFG
 
@@ -34,59 +38,109 @@ class FLoss(nn.Module):
         '''
         cfg = self.cfg
         device = outs.device
-        batch, pdim, c = outs.shape
+        batch, dim_total, pdim = outs.shape
 
         #  back cls centerness ltrb positivesample iou area
         gdim = 1 + cfg.NUM_CLASSES + 1 + 4 + 1 + 1 + 1
-        gres = torch.empty((batch, pdim, gdim), device=device)
+        gres = torch.empty((batch, dim_total, gdim), device=device)
 
         for i in range(batch):
             gboxes_ltrb_b = targets[i]['boxes']
             glabels_b = targets[i]['labels']
 
-            gres[i] = match4fcos(gboxes_ltrb_b=gboxes_ltrb_b,
-                                 glabels_b=glabels_b,
-                                 gdim=gdim,
-                                 pcos=outs,
-                                 img_ts=imgs_ts[i],
-                                 cfg=cfg, )
+            import time
+            # start = time.time()
+            gres[i] = match4fcos_v2(gboxes_ltrb_b=gboxes_ltrb_b,
+                                    glabels_b=glabels_b,
+                                    gdim=gdim,
+                                    pcos=outs,
+                                    img_ts=imgs_ts[i],
+                                    cfg=cfg, )
+            # gres[i] = match4fcos(gboxes_ltrb_b=gboxes_ltrb_b,
+            #                      glabels_b=glabels_b,
+            #                      gdim=gdim,
+            #                      pcos=outs,
+            #                      img_ts=imgs_ts[i],
+            #                      cfg=cfg, )
+            # flog.debug('show_time---完成---%s--' % (time.time() - start))
 
         s_ = 1 + cfg.NUM_CLASSES
         # outs = outs[:, :, :s_ + 1].sigmoid()
-        mask_pos = gres[:, :, s_ + 1 + 4]
+        mask_pos = gres[:, :, 0] == 0  # 背景为0 是正例
         nums_pos = torch.sum(mask_pos, dim=-1)
         nums_pos = torch.max(nums_pos, torch.ones_like(nums_pos, device=device))
 
-        ''' ---------------- cls损失 ---------------- '''
-        obj_cls_loss = BCE_focal_loss()
+        # back cls centerness ltrb positivesample iou(这个暂时无用) area [2125, 12]
+
+        ''' ---------------- cls损失 计算全部样本,正反例,正例为框内本例---------------- '''
+        # obj_cls_loss = BCE_focal_loss()
         # 这里多一个背景一起算
         pcls_sigmoid = outs[:, :, :s_].sigmoid()
         gcls = gres[:, :, :s_]
-        l_cls = torch.mean(obj_cls_loss(pcls_sigmoid, gcls) / nums_pos)
+        # l_cls = torch.mean(obj_cls_loss(pcls_sigmoid, gcls) / nums_pos)
+        l_cls_pos, l_cls_neg = focalloss_fcos(pcls_sigmoid, gcls)
+        l_cls_pos = torch.mean(torch.sum(torch.sum(l_cls_pos, -1), -1) / nums_pos)
+        l_cls_neg = torch.mean(torch.sum(torch.sum(l_cls_neg, -1), -1) / nums_pos)
 
-        ''' ---------------- conf损失 只计算正例---------------- '''
+        ''' ---------------- conf损失 只计算半径正例 center_ness---------------- '''
+        # 和 positive sample 算正例
+        mask_pp = gres[:, :, s_ + 1 + 4] == 1
         pconf_sigmoid = outs[:, :, s_].sigmoid()  # center_ness
-        gconf = gres[:, :, s_]
-        _loss_val = F.binary_cross_entropy(pconf_sigmoid, gconf, reduction="none")
-        l_conf = 5. * torch.mean(torch.sum(_loss_val * mask_pos.float(), dim=-1) / nums_pos)
+        gcenterness = gres[:, :, s_]  # (nn,1) # 使用centerness
 
-        ''' ---------------- box损失 只计算正例---------------- '''
-        poff_ltrb_exp = torch.exp(outs[:, :, s_ + 1:s_ + 1 + 4])
-        goff_ltrb = gres[:, :, s_ + 1:s_ + 1 + 4]
-        giou = gres[:, :, s_ + 1 + 4 + 1]
+        # _loss_val = x_bce(pconf_sigmoid, gcenterness, reduction="none")
+        _loss_val = x_bce(pconf_sigmoid, torch.ones_like(pconf_sigmoid), reduction="none")  # 用半径1
+
+        # 只算半径正例,提高准确性
+        l_conf = 5. * torch.mean(torch.sum(_loss_val * mask_pp.float(), dim=-1) / nums_pos)
+
+        ''' ---------------- box损失 计算框内正例---------------- '''
+        # conf1 + cls3 + reg4
+        # poff_ltrb_exp = torch.exp(outs[:, :, s_:s_ + 4])
+        poff_ltrb = outs[:, :, s_:s_ + 4]  # 这个全是特图的距离 全rule 或 exp
+        # goff_ltrb = gres[:, :, s_ + 1:s_ + 1 + 4]
+        g_ltrb = gres[:, :, s_ + 1:s_ + 1 + 4]
+
+        # _loss_val = F.smooth_l1_loss(poff_ltrb, goff_ltrb, reduction='none')
+        # _loss_val = F.mse_loss(poff_ltrb_exp, goff_ltrb, reduction='none')
+        # l_reg = torch.sum(torch.sum(_loss_val, -1) * gconf * mask_pos.float(), -1)
+        # l_reg = torch.mean(l_reg / nums_pos)
+
+        # 这里是解析归一化图
+        # pboxes_ltrb = boxes_decode4fcos(self.cfg, poff_ltrb, is_t=True)
+        # p_ltrb_pos = pboxes_ltrb[mask_pos]
+        # image_size_ts = torch.tensor(cfg.IMAGE_SIZE, device=device)
+        # g_ltrb_pos = g_ltrb[mask_pos] * image_size_ts.repeat(2).view(1, -1)
+
+        # giou = gres[:, :, s_ + 1 + 4 + 1]
         # torch.Size([2, 2125])
-        iou = bbox_iou4fcos(poff_ltrb_exp, goff_ltrb)
-        # 使用 iou 与 1 进行bce
-        _loss_val = F.binary_cross_entropy(iou, giou, reduction="none")
-        l_iou = torch.mean(torch.sum(_loss_val * mask_pos.float(), dim=-1) / nums_pos)
+        # iou = bbox_iou4one_2d(p_ltrb_pos, g_ltrb_pos, is_giou=True)
 
-        l_total = l_cls + l_conf + l_iou
+        # 这里是解析归一化图
+        pboxes_ltrb = boxes_decode4fcos(self.cfg, poff_ltrb)
+        p_ltrb_pos = pboxes_ltrb[mask_pos]
+        g_ltrb_pos = g_ltrb[mask_pos]
+        # iou = bbox_iou4one_2d(p_ltrb_pos, g_ltrb_pos, is_giou=True)
+        iou = bbox_iou4one_3d(p_ltrb_pos, g_ltrb_pos, is_giou=True)
+
+        # 使用 iou 与 1 进行bce  debug iou.isnan().any() or iou.isinf().any()
+        l_reg = 5 * torch.mean((1 - iou) * gcenterness[mask_pos])
+
+        # iou2 = bbox_iou4one_3d(pboxes_ltrb, g_ltrb, is_giou=True) # 2D 和 3D效果是一样的
+        # l_reg2 = torch.mean(torch.sum((1 - iou2) * gcenterness * mask_pos.float(), -1) / nums_pos)
+
+        # _loss_val = x_bce(iou, giou, reduction="none")
+        # l_iou = torch.mean(torch.sum(_loss_val * gconf * mask_pos.float(), dim=-1) / nums_pos)
+
+        l_total = l_cls_pos + l_cls_neg + l_conf + l_reg
 
         log_dict = {}
         log_dict['l_total'] = l_total.item()
-        log_dict['l_cls'] = l_cls.item()
+        log_dict['l_cls_pos'] = l_cls_pos.item()
+        log_dict['l_cls_neg'] = l_cls_neg.item()
         log_dict['l_conf'] = l_conf.item()
-        log_dict['l_iou'] = l_iou.item()
+        log_dict['l_reg'] = l_reg.item()
+        # log_dict['l_iou_max'] = iou.max().item()
 
         return l_total, log_dict
 
@@ -112,7 +166,8 @@ class FPredict(Predicting_Base):
         ids_batch1, _ = torch.where(mask_pos)
 
         # 解码
-        poff_ltrb_exp = torch.exp(outs[:, :, s_ + 1:s_ + 1 + 4])
+        # poff_ltrb_exp = torch.exp(outs[:, :, s_:s_ + 4])
+        poff_ltrb_exp = outs[:, :, s_:s_ + 4]
         pboxes_ltrb1 = boxes_decode4fcos(self.cfg, poff_ltrb_exp)
         pboxes_ltrb1.clamp_(min=0., max=1.)  # 预测不返回
 
@@ -125,6 +180,12 @@ class FPredict(Predicting_Base):
 
 class FcosNet(nn.Module):
     def __init__(self, backbone, cfg, out_channels_fpn=256):
+        '''
+        输出 4 层
+        :param backbone:
+        :param cfg:
+        :param out_channels_fpn:
+        '''
         super().__init__()
         self.cfg = cfg
         self.backbone = backbone
@@ -231,15 +292,129 @@ class FcosNet(nn.Module):
         return total_prediction
 
 
+class FcosHead(nn.Module):
+
+    def __init__(self, cfg, num_conv=4, feature_size=256, prior_prob=0.01, ctn_on_reg=True):
+        '''
+
+        :param cfg:
+        :param num_conv:  4层CGL
+        :param feature_size:
+        :param prior_prob:
+        '''
+        super().__init__()
+        self.num_ceng = len(cfg.STRIDES)
+        self.num_conv = num_conv
+        self.ctn_on_reg = ctn_on_reg
+
+        self.convs_k3gg_cls = torch.nn.ModuleList()
+        self.convs_k3gg_reg = torch.nn.ModuleList()
+
+        for i in range(self.num_conv):
+            # 创建4层共享 CGL
+            convk3gg_cls = FConv2d(feature_size, feature_size, 3, s=1, is_bias=True, gn=1, g=32,
+                                   act='relu')
+            convk3gg_reg = FConv2d(feature_size, feature_size, 3, s=1, is_bias=True, gn=1, g=32,
+                                   act='relu')
+            self.convs_k3gg_cls.append(convk3gg_cls)
+            self.convs_k3gg_reg.append(convk3gg_reg)
+
+        convk3_cls = FConv2d(feature_size, cfg.NUM_CLASSES, 3, s=1, is_bias=True, act=None)
+        # convk3_cls 初始化
+        bias_init_value = -math.log((1 - prior_prob) / prior_prob)
+        torch.nn.init.constant_(convk3_cls.conv.bias, bias_init_value)
+        self.convs_k3gg_cls.append(convk3_cls)
+
+        convk3_reg = FConv2d(feature_size, 4, 3, s=1, is_bias=True, act=None)
+        self.convs_k3gg_reg.append(convk3_reg)
+
+        self.convk3_ctn = FConv2d(feature_size, 1, 3, s=1, is_bias=True, act=None)
+
+        self.scales_4_reg = torch.nn.ParameterList()  # 为每层 回归分支预设一个比例参数 学习
+        for i in range(self.num_ceng):
+            scale = torch.nn.Parameter(torch.ones(1, ))
+            self.scales_4_reg.append(scale)
+
+    def forward(self, inputs):
+        res_cls = []
+        res_reg = []
+        res_ctn = []
+        for x in inputs:
+            tcls = x
+            treg = x
+            ''' 先进行一次卷积 '''
+            for i in range(self.num_conv):
+                tcls = self.convs_k3gg_cls[i](tcls)
+                treg = self.convs_k3gg_reg[i](treg)
+
+            batch, _, _, _ = tcls.shape
+
+            if self.ctn_on_reg:  # conf在回归
+                res_ctn.append(self.convk3_ctn(treg).view(batch, 1, -1))
+            else:
+                res_ctn.append(self.convk3_ctn(tcls).view(batch, 1, -1))
+
+            ''' 进行最后一层卷积输出需要的维度 '''
+            tcls = self.convs_k3gg_cls[-1](tcls)
+            treg = self.convs_k3gg_reg[-1](treg)
+
+            batch, c, h, w = tcls.shape
+            tcls = tcls.view(batch, c, -1)
+            batch, c, h, w = treg.shape
+            treg = treg.view(batch, c, -1)
+
+            res_cls.append(tcls)
+            res_reg.append(treg)
+
+        # 回归值的每一层多加一个参数
+        for i in range(self.num_ceng):
+            res_reg[i] = res_reg[i] * self.scales_4_reg[i]
+
+        res_cls = torch.cat(res_cls, -1)
+
+        res_reg = torch.cat(res_reg, -1)
+        # 使输出为正 或使用exp
+        # res_reg = F.relu(res_reg)
+        res_reg = res_reg.exp()
+
+        res_ctn = torch.cat(res_ctn, -1)
+        # cls3 + reg4 +conf1  输出 torch.Size([2, 8, 2134])
+        res = torch.cat([res_cls, res_reg, res_ctn], 1).permute(0, 2, 1)
+        return res
+
+
+class FcosNet_v2(nn.Module):
+    def __init__(self, backbone, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self.backbone = backbone
+        channels_list = backbone.dims_out  # (512, 1024, 2048)
+        self.fpn5 = FPN_out_v2(channels_list, feature_size=256)
+        self.head = FcosHead(self.cfg)
+
+    def forward(self, x):
+        ''' [2, 512, 40, 40] [2, 1024, 20, 20] [2, 2048, 10, 10] '''
+        C_3, C_4, C_5 = self.backbone(x)
+        ''' ...256维 + [2, 256, 5, 5] [2, 256, 3, 3] '''
+        P3_x, P4_x, P5_x, P6_x, P7_x = self.fpn5((C_3, C_4, C_5))
+        res = self.head((P3_x, P4_x, P5_x, P6_x, P7_x))
+        return res
+
+
 class Fcos(FModelBase):
     def __init__(self, backbone, cfg, device=torch.device('cpu')):
-        net = FcosNet(backbone, cfg)
+        if cfg.MODE_TRAIN == 1:
+            net = FcosNet(backbone, cfg)
+        elif cfg.MODE_TRAIN == 2:
+            net = FcosNet_v2(backbone, cfg)
         losser = FLoss(cfg)
         preder = FPredict(cfg)
         super(Fcos, self).__init__(net, losser, preder)
 
 
 if __name__ == '__main__':
+    from f_pytorch.tools_model.model_look import f_look_tw
+
     cfg = CFG()
     cfg.NUMS_ANC = [3, 3, 3]
     cfg.NUM_CLASSES = 3
