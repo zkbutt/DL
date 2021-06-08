@@ -71,7 +71,11 @@ def f_show_coco_pics(coco, path_img, ids_img=None):
         img_info = coco.loadImgs([id])  # 这里原始返回list
         # 本地加载 h,w,c
         # img = io.imread(os.path.join(path_img, img_info[0]['file_name']))
-        img = cv2.imread(os.path.join(path_img, img_info[0]['file_name']))
+        file = os.path.join(path_img, img_info[0]['file_name'])
+        if not os.path.exists(file):
+            raise Exception('path不存在%s' % file)
+
+        img = cv2.imread(file)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         # flog.debug('imgsize %s', img.shape[:2][::-1])
         # 加载图片基本信息 h w id filename
@@ -131,15 +135,17 @@ def t_coco_json():
 
 def t_coco_json2():
     path_host = 'M:'
-    # path_root = path_host + r'/AI/datas/VOC2007'
-    path_root = path_host + r'/AI/datas/coco2017'
+    path_root = path_host + r'/AI/datas/VOC2007'
+    # path_root = path_host + r'/AI/datas/coco2017'
     # path_root = path_host + r'/AI/datas/raccoon200'
-    file_json = path_root + '/annotations/instances_val2017.json'
+    # file_json = path_root + '/annotations/instances_val2017.json'
+    file_json = path_root + '/coco/annotations/instances_type4_train_994.json'
     # file_json = path_root + '/coco/annotations/instances_train_5011.json'
     # file_json = path_root + '/coco/annotations/instances_type3_train_1096.json'
     # file_json = path_root + '/coco/annotations/instances_train_5011.json'
     # path_img = path_root + '/VOCdevkit/JPEGImages'
-    path_img = path_root + '/images/train2017'
+    # path_img = path_root + '/images/train2017'
+    path_img = path_root + '/train/JPEGImages'
     coco = COCO(file_json)
     return coco, path_img
 
@@ -184,8 +190,9 @@ if __name__ == '__main__':
     # coco, path_img = t_coco_json()
     coco, path_img = t_coco_json2()
 
-    # 显示一张图片
+    ''' 查看 数据 集 '''
     # f_show_coco_pics(coco, path_img, ids_img=[279])
+    # f_show_coco_pics(coco, path_img)
 
     # 查看具体类名 ID从1开始 [{'id': 1, 'name': 'aeroplane'}, {'id': 2, 'name': 'bicycle'}, {'id': 3, 'name': 'bird'}, {'id': 4, 'name': 'boat'}, {'id': 5, 'name': 'bottle'}, {'id': 6, 'name': 'bus'}, {'id': 7, 'name': 'car'}, {'id': 8, 'name': 'cat'}, {'id': 9, 'name': 'chair'}, {'id': 10, 'name': 'cow'}, {'id': 11, 'name': 'diningtable'}, {'id': 12, 'name': 'dog'}, {'id': 13, 'name': 'horse'}, {'id': 14, 'name': 'motorbike'}, {'id': 15, 'name': 'person'}, {'id': 16, 'name': 'pottedplant'}, {'id': 17, 'name': 'sheep'}, {'id': 18, 'name': 'sofa'}, {'id': 19, 'name': 'train'}, {'id': 20, 'name': 'tvmonitor'}]
     cats = coco.loadCats(coco.getCatIds())

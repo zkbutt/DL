@@ -41,12 +41,13 @@ def train_eval_set(cfg):
         batch *= 2
         cfg.IS_COCO_EVAL = False
 
-    # cfg.MODE_TRAIN = 1  # base  r18+fpn4
-    # size = (320, 320)  # type
+    cfg.MODE_TRAIN = 1  # base  r18+fpn4
+    size = (320, 320)  # type
 
-    cfg.MODE_TRAIN = 2  # 论文标准实现
-    size = (512, 512)  # size 和 cfg.STRIDES 必须成倍
-    cfg.USE_BASE4NP = True  # 这个用于测试
+    # cfg.MODE_TRAIN = 2  # 论文标准实现
+    # size = (512, 512)  # size 和 cfg.STRIDES 必须成倍
+
+    # cfg.USE_BASE4NP = True  # 这个用于测试
 
     cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数

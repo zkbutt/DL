@@ -6,7 +6,6 @@ import numpy as np
 from f_tools.GLOBAL_LOG import flog
 from f_tools.datas.data_factory import  init_dataloader
 from f_tools.datas.f_coco.coco_dataset import CustomCocoDataset
-from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_recover_gt
 from f_tools.pic.enhance.f_data_pretreatment4np import cre_transform_resize4np, cre_transform_base4np
 
 

@@ -81,7 +81,7 @@ class FConv2d(torch.nn.Module):
                  p=None,  # padding
                  d=1,  # dilation空洞
                  g=1,  # g groups 一般不动
-                 is_bias=True,
+                 is_bias=False,
                  norm='bn',  # bn,gn,af
                  act='leaky',  # relu leaky mish silu
                  is_freeze=False,
@@ -123,7 +123,7 @@ class FConv2d(torch.nn.Module):
         if act == 'relu':
             self.act = torch.nn.ReLU(inplace=True)
         elif act == 'leaky':
-            self.act = torch.nn.LeakyReLU(0.1)
+            self.act = torch.nn.LeakyReLU(0.1, inplace=True)
         elif act == 'mish':
             self.act = Mish()
         elif act == 'silu':

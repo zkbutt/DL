@@ -25,7 +25,7 @@ from torchvision import models
 '''
 
 linux用这个   python /AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/train_yolov1.py
-tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/runs_type3
+tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_yolov1/log/runs_type3/2021-06-01_20_13_08
 正反例 169：1(未减正例)
 
 '''
@@ -39,8 +39,8 @@ def train_eval_set(cfg):
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
-    # batch = 32  # type
-    batch = 2  # type
+    batch = 32  # type
+    # batch = 2  # type
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 2
         cfg.IS_COCO_EVAL = False
@@ -53,10 +53,10 @@ def train_eval_set(cfg):
 
     '''特有参数'''
     cfg.NUM_REG = 8  # 这个是必须
-    cfg.MODE_TRAIN = 1  # base
+    # cfg.MODE_TRAIN = 1  # base conf 用的1
     # cfg.MODE_TRAIN = 2 # 去conf
     # cfg.MODE_TRAIN = 3 # 任意分布
-    # cfg.MODE_TRAIN = 4  # IOU 损失及预测
+    cfg.MODE_TRAIN = 4  # IOU 损失及预测
     # cfg.MODE_TRAIN = 5  # 归一
 
     cfg.NUMS_EVAL = {10: 10, 100: 3, 160: 2}
@@ -77,7 +77,7 @@ def train_eval_set(cfg):
     # type3 resnet18
     # cfg.FILE_NAME_WEIGHT = 'zz/t_yolo1_type3_res18c0.01-110_4.47_p72.4_r46.2' + '.pth'  # conf-0.01 nms-0.5
     # cfg.FILE_NAME_WEIGHT = 't_yolo1_type4_res18-120_3.762' + '.pth'  # conf-0.01 nms-0.5
-    cfg.MAPS_VAL = [0.705, 0.4586]
+    cfg.MAPS_VAL = [0.854, 0.529]
 
     cfg.LR0 = 1e-3
     # cfg.LR0 = 0.0005

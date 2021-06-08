@@ -5,6 +5,7 @@ import torch
 import numpy as np
 
 from f_tools.fun_od.f_boxes import ltwh2ltrb
+from f_tools.pic.f_show import f_show_od_ts4plt
 
 torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
 np.set_printoptions(linewidth=320, suppress=True,
@@ -323,6 +324,7 @@ def load_dataset_coco(mode, transform=None):
         path_img=path_img,
         mode=mode,
         transform=transform,
+        cfg=cfg,
     )
     return path_img, dataset
 
@@ -343,6 +345,8 @@ if __name__ == '__main__':
     cfg.PIC_MEAN = (0.406, 0.456, 0.485)
     cfg.PIC_STD = (0.225, 0.224, 0.229)
     cfg.KEEP_SIZE = False
+    cfg.USE_BASE4NP = False  # 基础处理
+    cfg.IS_VISUAL_PRETREATMENT = False  # 用于dataset提取时测试
     transform = cre_transform_resize4np(cfg)['train']
     # transform = SSDAugmentation(size=(448, 448))
     path_img, dataset = load_dataset_coco(mode, transform=transform)
@@ -362,16 +366,20 @@ if __name__ == '__main__':
 
     '''检测dataset'''
     dataset_ = dataset[1]
-    # for img, target in dataset:
-    #     # print(img, target['boxes'], target['labels'])
-    #     # f_plt_show_cv(img, target['boxes'])
-    #     f_show_od_ts4plt(img, target['boxes'])
-    #     pass
+    for img, target in dataset:
+        # print(img, target['boxes'], target['labels'])
+        # f_plt_show_cv(img, target['boxes'])
+        glabels_text = []
+        for i in target['labels'].long():
+            glabels_text.append(dataset.ids_classes[i.item()])
+
+        f_show_od_ts4plt(img, target['boxes'], is_recover_size=True, glabels_text=glabels_text)
+        pass
 
     '''打开某一个图'''
     img_id = coco_obj.getImgIds()[0]
     img_pil = f_open_cocoimg(path_img, coco_obj, img_id=img_id)
-    # img_pil.show()
+    img_pil.show()
 
     '''------------------- 获取指定类别名的id ---------------------'''
     ids_cat = coco_obj.getCatIds()

@@ -209,9 +209,9 @@ def bbox_iou4one_3d(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=
     # inter_area = inter_wh[:, 0] * inter_wh[:, 1]  # [N,M] 降维
     inter_area = torch.prod(inter_wh, dim=-1)
 
-    # 并的面积
-    area1 = (box1_ltrb[..., 2] - box1_ltrb[..., 0]) * (box1_ltrb[..., 3] - box1_ltrb[..., 1])
-    area2 = (box2_ltrb[..., 2] - box2_ltrb[..., 0]) * (box2_ltrb[..., 3] - box2_ltrb[..., 1])
+    # 并的面积 单项面积为负 则置0
+    area1 = (box1_ltrb[..., 2] - box1_ltrb[..., 0]).clamp(min=0) * (box1_ltrb[..., 3] - box1_ltrb[..., 1]).clamp(min=0)
+    area2 = (box2_ltrb[..., 2] - box2_ltrb[..., 0]).clamp(min=0) * (box2_ltrb[..., 3] - box2_ltrb[..., 1]).clamp(min=0)
     ''' 确保这个不为负 '''
     union_area = area1 + area2 - inter_area + eps  # A+B-交=并
 

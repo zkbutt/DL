@@ -17,8 +17,6 @@ from tqdm import tqdm
 import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.f_map.convert_data.extra.intersect_gt_and_dr import f_fix_txt, f_recover_gt
-from f_tools.datas.f_map.map_go import f_do_fmap
 from f_tools.f_torch_tools import save_weight
 import torch.distributed as dist
 

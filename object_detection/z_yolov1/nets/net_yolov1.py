@@ -9,7 +9,7 @@ from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import f_ohem, x_bce
 from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1
 from f_tools.floss.focal_loss import focalloss
-from f_tools.fun_od.f_boxes import xywh2ltrb, bbox_iou4one_2d, calc_iou4ts, bbox_iou4y, ltrb2xywh
+from f_tools.fun_od.f_boxes import xywh2ltrb, bbox_iou4one_2d, calc_iou4ts, bbox_iou4y, ltrb2xywh, bbox_iou4one_3d
 from f_tools.pic.f_show import f_show_od_np4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 
@@ -43,21 +43,21 @@ def fmatch4yolov1(gboxes_ltrb_b, glabels_b, grid, gdim, device, cfg, img_ts=None
 
 def fmatch4yolov1_4iou(gboxes_ltrb_b, glabels_b, grid, gdim, device, cfg, img_ts=None, ptxywh_b=None):
     '''
-    匹配 gyolo 如果需要计算IOU 需在这里生成
+    直接匹配归一化的 gt
     :param gboxes_ltrb_b: ltrb
     :param glabels_b:
     :param grid: 13
     :param device:
     :return:
     '''
-    # 需要在dataset时验证标注有效性
+    # 求匹配到的网格 colrows_index 标注成正例   特图回归系数
     txywhs_g, weights, colrows_index = boxes_encode4yolo1(gboxes_ltrb_b, grid, grid, device, cfg)
 
-    _gboxes_ltrb_b_t = gboxes_ltrb_b * grid
-    _gboxes_xywh_b_t = ltrb2xywh(_gboxes_ltrb_b_t)
-    # 特图加偏移
-    _gboxes_xywh_b_t[..., :2] = _gboxes_xywh_b_t[..., :2] - _gboxes_xywh_b_t[..., :2].long()
-    gboxes_ltrb_b_toff = xywh2ltrb(_gboxes_xywh_b_t)
+    # _gboxes_ltrb_b_t = gboxes_ltrb_b * grid  # 特图真实尺寸
+    # _gboxes_xywh_b_t = ltrb2xywh(_gboxes_ltrb_b_t)
+    # 特图偏移xy
+    # _gboxes_xywh_b_t[..., :2] = _gboxes_xywh_b_t[..., :2] - _gboxes_xywh_b_t[..., :2].long()
+    # gboxes_ltrb_b_toff = xywh2ltrb(_gboxes_xywh_b_t)
 
     p_yolo_one = torch.zeros((grid, grid, gdim), device=device)
     glabels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
@@ -68,7 +68,7 @@ def fmatch4yolov1_4iou(gboxes_ltrb_b, glabels_b, grid, gdim, device, cfg, img_ts
         conf = torch.tensor([1], device=device, dtype=torch.int16)
         weight = weights[i]  # 这是一个值 需要加一维 1~2 小目标加成
         # conf-1, cls-num_class, txywh-4, weight-1, gltrb-4
-        t = torch.cat([conf, glabels_b[i], txywhs_g[i], weight[None], gboxes_ltrb_b_toff[i]], dim=0)
+        t = torch.cat([conf, glabels_b[i], txywhs_g[i], weight[None], gboxes_ltrb_b[i]], dim=0)
         p_yolo_one[row, col] = t
 
     return p_yolo_one
@@ -227,8 +227,8 @@ class LossYOLOv1(nn.Module):
 
         # ------------ conf-mse ------------''' 666666
         _loss_val = F.mse_loss(pconf_sigmoid, gconf, reduction="none")  # 用MSE效果更好
-        l_conf_pos = ((_loss_val * mask_pos).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[0]
-        l_conf_neg = ((_loss_val * mask_neg).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[1]
+        l_conf_pos = ((_loss_val * mask_pos).sum(-1) / nums_pos).mean() * 5.
+        l_conf_neg = ((_loss_val * mask_neg).sum(-1) / nums_pos).mean() * 1.
 
         # 效果一样 169:1
         # pos_ = _loss_val[mask_pos]
@@ -252,18 +252,22 @@ class LossYOLOv1(nn.Module):
         if cfg.MODE_TRAIN == 4:
             # ------------ iou损失   ------------
             # 解码pxywh 计算预测与 GT 的 iou 作为 gconf
-            preg_pos = pyolos_pos[:, s_:s_ + 4]
-            gltrb_pos_tx = gyolos_pos[:, s_ + 4 + 1:s_ + 4 + 1 + 4]
+            # preg_pos = pyolos_pos[:, s_:s_ + 4]
+            # # 解码yolo1
+            # pxy_pos_toff = preg_pos[..., :2].sigmoid()
+            # pwh_pos = torch.exp(preg_pos[..., 2:])
+            # pzxywh = torch.cat([pxy_pos_toff, pwh_pos], -1)
 
-            # 解码yolo1
-            pxy_pos_toff = preg_pos[..., :2].sigmoid()
-            pwh_pos = torch.exp(preg_pos[..., 2:])
-            pzxywh = torch.cat([pxy_pos_toff, pwh_pos], -1)
+            # 这里是归一化的 gt
+            gltrb_pos = gyolos_pos[:, s_ + 4 + 1:s_ + 4 + 1 + 4]
 
-            iou_zg = bbox_iou4one_2d(xywh2ltrb4ts(pzxywh), gltrb_pos_tx, is_giou=True)
+            ptxywh = pyolos[..., s_:s_ + 4]
+            pltrb_pos = boxes_decode4yolo1(ptxywh, h, w, cfg)[mask_pos]
+
+            iou_zg = bbox_iou4one_3d(pltrb_pos, gltrb_pos, is_giou=True)
             # iou_zg = bbox_iou4y(xywh2ltrb4ts(pzxywh), gltrb_pos_tx, GIoU=True)
             # print(iou_zg)
-            l_reg = (1 - iou_zg).mean() * 2
+            l_reg = (1 - iou_zg).mean() * 5
 
             ''' ---------------- loss完成 ----------------- '''
             l_total = l_conf_pos + l_conf_neg + l_cls + l_reg

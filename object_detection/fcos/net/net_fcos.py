@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from torchvision import models
 
 from f_pytorch.tools_model.f_layer_get import ModelOuts4Resnet
-from f_pytorch.tools_model.f_model_api import CBL, FModelBase, FConv2d
-from f_pytorch.tools_model.fmodels.model_fpns import FPN_out_v2
+from f_pytorch.tools_model.f_model_api import FModelBase, FConv2d
+from f_pytorch.tools_model.fmodels.model_necks import FPN_out_v2
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_match import match4fcos, boxes_decode4fcos, match4fcos_v2
 from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
@@ -178,8 +178,32 @@ class FPredict(Predicting_Base):
         return ids_batch1, pboxes_ltrb1, plabels1, pscores1
 
 
+# class FcosNet(nn.Module):
+#     def __init__(self, backbone, cfg, o_ceng=4):
+#         '''
+#         输出 4 层
+#         :param backbone:
+#         :param cfg:
+#         :param out_channels_fpn:
+#         '''
+#         super().__init__()
+#         self.cfg = cfg
+#         self.backbone = backbone
+#         channels_list = backbone.dims_out
+#         self.fpn = FPN_out_v2(channels_list, feature_size=256, o_ceng=o_ceng)
+#         self.head = FcosHead(self.cfg)
+#
+#     def forward(self, x):
+#         # C_3, C_4, C_5
+#         Bout_ceng3 = self.backbone(x)
+#         # P3_x, P4_x, P5_x, P6_x
+#         Pout_fpn5 = self.fpn(Bout_ceng3)
+#         res = self.head(Pout_fpn5)
+#         return res
+
+
 class FcosNet(nn.Module):
-    def __init__(self, backbone, cfg, out_channels_fpn=256):
+    def __init__(self, backbone, cfg, out_channels_fpn=256, o_ceng=4):
         '''
         输出 4 层
         :param backbone:
@@ -195,8 +219,10 @@ class FcosNet(nn.Module):
         d128 = int(d256 / 2)
         d64 = int(d128 / 2)
 
+        is_bias = True # 原装是True
+
         # C_5 -> C_6  [1, 1024, 7, 7]
-        self.conv_3x3_C_6 = CBL(d512, d1024, 3, padding=1, stride=2)
+        self.conv_3x3_C_6 = FConv2d(d512, d1024, 3, p=1, s=2, is_bias=is_bias)
 
         # detection head
         # All branches share the self.head
@@ -204,50 +230,50 @@ class FcosNet(nn.Module):
 
         # C_6 - P_6 torch.Size([1, 512, 7, 7])
         self.conv_set_6 = nn.Sequential(
-            CBL(d1024, d512, 1),
-            CBL(d512, d1024, 3, padding=1),
-            CBL(d1024, d512, 1),
+            FConv2d(d1024, d512, 1, is_bias=is_bias),
+            FConv2d(d512, d1024, 3, p=1, is_bias=is_bias),
+            FConv2d(d1024, d512, 1, is_bias=is_bias),
         )
 
-        gdim = 1 + cfg.NUM_CLASSES + 1 + 4
+        self.gdim = 1 + cfg.NUM_CLASSES + 1 + 4
         self.pred_6 = nn.Sequential(
-            CBL(d512, d1024, 3, padding=1),
-            nn.Conv2d(d1024, gdim, 1)
+            FConv2d(d512, d1024, 3, p=1, is_bias=is_bias),
+            nn.Conv2d(d1024, self.gdim, 1)
         )
 
         # P_5
         self.conv_set_5 = nn.Sequential(
-            CBL(d512, d256, 1),
-            CBL(d256, d512, 3, padding=1),
-            CBL(d512, d256, 1)
+            FConv2d(d512, d256, 1, is_bias=is_bias),
+            FConv2d(d256, d512, 3, p=1, is_bias=is_bias),
+            FConv2d(d512, d256, 1, is_bias=is_bias)
         )
-        self.conv_1x1_5 = CBL(d256, d128, 1)
+        self.conv_1x1_5 = FConv2d(d256, d128, 1, is_bias=is_bias)
         self.pred_5 = nn.Sequential(
-            CBL(d256, d512, 3, padding=1),
-            nn.Conv2d(d512, gdim, 1)
+            FConv2d(d256, d512, 3, p=1, is_bias=is_bias),
+            nn.Conv2d(d512, self.gdim, 1)
         )
 
         # P_4
         self.conv_set_4 = nn.Sequential(
-            CBL(d256 + d128, d128, 1),
-            CBL(d128, d256, 3, padding=1),
-            CBL(d256, d128, 1)
+            FConv2d(d256 + d128, d128, 1, is_bias=is_bias),
+            FConv2d(d128, d256, 3, p=1, is_bias=is_bias),
+            FConv2d(d256, d128, 1, is_bias=is_bias)
         )
-        self.conv_1x1_4 = CBL(d128, d64, 1)
+        self.conv_1x1_4 = FConv2d(d128, d64, 1, is_bias=is_bias)
         self.pred_4 = nn.Sequential(
-            CBL(d128, d256, 3, padding=1),
-            nn.Conv2d(d256, gdim, 1)
+            FConv2d(d128, d256, 3, p=1, is_bias=is_bias),
+            nn.Conv2d(d256, self.gdim, 1)
         )
 
         # P_3
         self.conv_set_3 = nn.Sequential(
-            CBL(d128 + d64, d64, 1),
-            CBL(d64, d128, 3, padding=1),
-            CBL(d128, d64, 1)
+            FConv2d(d128 + d64, d64, 1, is_bias=is_bias),
+            FConv2d(d64, d128, 3, p=1, is_bias=is_bias),
+            FConv2d(d128, d64, 1, is_bias=is_bias)
         )
         self.pred_3 = nn.Sequential(
-            CBL(d64, d128, 3, padding=1),
-            nn.Conv2d(d128, gdim, 1)
+            FConv2d(d64, d128, 3, p=1, is_bias=is_bias),
+            nn.Conv2d(d128, self.gdim, 1)
         )
 
     def forward(self, x):
@@ -255,36 +281,29 @@ class FcosNet(nn.Module):
         cfg = self.cfg
         # backbone ([2, 128, 40, 40])  ([2, 256, 20, 20]) ([2, 512, 10, 10])
         C_3, C_4, C_5 = self.backbone(x)
-        C_6 = self.conv_3x3_C_6(C_5)  # torch.Size([2, 1024, 5, 5])
         B = C_3.shape[0]
 
-        # self.cfg.NUMS_CENG = []
-        # self.cfg.NUMS_CENG.append(torch.prod(torch.tensor(C_3.shape[-2:])))
-        # self.cfg.NUMS_CENG.append(torch.prod(torch.tensor(C_4.shape[-2:])))
-        # self.cfg.NUMS_CENG.append(torch.prod(torch.tensor(C_5.shape[-2:])))
-        # self.cfg.NUMS_CENG.append(torch.prod(torch.tensor(C_6.shape[-2:])))
-
-        # P_6 torch.Size([2, 9, 25])
-        gdim = 1 + cfg.NUM_CLASSES + 1 + 4
-        pred_6 = self.pred_6(self.conv_set_6(C_6)).view(B, gdim, -1)
+        # 直接输出C6
+        C_6 = self.conv_3x3_C_6(C_5)  # torch.Size([2, 1024, 5, 5])
+        pred_6 = self.pred_6(self.conv_set_6(C_6)).view(B, self.gdim, -1)
 
         # P_5 向上 torch.Size([2, 256, 10, 10])
         C_5 = self.conv_set_5(C_5)
         # 上采样 [2, 256, 10, 10] -> [2, 128, 20, 20]
         C_5_up = F.interpolate(self.conv_1x1_5(C_5), scale_factor=2.0, mode='bilinear', align_corners=True)
-        pred_5 = self.pred_5(C_5).view(B, gdim, -1)  # torch.Size([2, 9, 100])
+        pred_5 = self.pred_5(C_5).view(B, self.gdim, -1)  # torch.Size([2, 9, 100])
 
         # P_4 [2, 256, 20, 20] ^ [2, 128, 20, 20]
         C_4 = torch.cat([C_4, C_5_up], dim=1)
         C_4 = self.conv_set_4(C_4)
         # [2, 64, 40, 40]
         C_4_up = F.interpolate(self.conv_1x1_4(C_4), scale_factor=2.0, mode='bilinear', align_corners=True)
-        pred_4 = self.pred_4(C_4).view(B, gdim, -1)
+        pred_4 = self.pred_4(C_4).view(B, self.gdim, -1)
 
         # P_3
         C_3 = torch.cat([C_3, C_4_up], dim=1)
         C_3 = self.conv_set_3(C_3)
-        pred_3 = self.pred_3(C_3).view(B, gdim, -1)
+        pred_3 = self.pred_3(C_3).view(B, self.gdim, -1)
 
         # [2, 9, 1600] [2, 9, 400] [2, 9, 100] [2, 9, 25] 输出4层
         total_prediction = torch.cat([pred_3, pred_4, pred_5, pred_6], dim=-1).permute(0, 2, 1)
@@ -296,11 +315,11 @@ class FcosHead(nn.Module):
 
     def __init__(self, cfg, num_conv=4, feature_size=256, prior_prob=0.01, ctn_on_reg=True):
         '''
-
+        经过
         :param cfg:
         :param num_conv:  4层CGL
         :param feature_size:
-        :param prior_prob:
+        :param prior_prob: 这个用于初始化 cls 头
         '''
         super().__init__()
         self.num_ceng = len(cfg.STRIDES)
@@ -312,9 +331,9 @@ class FcosHead(nn.Module):
 
         for i in range(self.num_conv):
             # 创建4层共享 CGL
-            convk3gg_cls = FConv2d(feature_size, feature_size, 3, s=1, is_bias=True, gn=1, g=32,
+            convk3gg_cls = FConv2d(feature_size, feature_size, 3, s=1, is_bias=True, norm='gn', g=32,
                                    act='relu')
-            convk3gg_reg = FConv2d(feature_size, feature_size, 3, s=1, is_bias=True, gn=1, g=32,
+            convk3gg_reg = FConv2d(feature_size, feature_size, 3, s=1, is_bias=True, norm='gn', g=32,
                                    act='relu')
             self.convs_k3gg_cls.append(convk3gg_cls)
             self.convs_k3gg_reg.append(convk3gg_reg)
@@ -330,10 +349,10 @@ class FcosHead(nn.Module):
 
         self.convk3_ctn = FConv2d(feature_size, 1, 3, s=1, is_bias=True, act=None)
 
-        self.scales_4_reg = torch.nn.ParameterList()  # 为每层 回归分支预设一个比例参数 学习
-        for i in range(self.num_ceng):
-            scale = torch.nn.Parameter(torch.ones(1, ))
-            self.scales_4_reg.append(scale)
+        # self.scales_4_reg = torch.nn.ParameterList()  # 为每层 回归分支预设一个比例参数 学习
+        # for i in range(self.num_ceng):
+        #     scale = torch.nn.Parameter(torch.ones(1, ))
+        #     self.scales_4_reg.append(scale)
 
     def forward(self, inputs):
         res_cls = []
@@ -342,19 +361,20 @@ class FcosHead(nn.Module):
         for x in inputs:
             tcls = x
             treg = x
-            ''' 先进行一次卷积 '''
+            ''' 先进行一次卷积 4层CBL '''
             for i in range(self.num_conv):
                 tcls = self.convs_k3gg_cls[i](tcls)
                 treg = self.convs_k3gg_reg[i](treg)
 
             batch, _, _, _ = tcls.shape
 
+            ''' 这里输出ctn 建议在回归分之 '''
             if self.ctn_on_reg:  # conf在回归
                 res_ctn.append(self.convk3_ctn(treg).view(batch, 1, -1))
             else:
                 res_ctn.append(self.convk3_ctn(tcls).view(batch, 1, -1))
 
-            ''' 进行最后一层卷积输出需要的维度 '''
+            ''' 进行最后一层卷积输出需要的维度 这里是强制变维head '''
             tcls = self.convs_k3gg_cls[-1](tcls)
             treg = self.convs_k3gg_reg[-1](treg)
 
@@ -367,8 +387,8 @@ class FcosHead(nn.Module):
             res_reg.append(treg)
 
         # 回归值的每一层多加一个参数
-        for i in range(self.num_ceng):
-            res_reg[i] = res_reg[i] * self.scales_4_reg[i]
+        # for i in range(self.num_ceng):
+        #     res_reg[i] = res_reg[i] * self.scales_4_reg[i]
 
         res_cls = torch.cat(res_cls, -1)
 
@@ -383,30 +403,30 @@ class FcosHead(nn.Module):
         return res
 
 
-class FcosNet_v2(nn.Module):
-    def __init__(self, backbone, cfg):
-        super().__init__()
-        self.cfg = cfg
-        self.backbone = backbone
-        channels_list = backbone.dims_out  # (512, 1024, 2048)
-        self.fpn5 = FPN_out_v2(channels_list, feature_size=256)
-        self.head = FcosHead(self.cfg)
-
-    def forward(self, x):
-        ''' [2, 512, 40, 40] [2, 1024, 20, 20] [2, 2048, 10, 10] '''
-        C_3, C_4, C_5 = self.backbone(x)
-        ''' ...256维 + [2, 256, 5, 5] [2, 256, 3, 3] '''
-        P3_x, P4_x, P5_x, P6_x, P7_x = self.fpn5((C_3, C_4, C_5))
-        res = self.head((P3_x, P4_x, P5_x, P6_x, P7_x))
-        return res
+# class FcosNet_v2(nn.Module):
+#     def __init__(self, backbone, cfg):
+#         super().__init__()
+#         self.cfg = cfg
+#         self.backbone = backbone
+#         channels_list = backbone.dims_out  # (512, 1024, 2048)
+#         self.fpn5 = FPN_out_v2(channels_list, feature_size=256, o_ceng=5)
+#         self.head = FcosHead(self.cfg)
+#
+#     def forward(self, x):
+#         ''' [2, 512, 40, 40] [2, 1024, 20, 20] [2, 2048, 10, 10] '''
+#         C_3, C_4, C_5 = self.backbone(x)
+#         ''' ...256维 + [2, 256, 5, 5] [2, 256, 3, 3] '''
+#         P3_x, P4_x, P5_x, P6_x, P7_x = self.fpn5((C_3, C_4, C_5))
+#         res = self.head((P3_x, P4_x, P5_x, P6_x, P7_x))
+#         return res
 
 
 class Fcos(FModelBase):
     def __init__(self, backbone, cfg, device=torch.device('cpu')):
         if cfg.MODE_TRAIN == 1:
-            net = FcosNet(backbone, cfg)
+            net = FcosNet(backbone, cfg, o_ceng=4)
         elif cfg.MODE_TRAIN == 2:
-            net = FcosNet_v2(backbone, cfg)
+            net = FcosNet(backbone, cfg, o_ceng=5)
         losser = FLoss(cfg)
         preder = FPredict(cfg)
         super(Fcos, self).__init__(net, losser, preder)
@@ -415,13 +435,21 @@ class Fcos(FModelBase):
 if __name__ == '__main__':
     from f_pytorch.tools_model.model_look import f_look_tw
 
+    ''' 模型测试 '''
     cfg = CFG()
     cfg.NUMS_ANC = [3, 3, 3]
     cfg.NUM_CLASSES = 3
     cfg.IMAGE_SIZE = (416, 416)
+    cfg.STRIDES = [8, 16, 32, 64]
     model = models.resnet18(pretrained=True)
     dims_out = (128, 256, 512)
     model = ModelOuts4Resnet(model, dims_out)
+
     model = FcosNet(model, cfg)
-    model.eval()
+
+    # cfg.STRIDES = [8, 16, 32, 64, 128]
+    # model = FcosNet(model, cfg, o_ceng=5)
+
+    # print(model(torch.rand(2, 3, 416, 416)).shape)
+    # model.eval()
     f_look_tw(model, input=(1, 3, 416, 416), name='fcos')
