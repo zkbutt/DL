@@ -189,7 +189,7 @@ def bbox_iou4one_2d(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=
             return ciou
 
 
-def bbox_iou4one_3d(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=False):
+def bbox_iou4one(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=False):
     '''
     这个是一一对应  box1  box2 支持2D和3D
     :param box1_ltrb:
@@ -204,6 +204,7 @@ def bbox_iou4one_3d(box1_ltrb, box2_ltrb, is_giou=False, is_diou=False, is_ciou=
     # torch.Size([2, 845, 2])
     max_lt = torch.max(box1_ltrb[..., :2], box2_ltrb[..., :2])  # left-top [N,M,2] 多维组合用法
     min_rb = torch.min(box1_ltrb[..., 2:], box2_ltrb[..., 2:])  # right-bottom [N,M,2]
+    # 确保面积不能为负  否则以0计算
     inter_wh = (min_rb - max_lt).clamp(min=0)  # [N,M,2]
     # inter_wh = (min_rb - max_lt).clamp(min=0)  # [N,M,2]
     # inter_area = inter_wh[:, 0] * inter_wh[:, 1]  # [N,M] 降维

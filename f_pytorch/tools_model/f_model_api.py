@@ -78,20 +78,19 @@ class FConv2d(torch.nn.Module):
     def __init__(self, in_channels, out_channels,
                  k,  # kernel_size
                  s=1,  # stride
-                 p=None,  # padding
+                 p=0,  # padding 等于 None 是自动same
                  d=1,  # dilation空洞
                  g=1,  # g groups 一般不动
-                 is_bias=False,
+                 is_bias=True,
                  norm='bn',  # bn,gn,af
                  act='leaky',  # relu leaky mish silu
                  is_freeze=False,
                  use_dcn=False):
         '''
         有 bn 建议不要 bias
-        # 同维
-        Conv2dUnit(in_channels_list[0], out_channels, k=1, bn=True, act='leaky', is_bias=False)
+        # 普通conv
+
         # 降维
-        Conv2dUnit(in_channels_list[2], feature_size, k=3, s=2, p=1, bn=True, act='leaky', is_bias=False)
         '''
         super(FConv2d, self).__init__()
         self.groups = g
@@ -133,7 +132,7 @@ class FConv2d(torch.nn.Module):
 
         self.name_act = act
 
-        if is_freeze:
+        if is_freeze:  # 一般不锁定
             self.freeze()
 
     def init_weights(self):
@@ -159,14 +158,16 @@ class FConv2d(torch.nn.Module):
         if self.gn is not None:
             self.gn.weight.requires_grad = False
             self.gn.bias.requires_grad = False
-        if self.af is not None:
-            self.af.weight.requires_grad = False
-            self.af.bias.requires_grad = False
+        if self.act is not None:
+            self.act.weight.requires_grad = False
+            self.act.bias.requires_grad = False
 
     def forward(self, x):
         x = self.conv(x)
         if self.normalization is not None:
             x = self.normalization(x)
+        if self.act is not None:
+            x = self.act(x)
         return x
 
 
@@ -229,21 +230,13 @@ def conv_same(k):
     return p
 
 
-class Conv(nn.Module):
-    # Standard convolution
-    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True, bias=True):
-        # ch_in, ch_out, kernel, stride, padding, groups
-        super(Conv, self).__init__()
-        self.conv = nn.Conv2d(c1, c2, k, s, conv_same(k), groups=g, bias=bias)
-        self.bn = nn.BatchNorm2d(c2)
-        self.act = nn.LeakyReLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
-        # self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+class Scale(nn.Module):
+    def __init__(self, init_value=1.0):
+        super(Scale, self).__init__()
+        self.scale = nn.Parameter(torch.FloatTensor([init_value]))
 
-    def forward(self, x):
-        return self.act(self.bn(self.conv(x)))
-
-    def fuseforward(self, x):
-        return self.act(self.conv(x))
+    def forward(self, input):
+        return input * self.scale
 
 
 '''-----------------模型转换-----------------------'''

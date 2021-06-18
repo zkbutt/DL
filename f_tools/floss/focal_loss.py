@@ -151,14 +151,24 @@ def focalloss(pcls_sigmoid, gcls, mask_pos, mash_ignore=None,
     return loss_val
 
 
-def focalloss_fcos(pcls_sigmoid, gcls, alpha=0.25, gamma=2):
+def focalloss_center(pcls_sigmoid, gcls, alpha=2., beta=4.):
     mask_pos_3d = gcls == 1
+    mask_neg_3d = gcls != 1
     eps = torch.finfo(torch.float16).eps
     pcls_sigmoid = pcls_sigmoid.clamp(min=eps, max=1 - eps)
-    l_pos = mask_pos_3d.float() * (0 - torch.log(pcls_sigmoid)) * torch.pow(1 - pcls_sigmoid, gamma) * alpha
-    l_neg = (1.0 - mask_pos_3d.float()) * (0 - torch.log(1 - pcls_sigmoid)) * torch.pow(pcls_sigmoid, gamma) * (
-                1 - alpha)
+    l_pos = - ((1.0 - pcls_sigmoid) ** alpha) * torch.log(pcls_sigmoid) * mask_pos_3d.float()
+    l_neg = -  ((1 - gcls) ** beta) * (pcls_sigmoid ** alpha) * torch.log(1.0 - pcls_sigmoid) * mask_neg_3d.float()
+    return l_pos, l_neg
 
+
+def focalloss_fcos(pcls_sigmoid, gcls, alpha=0.25, gamma=2):
+    mask_pos_3d = gcls == 1
+    mask_neg_3d = gcls != 1
+    # mask_neg_3d = 1.0 - mask_pos_3d.float()
+    eps = torch.finfo(torch.float16).eps
+    pcls_sigmoid = pcls_sigmoid.clamp(min=eps, max=1 - eps)
+    l_pos = -mask_pos_3d.float() * torch.pow(1 - pcls_sigmoid, gamma) * alpha * torch.log(pcls_sigmoid)
+    l_neg = -mask_neg_3d.float() * torch.pow(pcls_sigmoid, gamma) * (1 - alpha) * torch.log(1 - pcls_sigmoid)
     return l_pos, l_neg
 
 

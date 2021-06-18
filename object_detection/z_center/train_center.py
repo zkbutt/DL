@@ -32,6 +32,7 @@ def train_eval_set(cfg):
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
     batch = 16  # type
+    # batch = 2
     # cfg.IS_MIXTURE_FIX = False  # 全精度
     # batch = 3
     # cfg.CUSTOM_EVEL = True  # 自定义验证
@@ -54,7 +55,7 @@ def train_eval_set(cfg):
     cfg.MODE_TRAIN = 1  # base
     # cfg.MODE_TRAIN = 5  # yolo5
     cfg.NUM_REG = 1  # 这个是必须
-    cfg.KEEP_SIZE = False  # 有anc建议用这个
+    cfg.KEEP_SIZE = False  # 有anc建议用这个为Ture
     # cfg.KEEP_SIZE = True  # 有anc建议用这个
     # cfg.USE_BASE4NP = True
     cfg.PTOPK = 100  # 通用参数
@@ -86,7 +87,7 @@ def init_model(cfg, device, id_gpu=None):
 
     pg = model.parameters()
     optimizer = optim.Adam(pg, cfg.LR0)
-    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [90, 120], 0.1)
+    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [60,80, 120], 0.1)
     start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg

@@ -69,6 +69,12 @@ class ModelOutsUtils(nn.Module):
 class ModelOuts4Resnet(nn.Module):
 
     def __init__(self, model, dims_out=(512, 1024, 2048)):
+        '''
+        r18 dims_out = (128, 256, 512)
+        r50 dims_out = (512, 1024, 2048)
+        :param model:
+        :param dims_out:
+        '''
         super().__init__()
         self.dims_out = dims_out
 

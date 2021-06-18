@@ -21,7 +21,7 @@ from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init
 
 '''
-tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/fcos/log/runs_type3/2021-05-23_12_52_11
+tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/fcos/log/runs_type3/2021-06-17_18_49_06
 
 '''
 
@@ -41,11 +41,13 @@ def train_eval_set(cfg):
         batch *= 2
         cfg.IS_COCO_EVAL = False
 
-    cfg.MODE_TRAIN = 1  # base  r18+fpn4
+    # cfg.MODE_TRAIN = 1  # base  这个 fpn+head 淘汰
     size = (320, 320)  # type
 
-    # cfg.MODE_TRAIN = 2  # 论文标准实现
+    # cfg.MODE_TRAIN = 4  # 论文标准实现
     # size = (512, 512)  # size 和 cfg.STRIDES 必须成倍
+
+    cfg.MODE_TRAIN = 5  # 采用cls3
 
     # cfg.USE_BASE4NP = True  # 这个用于测试
 
@@ -60,7 +62,7 @@ def train_eval_set(cfg):
     # type3 dark19
     # cfg.FILE_NAME_WEIGHT = 'zz/t_yolo2_type3_dark19c0.01-137_3.94_p73.5_r49.8' + '.pth'  # conf-0.01 nms-0.5
     # cfg.FILE_NAME_WEIGHT = 't_fcos_type3_res50-10_1.763' + '.pth'  # conf-0.01 nms-0.5
-    cfg.MAPS_VAL = [0.74, 0.56]  # 最高
+    cfg.MAPS_VAL = [0.8726537249998292, 0.6458333333333334]
 
     cfg.LR0 = 1e-3
     cfg.TB_WRITER = True
@@ -69,19 +71,25 @@ def train_eval_set(cfg):
 
 
 def init_model(cfg, device, id_gpu=None):
-    if cfg.MODE_TRAIN == 1:
-        model = models.resnet18(pretrained=True)
-        dims_out = (128, 256, 512)
-        model = ModelOuts4Resnet(model, dims_out)
-        cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_res18'
+    model = models.resnet18(pretrained=True)
+    dims_out = (128, 256, 512)
+    model = ModelOuts4Resnet(model, dims_out)
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_res18'
+
+    if cfg.MODE_TRAIN == 1 or cfg.MODE_TRAIN == 2 or cfg.MODE_TRAIN == 5:
+        ''' 
+        1. 输出4层 共享输出
+        2. 输出4层 使用新FPN 共享
+        '''
         cfg.STRIDES = [8, 16, 32, 64]  # 特有参数下采样步距
         cfg.SCALE_THRESHOLDS = [0, 49, 98, 196, 10000000000.0]  # 用于确保每一个特图预测相应大小的框,且一个GT只在一个层进行匹配
-    elif cfg.MODE_TRAIN == 2:
-        model = models.resnet50(pretrained=True)
-        dims_out = (512, 1024, 2048)
-        model = ModelOuts4Resnet(model, dims_out)
-        cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_res50'
-        cfg.STRIDES = [8, 16, 32, 64, 128]  # 待定
+    elif cfg.MODE_TRAIN == 3 or cfg.MODE_TRAIN == 4:
+        ''' 输出4层 使用新FPN 共享 '''
+        # model = models.resnet50(pretrained=True)
+        # dims_out = (512, 1024, 2048)
+        # model = ModelOuts4Resnet(model, dims_out)
+        # cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_res50'
+        cfg.STRIDES = [8, 16, 32, 64, 128]  # size需要512 128的倍数
         cfg.SCALE_THRESHOLDS = [0, 64, 128, 256, 512, 10000000000.0]
     else:
         raise Exception('cfg.MODE_TRAIN 出错 cfg.MODE_TRAIN=%s' % (cfg.MODE_TRAIN))

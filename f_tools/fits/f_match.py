@@ -1554,18 +1554,19 @@ def match4center(gboxes_ltrb_b, glabels_b, fsize_wh, dim, cfg, num_keypoints=0, 
     gboxes_xywh_b = ltrb2xywh(gboxes_ltrb_b)
     # 转换到对应特图的尺寸
     device = gboxes_xywh_b.device
-    boxes_xywh_f = gboxes_xywh_b * fsize_wh.repeat(2).unsqueeze(0)
+    boxes_xywh_t = gboxes_xywh_b * fsize_wh.repeat(2).unsqueeze(0)
     # 输入特图 尺寸
-    xys = boxes_xywh_f[:, :2]
-    whs = boxes_xywh_f[:, 2:4]
+    xys = boxes_xywh_t[:, :2]
+    whs = boxes_xywh_t[:, 2:4]
     # 限定为特图格子偏移 与yolo相同
     indexs_colrow = xys.type(torch.int32)
 
     txy = xys - indexs_colrow  # 这个是偏置在 0~1 之间 与 yolo 一样偏置
     twh = torch.log(whs)
     txywh = torch.cat([txy, twh], -1)
-    weights = torch.ones(boxes_xywh_f.shape[0])
-    # weights = 2.0 - torch.prod(whs, dim=-1)
+    ''' 用这个判断回归正例 >0'''
+    weights = torch.ones(boxes_xywh_t.shape[0])  # 有几个GT就创建几个 写死为1
+    # weights = 2.0 - torch.prod(gboxes_xywh_b[:,2:4], dim=-1)
 
     ''' 这里用圆的效果没有影响 '''
     # 使用论文作半径  [ngt]
@@ -1585,15 +1586,15 @@ def match4center(gboxes_ltrb_b, glabels_b, fsize_wh, dim, cfg, num_keypoints=0, 
 
     # 根据中心点 和 半径生成 及labels 生成高斯图
     for i in range(len(labels_)):
-        ''' 同一个格子有多个目标 只有一个有效 '''
+        ''' 同一个格子有多个目标 只有一个有效  一个目标只有一个点有效 '''
         # 每一张图的 张一个标签
         g_res_one[indexs_colrow[i, 1], indexs_colrow[i, 0], labels_[i]] = 1
         g_res_one[indexs_colrow[i, 1], indexs_colrow[i, 0], cfg.NUM_CLASSES:cfg.NUM_CLASSES + 4] = txywh[i]
-        g_res_one[indexs_colrow[i, 1], indexs_colrow[i, 0], cfg.NUM_CLASSES + 4] = weights[i]
+        g_res_one[indexs_colrow[i, 1], indexs_colrow[i, 0], cfg.NUM_CLASSES + 4] = weights[i]  # 这个判断回归正例
 
-        # 软件阀值
+        # 软件阀值 标签是高斯范围
         heatmap = fcre_gaussian(index_colrow=indexs_colrow[i], fsize_wh=fsize_wh, sigma_wh=sigma_wh[i])
-        pre_heatmap = g_res_one[:, :, labels_[i]]  # 前面的标签提出来  可能重复
+        pre_heatmap = g_res_one[:, :, labels_[i]]  # 该标签维度全部提出后取最大
         g_res_one[:, :, labels_[i]] = torch.max(heatmap, pre_heatmap)
 
     return g_res_one
@@ -1880,8 +1881,175 @@ def match4fcos_v2(gboxes_ltrb_b, glabels_b, gdim, pcos, cfg, img_ts=None, ):
     return g_res_one
 
 
+def match4fcos_v3(gboxes_ltrb_b, glabels_b, gdim, pcos, cfg, img_ts=None, ):
+    '''
+    这里处理一张图片
+    :img_ts: 一张图片
+    :return:
+        v1 0.11269640922546387
+        v2 0.001  提升1000倍
+    '''
+
+    gboxes_xywh_b = ltrb2xywh(gboxes_ltrb_b)
+    # 转换到对应特图的尺寸
+    device = gboxes_ltrb_b.device
+    dim_total = pcos.shape[1]
+    # labels_ = (glabels_b - 1).long()
+
+    # back cls centerness ltrb positivesample iou area
+    g_res_one = torch.zeros([dim_total, gdim], device=device)
+
+    input_size = torch.tensor(cfg.IMAGE_SIZE, device=device)
+    grids = torch.true_divide(input_size.unsqueeze(0),
+                              torch.tensor(cfg.STRIDES, device=device).unsqueeze(-1).repeat(1, 2))
+    grids = grids[:, 0].type(torch.int32).tolist()
+
+    # 恢复到input
+    gboxes_ltrb_b_input = gboxes_ltrb_b * input_size.repeat(2).unsqueeze(0)
+    gboxes_xywh_b_input = ltrb2xywh(gboxes_ltrb_b_input)
+
+    # g_res_one[:, 0] = 1.0  # 默认全部为背景
+    g_res_one[:, cfg.NUM_CLASSES + 1 + 4 + 1 + 1] = 1.0  # 面积初始为最大1
+
+    # back = torch.ones((dim_total, 1), device=device)
+    positive_radius = torch.zeros((dim_total, 1), device=device)  # 半径正例
+    positive_ingt = torch.zeros((dim_total, 1), device=device)  # 半径正例
+    # (4) -> (1,4) ->  (nn,4)  # 这里多加了一个背景
+    labels_onehot = torch.zeros((dim_total, cfg.NUM_CLASSES), device=device)  # 全为背景置1
+    # labels_onehot[:, 0] = 1  # 全为背景置1
+
+    # 遍历每一个标签, 的每一层的格子  找出格子是否在预测框中, 并记录差异
+    for i in range(len(glabels_b)):
+        l = gboxes_ltrb_b_input[i, 0]
+        t = gboxes_ltrb_b_input[i, 1]
+        r = gboxes_ltrb_b_input[i, 2]
+        b = gboxes_ltrb_b_input[i, 3]
+        area = torch.prod(gboxes_xywh_b[i][2:])
+
+        index_colrow = []
+        scale_thresholds = []
+        radius = []
+
+        image_size_ts = torch.tensor(cfg.IMAGE_SIZE, device=device)
+        for j, s in enumerate(cfg.STRIDES):
+            # 恢复到
+            grid_wh = image_size_ts // s  # 特征格子
+            _grids = f_mershgrid(grid_wh[1], grid_wh[0], is_rowcol=False).to(device)
+            _grids = _grids * s + s // 2
+            # dim, _ = _grids.shape
+            index_colrow.append(_grids)
+
+            _scale = torch.empty_like(_grids, device=device)
+            _scale[:, 0] = cfg.SCALE_THRESHOLDS[j]
+            _scale[:, 1] = cfg.SCALE_THRESHOLDS[j + 1]
+            scale_thresholds.append(_scale)
+
+            # [nn]
+            _radius = torch.empty_like(_grids[:, 0], device=device)
+            _radius[:] = cfg.MATCH_RADIUS * s  # 半径阀值
+            radius.append(_radius)
+
+        # (nn,2)
+        index_colrow = torch.cat(index_colrow, 0)
+        scale_thresholds = torch.cat(scale_thresholds, 0)
+        radius = torch.cat(radius, 0)  # [nn]
+
+        # (nn) # --- 是否框内条件 ---
+        mask_col_lr = torch.logical_and(index_colrow[:, 0] >= l, index_colrow[:, 0] <= r)
+        mask_row_tb = torch.logical_and(index_colrow[:, 1] >= t, index_colrow[:, 1] <= b)
+        mask_D = torch.logical_and(mask_col_lr, mask_row_tb)
+
+        # --- 中心格子半径条件 ---
+        mask_radius = torch.logical_and(torch.abs(index_colrow[:, 0] - gboxes_xywh_b_input[i, 0]) < radius,
+                                        torch.abs(index_colrow[:, 1] - gboxes_xywh_b_input[i, 1]) < radius)
+
+        # (nn,2)
+        off_lt = index_colrow - gboxes_ltrb_b_input[i, :2].unsqueeze(0)
+        off_rb = gboxes_ltrb_b_input[i, 2:].unsqueeze(0) - index_colrow
+        off_ltrb = torch.cat([off_lt, off_rb], -1)  # (nn,4)
+        M, _ = torch.max(off_ltrb, -1)  # (nn,4) -> (nn)
+
+        # (nn)  # --- 层阀值条件 ---
+        mask_M = torch.logical_and(M >= scale_thresholds[:, 0], M <= scale_thresholds[:, 1])
+
+        # --- 面积条件 ---
+        mask_area = g_res_one[:, cfg.NUM_CLASSES + 1 + 4 + 1 + 1] > area
+
+        mask = torch.logical_and(torch.logical_and(mask_D, mask_M), mask_area)
+        mask_radius = torch.logical_and(mask, mask_radius)
+
+        # (nn) -> (nn,1)
+        center_ness = torch.sqrt(torch.min(off_ltrb[:, ::2], -1)[0] / torch.max(off_ltrb[:, ::2], -1)[0]
+                                 * torch.min(off_ltrb[:, 1::2], -1)[0] / torch.max(off_ltrb[:, 1::2], -1)[0])
+        center_ness.unsqueeze_(-1)
+
+        '''
+        back 默认为1 有类别即付为 onehot 复写  -> back=0
+        centerness 用于与回归 loss 权重
+        ltrb 用于IOU计算
+        positive_sample 用于计算conf 需结合半径
+        
+        '''
+        labels_onehot[mask, glabels_b[i].long() - 1] = 1.  # 这个需要保留以前的值 本次只复写需要的
+        positive_radius[mask_radius] = 1  # 这是一个较小的交集, 需要的付为1 用于 conf 计算
+        positive_ingt[mask] = 1.  # gt框内的标志  reg正例
+        area_ts = torch.empty_like(positive_radius)  # (nn,1)
+        area_ts[:, 0] = area  # 面积更新 全部付这个GT的面积 后面通过 mask 过滤
+
+        # cls3 centerness1 ltrb4 positive_radius1 positive_ingt1 area1 3+1+4+1+1+1=11
+        g_res_one_tmp = torch.cat([labels_onehot, center_ness, gboxes_ltrb_b[i].repeat(dim_total, 1),
+                                   positive_radius, positive_ingt, area_ts], -1)
+        g_res_one[mask] = g_res_one_tmp[mask]
+
+    if cfg.IS_VISUAL:
+        ''' 可视化匹配最大的ANC '''
+        from f_tools.pic.enhance.f_data_pretreatment4pil import f_recover_normalization4ts
+        _img_ts = f_recover_normalization4ts(img_ts.clone())
+        from torchvision.transforms import functional as transformsF
+        img_pil = transformsF.to_pil_image(_img_ts).convert('RGB')
+        import numpy as np
+        img_np = np.array(img_pil)
+
+        CLASS_COLOR = [(np.random.randint(255), np.random.randint(255), np.random.randint(255)) for _ in
+                       range(cfg.NUM_CLASSES)]
+
+        start_index = 0
+        for j in range(len(cfg.STRIDES)):
+
+            for row in range(grids[j]):
+                for col in range(grids[j]):
+                    # 网络在原图的坐标
+                    x = col * cfg.STRIDES[j] + cfg.STRIDES[j] // 2
+                    y = row * cfg.STRIDES[j] + cfg.STRIDES[j] // 2
+                    index = (row * grids[j] + col) + start_index
+                    # if g_res_one[index, cfg.NUM_CLASSES + 1+4] == 1.: # 这个是半径正例
+                    if g_res_one[index, cfg.NUM_CLASSES + 1 + 4 + 1] == 1:  # 这是框内正例
+                        # 正例
+                        off_l, off_t, off_r, off_b = g_res_one[index, cfg.NUM_CLASSES + 1:cfg.NUM_CLASSES + 1 + 4]
+                        # 网络位置 求GT的位置
+                        xmin = int(x - off_l)
+                        ymin = int(y - off_t)
+                        xmax = int(x + off_r)
+                        ymax = int(y + off_b)
+
+                        gcls = np.argmax(g_res_one[index, :cfg.NUM_CLASSES], axis=-1)
+                        mess = '%s' % (int(gcls))
+                        cv2.circle(img_np, (int(x), int(y)), 5, CLASS_COLOR[int(gcls)], -1)
+                        cv2.rectangle(img_np, (xmin, ymin), (xmax, ymax), CLASS_COLOR[int(gcls)], 2)
+                        cv2.rectangle(img_np, (int(xmin), int(abs(ymin) - 15)),
+                                      (int(xmin + (xmax - xmin) * 0.55), int(ymin)), CLASS_COLOR[int(gcls)], -1)
+                        cv2.putText(img_np, mess, (int(xmin), int(ymin)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+            start_index += (grids[j] ** 2)
+        cv2.imshow('image', img_np)
+        cv2.waitKey(0)
+    return g_res_one
+
+
 def boxes_decode4fcos(cfg, poff_ltrb, is_t=False):
-    ''' 预测的是特图上的对应点到真实框的距离 是否计划特图效果iou效果是一样的 '''
+    '''
+    将预测出来对应特图偏移 通过生成对应的特图的网格 求出真实坐标
+    预测的是特图上的对应点到真实框的距离 计算特图和归一图iou的效果效果是一样的
+    '''
     device = poff_ltrb.device
     weight = torch.tensor([-1, -1, 1, 1], device=device).view(1, 1, -1)
 
@@ -1898,7 +2066,7 @@ def boxes_decode4fcos(cfg, poff_ltrb, is_t=False):
     index_colrow = torch.cat(index_colrow, 0).repeat(1, 2).unsqueeze(0)
     # [2, 2125, 4]
     pboxes_ltrb1 = poff_ltrb * weight + index_colrow  # 得到真实 ltrb
-    if not is_t:
+    if not is_t:  # 是否特图尺寸  默认否为运行进行 归一化
         pboxes_ltrb1 = pboxes_ltrb1 / image_size_ts.repeat(2).view(1, 1, -1)  # 归一化尺寸
     return pboxes_ltrb1
 

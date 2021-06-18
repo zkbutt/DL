@@ -1,6 +1,5 @@
 import os
 import sys
-import tensorwatch as tw
 
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
@@ -85,6 +84,7 @@ def other():
 
 
 def f_look_tw(model, input=(1, 3, 416, 416), name='model_look'):
+    import tensorwatch as tw
     # 用这个即可---查看网络的统计结果---
     args_pd = tw.model_stats(model, input)
     args_pd.to_excel(name + '.xlsx')
@@ -94,6 +94,13 @@ def f_look_tw(model, input=(1, 3, 416, 416), name='model_look'):
 
 
 def f_look_summary(model, input=(3, 416, 416), device="cpu"):
+    '''
+    这个不支持 tuple 输入  没有.size()属性会报错
+    :param model:
+    :param input:
+    :param device:
+    :return:
+    '''
     from torchsummary import summary
     if not isinstance(input, tuple):
         input = tuple(input)

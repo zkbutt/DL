@@ -9,7 +9,7 @@ from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import f_ohem, x_bce
 from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1
 from f_tools.floss.focal_loss import focalloss
-from f_tools.fun_od.f_boxes import xywh2ltrb, bbox_iou4one_2d, calc_iou4ts, bbox_iou4y, ltrb2xywh, bbox_iou4one_3d
+from f_tools.fun_od.f_boxes import xywh2ltrb, bbox_iou4one_2d, calc_iou4ts, bbox_iou4y, ltrb2xywh, bbox_iou4one
 from f_tools.pic.f_show import f_show_od_np4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 
@@ -264,7 +264,7 @@ class LossYOLOv1(nn.Module):
             ptxywh = pyolos[..., s_:s_ + 4]
             pltrb_pos = boxes_decode4yolo1(ptxywh, h, w, cfg)[mask_pos]
 
-            iou_zg = bbox_iou4one_3d(pltrb_pos, gltrb_pos, is_giou=True)
+            iou_zg = bbox_iou4one(pltrb_pos, gltrb_pos, is_giou=True)
             # iou_zg = bbox_iou4y(xywh2ltrb4ts(pzxywh), gltrb_pos_tx, GIoU=True)
             # print(iou_zg)
             l_reg = (1 - iou_zg).mean() * 5

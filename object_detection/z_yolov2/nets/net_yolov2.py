@@ -15,7 +15,7 @@ from f_tools.fits.f_predictfun import label_nms
 from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import x_bce
 from f_tools.floss.focal_loss import focalloss
-from f_tools.fun_od.f_boxes import xywh2ltrb, calc_iou4ts, ltrb2xywh, bbox_iou4one_2d, bbox_iou4y, bbox_iou4one_3d
+from f_tools.fun_od.f_boxes import xywh2ltrb, calc_iou4ts, ltrb2xywh, bbox_iou4one_2d, bbox_iou4y, bbox_iou4one
 from f_tools.pic.f_show import f_show_od_np4plt, f_show_od_ts4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
 
@@ -345,7 +345,7 @@ class FLoss(nn.Module):
 
         # [2, 845, 4] ->
         # iou_zg = bbox_iou4one(pltrb, gyolos[..., 1 + 1 + 4 + 1:1 + 1 + 4 + 1 + 4], is_giou=True)
-        iou_zg = bbox_iou4one_3d(pltrb, gyolos[..., 1 + 1 + 4 + 1:1 + 1 + 4 + 1 + 4], is_ciou=True)
+        iou_zg = bbox_iou4one(pltrb, gyolos[..., 1 + 1 + 4 + 1:1 + 1 + 4 + 1 + 4], is_ciou=True)
 
         ''' ----------------cls损失---------------- '''
         # pcls_sigmoid_pos = pyolos_pos[:, 1:1 + cfg.NUM_CLASSES].sigmoid()

@@ -6,9 +6,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from f_pytorch.tools_model.backbones.CSPDarknet import BottleneckCSP
 from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2, ModelOut4Resnet18
-from f_pytorch.tools_model.f_model_api import finit_weights, Conv
+from f_pytorch.tools_model.f_model_api import finit_weights, FConv2d
 from f_pytorch.tools_model.fmodels.model_modules import SPPv2, DeConv
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fits.f_match import match4center, boxes_decode4center
@@ -16,7 +15,7 @@ from f_tools.fits.f_predictfun import label_nms4keypoints
 from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.fits.fitting.fcocoeval import FCOCOeval
 from f_tools.floss.f_lossfun import x_bce
-from f_tools.floss.focal_loss import HeatmapLoss
+from f_tools.floss.focal_loss import focalloss_center
 from f_tools.fun_od.f_boxes import xywh2ltrb, ltrb2xywh
 import torch.nn.functional as F
 
@@ -119,20 +118,18 @@ class FLoss(nn.Module):
 
         ''' ---------------- cls损失 只计算正例---------------- '''
         gcls = gres[:, :, :cfg.NUM_CLASSES]
+        # mask_pos_3d = gcls > 0  # torch.Size([3, 16384, 3])
+        # mask_neg_3d = gcls == 0
         mask_pos_3d = gcls == 1  # torch.Size([3, 16384, 3])
         mask_neg_3d = gcls != 1
-        mask_pos_2d = torch.any(mask_pos_3d, -1)
+        nums_pos = torch.sum(torch.sum(mask_pos_3d, dim=-1), dim=-1)
+        # mask_pos_2d = torch.any(mask_pos_3d, -1)
 
         # focloss
-        alpha = 2.
-        beta = 4.
         pcls_sigmoid = pcls.sigmoid()
-        eps = torch.finfo(torch.float16).eps
-        l_cls_pos = - ((1.0 - pcls_sigmoid) ** alpha) * torch.log(pcls_sigmoid + eps) * mask_pos_3d.float()
-        l_cls_pos = l_cls_pos.sum() / batch
-        l_cls_neg = -  ((1 - gcls) ** beta) * (pcls_sigmoid ** alpha) * torch.log(
-            1.0 - pcls_sigmoid + eps) * mask_neg_3d.float()
-        l_cls_neg = l_cls_neg.sum() / batch
+        l_cls_pos, l_cls_neg = focalloss_center(pcls_sigmoid, gcls)
+        l_cls_pos = torch.mean(torch.sum(torch.sum(l_cls_pos, -1), -1) / nums_pos)
+        l_cls_neg = torch.mean(torch.sum(torch.sum(l_cls_neg, -1), -1) / nums_pos)
 
         # l_cls_neg = l_cls_neg.sum(-1).sum(-1).mean() # 等价
 
@@ -158,13 +155,12 @@ class FLoss(nn.Module):
         gtwh = gres[:, :, cfg.NUM_CLASSES + 2:cfg.NUM_CLASSES + 4]
 
         ptxy_sigmoid = ptxy.sigmoid()  # 这个需要归一化
-        # _loss_val = x_bce(ptxy_sigmoid, gtxy, reduction="none")
-
-        _loss_val = F.binary_cross_entropy_with_logits(ptxy, gtxy, reduction="none")
+        _loss_val = x_bce(ptxy_sigmoid, gtxy, reduction="none")
+        # _loss_val = F.binary_cross_entropy_with_logits(ptxy, gtxy, reduction="none")
         # _loss_val[mask_pos_2d].sum() 与这个等价
-        l_txty = (_loss_val * weight.unsqueeze(-1)).sum() / batch
+        l_txty = torch.mean(torch.sum(torch.sum(_loss_val * weight.unsqueeze(-1), -1), -1) / nums_pos)
         _loss_val = F.smooth_l1_loss(ptwh, gtwh, reduction="none")
-        l_twth = (_loss_val * weight.unsqueeze(-1)).sum() / batch
+        l_twth = torch.mean(torch.sum(torch.sum(_loss_val * weight.unsqueeze(-1), -1), -1) / nums_pos)
 
         l_total = l_cls_pos + l_cls_neg + l_txty + l_twth
 
@@ -490,36 +486,34 @@ class CenterNet(nn.Module):
         super(CenterNet, self).__init__()
         self.cfg = cfg
         self.backbone = backbone
-        d512 = backbone.dim_out
-        d256 = int(d512 / 2)
-        d64 = int(d256 / 4)
+        in_channel = backbone.dim_out
 
         # neck
         self.spp = nn.Sequential(
-            Conv(d512, d256, k=1),
             SPPv2(),
-            BottleneckCSP(d256 * 4, d512, n=1, shortcut=False)
+            FConv2d(in_channel * 4, in_channel // 2, 1),
+            FConv2d(in_channel // 2, in_channel, 3, p=1),
         )
 
         # head
-        self.deconv5 = DeConv(d512, d256, ksize=4, stride=2)  # 32 -> 16
-        self.deconv4 = DeConv(d256, d256, ksize=4, stride=2)  # 16 -> 8
-        self.deconv3 = DeConv(d256, d256, ksize=4, stride=2)  # 8 -> 4
+        self.deconv5 = DeConv(in_channel, in_channel // 2, ksize=4, stride=2)  # 32 -> 16
+        self.deconv4 = DeConv(in_channel // 2, in_channel // 2, ksize=4, stride=2)  # 16 -> 8
+        self.deconv3 = DeConv(in_channel // 2, in_channel // 2, ksize=4, stride=2)  # 8 -> 4
 
         # 输出维度压缩4倍输出
         self.cls_pred = nn.Sequential(
-            Conv(d256, d64, k=3, p=1),
-            nn.Conv2d(d64, cfg.NUM_CLASSES, kernel_size=1)
+            FConv2d(in_channel // 2, in_channel // 4, k=3, p=1),
+            nn.Conv2d(in_channel // 4, cfg.NUM_CLASSES, kernel_size=1)
         )
 
         self.txty_pred = nn.Sequential(
-            Conv(d256, d64, k=3, p=1),
-            nn.Conv2d(d64, 2, kernel_size=1)
+            FConv2d(in_channel // 2, in_channel // 4, k=3, p=1),
+            nn.Conv2d(in_channel // 4, 2, kernel_size=1)
         )
 
         self.twth_pred = nn.Sequential(
-            Conv(d256, d64, k=3, p=1),
-            nn.Conv2d(d64, 2, kernel_size=1)
+            FConv2d(in_channel // 2, in_channel // 4, k=3, p=1),
+            nn.Conv2d(in_channel // 4, 2, kernel_size=1)
         )
 
     def forward(self, x, targets=None):
@@ -527,7 +521,7 @@ class CenterNet(nn.Module):
         c5 = self.backbone(x)
         batch = c5.shape[0]
 
-        p5 = self.spp(c5)  # 维度尺寸不变
+        p5 = self.spp(c5)  # 维度放大混合后,恢复尺寸不变
         p4 = self.deconv5(p5)  # out torch.Size([3, 256, 32, 32])
         p3 = self.deconv4(p4)  # out 同维 64
         p2 = self.deconv3(p3)  # out 同维 128  torch.Size([3, 256, 128, 128])
