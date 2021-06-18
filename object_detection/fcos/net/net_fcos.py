@@ -187,7 +187,7 @@ class FLoss_v2(nn.Module):
 
         # cls3 centerness1 ltrb4 positive_radius1 positive_ingt1 area1
         mask_pos = gres[:, :, cfg.NUM_CLASSES + 1 + 4 + 1] == 1  # 框内正例
-        nums_pos = torch.tensor(nums_pos)
+        nums_pos = torch.tensor(nums_pos, device=device)
 
         ''' ---------------- cls损失 计算全部样本,正反例,正例为框内本例---------------- '''
         # 框内3D正例 可以用 mask_pos_3d = gcls == 1
