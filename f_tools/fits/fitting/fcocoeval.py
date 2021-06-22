@@ -32,7 +32,7 @@ class FCOCOeval(COCOeval):
                     t = np.where(iouThr == p.iouThrs)[0]
                     s = s[t]
 
-                # 判断是否传入catId，如果传入就计算指定类别的指标
+                ''' 这里是添加的代码 判断是否传入catId，如果传入就计算指定类别的指标 '''
                 if isinstance(catId, int):
                     s = s[:, :, catId, aind, mind]
                 else:
@@ -45,7 +45,7 @@ class FCOCOeval(COCOeval):
                     t = np.where(iouThr == p.iouThrs)[0]
                     s = s[t]
 
-                # 判断是否传入catId，如果传入就计算指定类别的指标
+                ''' 这里是添加的代码 判断是否传入catId，如果传入就计算指定类别的指标 '''
                 if isinstance(catId, int):
                     s = s[:, catId, aind, mind]
                 else:
@@ -56,6 +56,9 @@ class FCOCOeval(COCOeval):
             else:
                 mean_s = np.mean(s[s > -1])
 
+            ''' 这里是修改 原始只有一个返回值 '''
+            # print(iStr.format(titleStr, typeStr, iouStr, areaRng, maxDets, mean_s))
+            # return mean_s
             print_string = iStr.format(titleStr, typeStr, iouStr, areaRng, maxDets, mean_s)
             return mean_s, print_string
 

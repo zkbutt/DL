@@ -55,6 +55,14 @@ import cv2
 import torch
 import torchvision
 
-a = torch.tensor([132.37500, 201.37500, 192.37500, 276.50000]).view(1, -1)
-b = torch.tensor([91.13490, 111.55963, 237.08778, 250.51987]).view(1, -1)
-print(1-bbox_iou4one_2d(a, b))
+# for i in range(0, 32):
+# for i in range(33, 41):
+# for i in range(42, 50):
+# for i in range(51, 59):
+# for i in range(60, 67):
+# for i in range(68, 76):
+for i in range(77, 97):
+    print('[%s,%s],' % (str(i + 1), str(i + 2)))
+
+a=3
+assert a==3,'adf'

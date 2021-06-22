@@ -9,7 +9,7 @@ from f_pytorch.tools_model.backbones.darknet import darknet19
 from f_tools.fits.fitting.f_fit_class_base import Train_1gpu
 
 from torch import optim
-from f_tools.datas.data_loader import cfg_raccoon, cfg_type3, DataLoader2, cfg_type4, cfg_voc
+from f_tools.datas.data_loader import cfg_raccoon, cfg_type3, FDataLoader2, cfg_type4, cfg_voc
 
 from f_pytorch.tools_model.f_layer_get import ModelOut4Mobilenet_v2, ModelOut4Resnet18, ModelOut4Mobilenet_v3, \
     ModelOut4Resnet50, ModelOuts4DarkNet19, ModelOut4DarkNet19, ModelOuts4Resnet
@@ -34,7 +34,7 @@ tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detecti
 def train_eval_set(cfg):
     # 基本不动
     cfg.TB_WRITER = True
-    cfg.LOSS_EPOCH = False
+    cfg.LOSS_EPOCH_TB = False
     cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
@@ -54,8 +54,8 @@ def train_eval_set(cfg):
     '''特有参数'''
     cfg.NUM_REG = 8  # 这个是必须
     # cfg.MODE_TRAIN = 1  # base conf 用的1
-    # cfg.MODE_TRAIN = 2 # 去conf
-    # cfg.MODE_TRAIN = 3 # 任意分布
+    # cfg.MODE_TRAIN = 2 # 去conf 只有cls reg分支
+    # cfg.MODE_TRAIN = 3 # 任意分布 高级reg算法?
     cfg.MODE_TRAIN = 4  # IOU 损失及预测
     # cfg.MODE_TRAIN = 5  # 归一
 
@@ -76,7 +76,7 @@ def train_eval_set(cfg):
 
     # type3 resnet18
     # cfg.FILE_NAME_WEIGHT = 'zz/t_yolo1_type3_res18c0.01-110_4.47_p72.4_r46.2' + '.pth'  # conf-0.01 nms-0.5
-    # cfg.FILE_NAME_WEIGHT = 't_yolo1_type4_res18-120_3.762' + '.pth'  # conf-0.01 nms-0.5
+    cfg.FILE_NAME_WEIGHT = 't_yolo1_type3_res18-120_2.659' + '.pth'  # conf-0.01 nms-0.5
     cfg.MAPS_VAL = [0.854, 0.529]
 
     cfg.LR0 = 1e-3

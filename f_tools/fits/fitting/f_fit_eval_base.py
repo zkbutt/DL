@@ -127,7 +127,7 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
         now_lr = optimizer.param_groups[0]["lr"]
         metric_logger.update(lr=now_lr)
 
-        if tb_writer is not None and not cfg.LOSS_EPOCH and is_main_process():
+        if tb_writer is not None and not cfg.LOSS_EPOCH_TB and is_main_process():
             # 主进程写入
             for k, v, in log_dict.items():
                 tb_writer.add_scalar('loss_iter/%s' % k, v, len(data_loader) * epoch + i + 1)
@@ -156,7 +156,7 @@ def f_train_one_epoch4(model, data_loader, optimizer, epoch,
     #     for param_group in optimizer.param_groups:
     #         param_group['lr'] = cfg.LR0
 
-    if tb_writer is not None and cfg.LOSS_EPOCH:
+    if tb_writer is not None and cfg.LOSS_EPOCH_TB:
         # 每一epoch
         # flog.warning('写入 tb_writer %s', log_dict_avg)
         # now_lr = optimizer.param_groups[0]["lr"]
@@ -193,6 +193,9 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
     '''
     if eval_sampler is not None:
         eval_sampler.set_epoch(epoch)  # 使每一轮多gpu获取的数据不一样
+
+    # true 则不触发
+    assert ann_type == 'bbox', 'f_evaluate4coco3 不支持ann_type=%s' % ann_type
 
     cfg = model.cfg
     res_ = {}
@@ -294,7 +297,7 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
                     # 恢复真实尺寸(原装未处理) coco需要 ltwh
                     boxes_ltwh = ltrb2ltwh(p_boxes_ltrb[mask] * size.repeat(2)[None])
                     _res_t[image_id] = {
-                        'boxes': boxes_ltwh,
+                        'boxes': boxes_ltwh,  # coco loadRes 会对ltwh 转换成 ltrb
                         'labels': p_labels[mask],
                         'scores': p_scores[mask],
                     }
@@ -352,7 +355,7 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
         if len(res_coco) > 0:  # 有 coco 结果
             coco_gt = data_loader.dataset.coco_obj
             # 第一个元素指示操作该临时文件的安全级别，第二个元素指示该临时文件的路径
-            _, tmp = tempfile.mkstemp()
+            _, tmp = tempfile.mkstemp()  # 创建临时文件
             json.dump(res_coco, open(tmp, 'w'))
             coco_dt = coco_gt.loadRes(tmp)
             '''
@@ -360,16 +363,21 @@ def f_evaluate4coco3(model, data_loader, epoch, fun_datas_l2=None,
                 _summarizeDets 函数中调用了12次 _summarize
                 结果在 self.eval['precision'] , self.eval['recall']中 
             '''
-            # coco_eval_obj = COCOeval(coco_gt, coco_dt, ann_type)
-            coco_eval_obj = FCOCOeval(coco_gt, coco_dt, ann_type)
+            if ann_type == 'bbox':
+                coco_eval_obj = FCOCOeval(coco_gt, coco_dt, ann_type)  # 这个添加了每个类别的map分
+            else:
+                coco_eval_obj = COCOeval(coco_gt, coco_dt, ann_type)
+
             coco_eval_obj.params.imgIds = ids_coco  # 多显卡id合并更新
             coco_eval_obj.evaluate()
             coco_eval_obj.accumulate()
-            # coco_eval_obj.summarize() # 原装生成 coco_eval_obj.stats
 
-            coco_stats, print_coco = coco_eval_obj.summarize()
-            print(print_coco)
-            coco_eval_obj.stats = coco_stats
+            if ann_type == 'bbox':
+                coco_stats, print_coco = coco_eval_obj.summarize()
+                print(print_coco)
+                coco_eval_obj.stats = coco_stats
+            else:
+                coco_eval_obj.summarize()  # 原装生成运行后自动赋值 coco_eval_obj.stats
 
             clses_name = list(data_loader.dataset.classes_ids)
             coco_eval_obj.print_clses(clses_name)
@@ -482,11 +490,18 @@ def f_prod_pic4one(img_np, data_transform, model, size_ts, labels_lsit, is_keeep
 def f_prod_vodeo(cap, data_transform, model, labels_lsit, device, is_keeep=False):
     fps = 0.0
     count = 0
+    num_out = 0
 
     while True:
         start_time = time.time()
         '''---------------数据加载及处理--------------'''
         ref, img_np = cap.read()  # 读取某一帧 ref是否成功
+        if not ref:
+            if num_out >= 3:
+                raise Exception('摄像头无法读取~~~')
+            num_out += 1
+            flog.error('摄像头无法读取')
+            continue
         size_ts = torch.tensor(img_np.shape[:2][::-1], device=device)
         p_boxes_ltrb, p_scores_float, plabels_text = model_out4one(model, img_np, data_transform,
                                                                    size_ts=size_ts,
@@ -625,7 +640,7 @@ def handler_fmap(self, batch_data, path_dt_info, idx_to_class):
     return p_labels, p_scores, p_boxes, sizes, idxs
 
 
-def f_evaluate4fmap(model, data_loader, is_keeep, cfg):
+def f_evaluate4fmap(model, data_loader, is_keep, cfg):
     '''
     1 通过 voc2fmap.py 创建 gtinfo
     2 设置 IS_FMAP_EVAL 开启 指定 PATH_EVAL_IMGS 和 PATH_EVAL_INFO 文件夹
@@ -641,7 +656,7 @@ def f_evaluate4fmap(model, data_loader, is_keeep, cfg):
 
     :param model:
     :param data_loader:
-    :param is_keeep:
+    :param is_keep:
     :return:
     '''
     path_dt_info = data_loader.dataset.path_dt_info
@@ -659,7 +674,7 @@ def f_evaluate4fmap(model, data_loader, is_keeep, cfg):
         files_txt = []
         for target in targets:
             size_ = target['size']
-            if is_keeep:  # keep修复
+            if is_keep:  # keep修复
                 max1 = max(size_)
                 size_ = [max1, max1]
             sizes.append(torch.tensor(size_))  # tesor

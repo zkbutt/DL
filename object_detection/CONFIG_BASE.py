@@ -8,13 +8,13 @@ class CfgBase:
     EVAL_INTERVAL = 3  # 间隙
     MAPS_VAL = [0.1, 0.1]
     LR0 = 1e-3
-    USE_MGPU_EVAL = True
+    USE_MGPU_EVAL = True  # 只能用多GPU进行预测 这个必须是True 否则不能使用GPU 一个有一个没得会卡死
 
     '''----TB_WRITER设备-----'''
     NUMS_EVAL = {10: 5, 100: 3, 160: 2}
     TB_WRITER = True
     # DEL_TB = False 已弃用
-    LOSS_EPOCH = True  # False表示iter
+    LOSS_EPOCH_TB = True  # False表示iter 这个用于控制训练时 TB_WRITER采用 显示iter次数 或还轮
 
     MODE_COCO_TRAIN = 'bbox'  # bbox segm keypoints caption
     MODE_COCO_EVAL = 'bbox'  # bbox segm keypoints caption
@@ -36,6 +36,7 @@ class CfgBase:
 
     '''训练参数'''
     SYSNC_BN = True  # 不冻结时可使用多设备同步BN,速度减慢
+    FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始 这个自动默认一个
 
     '''可视化'''
     IS_VISUAL = False
@@ -51,6 +52,8 @@ class CfgBase:
 
     MODE_TRAIN = 1  # 自定义多种训练方式  及损失函数 通过备注
     CUSTOM_EVEL = False  # 自定义验证方法
+    IS_FMAP_EVAL = False  # 只运行生成一次 这个是另一种 map 几乎没用
+    IS_KEEP_SCALE = False  # 计算map时恢复尺寸 几乎没用
 
     # import getpass
     # # 获取当前系统用户名

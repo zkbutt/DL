@@ -30,7 +30,7 @@ tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detecti
 def train_eval_set(cfg):
     # 基本不动
     cfg.TB_WRITER = True
-    cfg.LOSS_EPOCH = False
+    cfg.LOSS_EPOCH_TB = False
     cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始

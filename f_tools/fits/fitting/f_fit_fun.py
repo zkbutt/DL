@@ -195,7 +195,7 @@ def train_eval4od(start_epoch, model, optimizer,
             f_evaluate4fmap(
                 model=model,
                 data_loader=loader_val_fmap,
-                is_keeep=cfg.IS_KEEP_SCALE,
+                is_keep=cfg.IS_KEEP_SCALE,
                 cfg=cfg,
             )
 

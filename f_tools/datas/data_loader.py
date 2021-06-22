@@ -4,12 +4,12 @@ import socket
 import torch
 import numpy as np
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_factory import  init_dataloader
+from f_tools.datas.data_factory import init_dataloader
 from f_tools.datas.f_coco.coco_dataset import CustomCocoDataset
 from f_tools.pic.enhance.f_data_pretreatment4np import cre_transform_resize4np, cre_transform_base4np
 
 
-class DataLoader2:
+class FDataLoader2:
 
     def __init__(self, cfg) -> None:
         super().__init__()
@@ -167,13 +167,13 @@ def cfg_voc(cfg, batch=40, image_size=(448, 448)):
 '''-----------------------widerface---------------------------------'''
 
 
-def cfg_widerface(cfg):
-    # cfg.BATCH_SIZE = 16
+def cfg_widerface(cfg, batch=32, image_size=(512, 512), mode='bbox'):
+    cfg.BATCH_SIZE = batch
     cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
 
     cfg.PRINT_FREQ = 40  # 400张图打印
 
-    cfg.IMAGE_SIZE = (512, 512)
+    cfg.IMAGE_SIZE = image_size
     cfg.NUM_SAVE_INTERVAL = 1  # epoch+1
     cfg.START_EVAL = 3  # epoch
 
@@ -183,8 +183,8 @@ def cfg_widerface(cfg):
 
     cfg.NUM_CLASSES = 1
     cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
-    cfg.MODE_COCO_TRAIN = 'bbox'  # bbox segm keypoints caption
-    cfg.MODE_COCO_EVAL = 'bbox'  # bbox segm keypoints caption
+    cfg.MODE_COCO_TRAIN = mode  # bbox segm keypoints caption
+    cfg.MODE_COCO_EVAL = mode  # bbox segm keypoints caption
     cfg.DATA_NUM_WORKERS = 5
 
     cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + '_widerface'
@@ -194,13 +194,13 @@ def cfg_widerface(cfg):
 
     # 训练
     cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/VOCdevkit/JPEGImages'
     cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_train2017.json'
+    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/coco/images/train2017'
 
     # 验证
     cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_EVAL = cfg.PATH_IMG_TRAIN
     cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_val2017.json'
+    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/coco/images/val2017'
 
     cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
     # cfg.ANCS_SCALE = [
@@ -208,8 +208,8 @@ def cfg_widerface(cfg):
     #     [[0.389, 0.451], [0.49, 0.612]],
     #     [[0.678, 0.532], [0.804, 0.732]],
     # ]
-    # cfg.PIC_MEAN = [0.45320560056079773, 0.43316440952455354, 0.3765994764105359]
-    # cfg.PIC_STD = [0.2196906701893696, 0.21533684244241802, 0.21516573455080967]
+    cfg.PIC_MEAN = [0.4084165621650775, 0.43454023871918407, 0.4700240068204997]  # 默认为 bgr
+    cfg.PIC_STD = [0.25377444293202145, 0.25377058605943076, 0.2637812771079271]
 
 
 '''-----------------------raccoon---------------------------------'''
@@ -321,66 +321,6 @@ def cfg_type3(cfg, batch=40, image_size=(448, 448)):
     cfg.PIC_STD = (0.225, 0.224, 0.229)
 
 
-def cfg_type3_t(cfg, batch=3, image_size=(448, 448)):
-    # _cfg_base(cfg)
-    cfg.IMAGE_SIZE = image_size
-
-    cfg.BATCH_SIZE = batch
-    cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
-
-    cfg.PRINT_FREQ = 10  # BATCH_SIZE * PRINT_FREQ 张图片
-
-    cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
-    cfg.START_EVAL = 10  # 1第一轮
-
-    cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
-    cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
-    cfg.IS_MOSAIC_FILL = True
-
-    cfg.NUM_CLASSES = 3
-    cfg.NUM_KEYPOINTS = 0  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
-    cfg.DATA_NUM_WORKERS = 4
-
-    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'type3'
-    cfg.PATH_TENSORBOARD = 'runs_type3'
-
-    # cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2012'
-    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/VOC2007'
-
-    # 训练
-    cfg.PATH_COCO_TARGET_TRAIN = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_TRAIN = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
-    cfg.FILE_JSON_TRAIN = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_3.json'
-
-    # 验证
-    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_3.json'
-
-    # 测试
-    cfg.PATH_COCO_TARGET_EVAL = cfg.PATH_DATA_ROOT + '/coco/annotations'
-    cfg.PATH_IMG_EVAL = cfg.PATH_DATA_ROOT + '/train/JPEGImages'
-    cfg.FILE_JSON_TEST = cfg.PATH_COCO_TARGET_TRAIN + r'/instances_type3_train_3.json'
-
-    cfg.IS_KEEP_SCALE = False  # 数据处理保持长宽
-    # Accuracy: 73.32%  [3,3,2]
-    cfg.ANCS_SCALE = [[0.136, 0.126],
-                      [0.22, 0.282],
-                      [0.392, 0.232],
-                      [0.342, 0.432],
-                      [0.548, 0.338],
-                      [0.574, 0.562],
-                      [0.82, 0.43],
-                      [0.64696, 0.862],
-                      [0.942, 0.662], ]
-
-    cfg.ANCHORS_CLIP = True  # 是否剔除超边界
-    cfg.NUMS_ANC = [3, 3, 3]
-
-    cfg.PIC_MEAN = (0.406, 0.456, 0.485)
-    cfg.PIC_STD = (0.225, 0.224, 0.229)
-
-
 def cfg_type4(cfg, batch=40, image_size=(448, 448)):
     # _cfg_base(cfg)
     cfg.IMAGE_SIZE = image_size
@@ -439,6 +379,119 @@ def cfg_type4(cfg, batch=40, image_size=(448, 448)):
 
     cfg.PIC_MEAN = (0.406, 0.456, 0.485)
     cfg.PIC_STD = (0.225, 0.224, 0.229)
+
+
+'''-----------------------keypoints---------------------------------'''
+
+
+def cfg_face98(cfg, batch=32, image_size=(448, 448)):
+    # _cfg_base(cfg)
+    cfg.IMAGE_SIZE = image_size
+
+    cfg.BATCH_SIZE = batch
+    cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
+
+    cfg.PRINT_FREQ = 10  # BATCH_SIZE * PRINT_FREQ 张图片
+
+    cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
+    cfg.START_EVAL = 10  # 1第一轮
+
+    cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
+    cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
+    cfg.IS_MOSAIC_FILL = True
+
+    cfg.NUM_CLASSES = 1
+    cfg.NUM_KEYPOINTS = 98  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
+    cfg.DATA_NUM_WORKERS = 4
+
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + 'face98'
+    cfg.PATH_TENSORBOARD = 'runs_face98'
+
+    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/face_98'
+
+    # 训练
+    cfg.PATH_IMG_TRAIN = os.path.join(cfg.PATH_DATA_ROOT, 'images_train_5316')
+    cfg.FILE_JSON_TRAIN = os.path.join(cfg.PATH_DATA_ROOT, 'annotations', 'keypoints_train_7500_5316.json')
+
+    # 验证
+    cfg.PATH_IMG_EVAL = os.path.join(cfg.PATH_DATA_ROOT, 'images_test_2118')
+    cfg.FILE_JSON_TEST = os.path.join(cfg.PATH_DATA_ROOT, 'annotations', 'keypoints_test_2500_2118.json')
+
+    # 使用anc_free 这个没用 Accuracy: 86.10%
+    cfg.ANCS_SCALE = [[0.057617, 0.069336],
+                      [0.06543, 0.084961],
+                      [0.077148, 0.10261],
+                      [0.09668, 0.12793],
+                      [0.11816, 0.15918],
+                      [0.15137, 0.2],
+                      [0.19041, 0.25488],
+                      [0.25293, 0.33509],
+                      [0.34736, 0.45996]]
+    cfg.ANCHORS_CLIP = True  # 是否剔除超边界
+    cfg.NUMS_ANC = [3, 3, 3]
+
+    # 主要用bgr
+    cfg.PIC_MEAN = [0.40951281700430336, 0.4336079361612851, 0.4780208956063309]
+    cfg.PIC_STD = [0.2565454097567513, 0.2575359493951952, 0.2693334192628168]
+
+
+def cfg_face5(cfg, batch=32, image_size=(160, 160), mode='bbox'):
+    # _cfg_base(cfg)
+    cfg.IMAGE_SIZE = image_size
+
+    cfg.BATCH_SIZE = batch
+    cfg.FORWARD_COUNT = 1  # 连续前传次数 accumulate = max(round(64 / CFG.BATCH_SIZE), 1)
+
+    cfg.PRINT_FREQ = 10  # BATCH_SIZE * PRINT_FREQ 张图片
+
+    cfg.NUM_SAVE_INTERVAL = 10  # 第一次是19
+    cfg.START_EVAL = 10  # 1第一轮
+
+    cfg.IS_MOSAIC = False  # IS_MOSAIC 是主开关 直接拉伸
+    cfg.IS_MOSAIC_KEEP_WH = False  # 是IS_MOSAIC_KEEP_WH 副形状
+    cfg.IS_MOSAIC_FILL = True
+
+    cfg.NUM_CLASSES = 1
+
+    # 框架根据 NUM_KEYPOINTS>0 来识别模识 cfg.NUM_KEYPOINTS
+    if mode == 'keypoints':
+        cfg.NUM_KEYPOINTS = 5  # 关键点数, 0为没有 不能和 IS_MOSAIC 一起用
+    else:
+        cfg.NUM_KEYPOINTS = 0
+    cfg.DATA_NUM_WORKERS = 4
+
+    _name = 'face5'
+    cfg.SAVE_FILE_NAME = cfg.SAVE_FILE_NAME + _name
+    cfg.PATH_TENSORBOARD = 'runs_' + _name
+
+    cfg.PATH_DATA_ROOT = cfg.PATH_HOST + '/AI/datas/face_5'
+
+    # 训练
+    cfg.PATH_IMG_TRAIN = os.path.join(cfg.PATH_DATA_ROOT, 'images_13466')
+    cfg.FILE_JSON_TRAIN = os.path.join(cfg.PATH_DATA_ROOT, 'annotations', 'keypoints_train_10000_10000.json')
+    cfg.MODE_COCO_TRAIN = mode  # bbox segm keypoints caption
+
+    # 验证
+    cfg.PATH_IMG_EVAL = os.path.join(cfg.PATH_DATA_ROOT, 'images_13466')
+    cfg.FILE_JSON_TEST = os.path.join(cfg.PATH_DATA_ROOT, 'annotations', 'keypoints_test_3466_3466.json')
+    cfg.MODE_COCO_EVAL = mode  # bbox segm keypoints caption
+
+    # 使用anc_free 这个没用 Accuracy: 86.10%
+    # cfg.ANCS_SCALE = [[0.057617, 0.069336],
+    #                   [0.06543, 0.084961],
+    #                   [0.077148, 0.10261],
+    #                   [0.09668, 0.12793],
+    #                   [0.11816, 0.15918],
+    #                   [0.15137, 0.2],
+    #                   [0.19041, 0.25488],
+    #                   [0.25293, 0.33509],
+    #                   [0.34736, 0.45996]]
+    # cfg.ANCHORS_CLIP = True  # 是否剔除超边界
+    # cfg.NUMS_ANC = [3, 3, 3]
+
+    # 主要用bgr
+    cfg.PIC_MEAN = [0.3486801341784527, 0.39002461953332945, 0.46561086291556053]
+    cfg.PIC_STD = [0.22942749885768526, 0.23814590171871744, 0.26417218682096905]
 
 
 if __name__ == '__main__':

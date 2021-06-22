@@ -7,7 +7,7 @@ import torch.distributed as dist
 import torch
 
 from f_tools.GLOBAL_LOG import flog
-from f_tools.datas.data_loader import DataLoader2
+from f_tools.datas.data_loader import FDataLoader2
 from f_tools.datas.f_coco.coco_dataset import CustomCocoDataset
 from f_tools.device.f_device import init_video
 from f_tools.fits.f_predictfun import label_nms
@@ -166,7 +166,7 @@ class Train_Base(FBase):
         cfg.PATH_PROJECT_ROOT = os.path.join(cfg.PATH_HOST, path_project_root)
 
         '''---------------数据加载及处理--------------'''
-        data_loader = DataLoader2(cfg)
+        data_loader = FDataLoader2(cfg)
         _ret = data_loader.get_train_eval_datas(is_mgpu=is_mgpu)
         self.loader_train, self.loader_val_fmap, self.loader_val_coco, self.train_sampler, self.eval_sampler = _ret
         show_train_info(cfg, self.loader_train, self.loader_val_coco)
@@ -233,6 +233,7 @@ class Predicted_Base(FBase):
 
         # 初始化 labels
         ids_classes = self.dataset_test.ids_classes
+        flog.debug('ids_classes %s',ids_classes )
         self.labels_lsit = list(ids_classes.values())  # index 从 1开始 前面随便加一个空
         self.labels_lsit.insert(0, None)  # index 从 1开始 前面随便加一个空
         flog.debug('测试类型 %s', self.labels_lsit)

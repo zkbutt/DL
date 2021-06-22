@@ -5,7 +5,7 @@ import torch
 import numpy as np
 
 from f_tools.fun_od.f_boxes import ltwh2ltrb
-from f_tools.pic.f_show import f_show_od_ts4plt
+from f_tools.pic.f_show import f_show_od_ts4plt, f_plt_box2, f_show_od_np4plt, show_bbox_keypoints4ts
 
 torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
 np.set_printoptions(linewidth=320, suppress=True,
@@ -95,6 +95,8 @@ class CustomCocoDataset(Dataset):
         # bboxs, labels,keypoints
 
         tars_ = self.load_anns(index, img_wh=img.shape[:2][::-1])
+        if tars_ is None:  # 没有标注返回空
+            return None
 
         # 动态构造target
         target = {}
@@ -148,34 +150,41 @@ class CustomCocoDataset(Dataset):
         '''
         # 这里生成的是原图尺寸的 target 和img_np_uint8 (375, 500, 3)
         if self.is_mosaic and self.mode == 'bbox':
-            img, target = self.do_mosaic(index)
+            res = self.do_mosaic(index)
         else:
-            img, target = self.open_img_tar(index)
+            res = self.open_img_tar(index)
+
+        if res is None:
+            flog.error('这个图片没有标注信息 id为%s', index)
+            return self.__getitem__(index + 1)
+
+        img, target = res
 
         if len(target['boxes']) != len(target['labels']):
             flog.warning('!!! 数据有问题 1111  %s %s %s ', target, len(target['boxes']), len(target['labels']))
 
         '''---------------cocoAPI测试 查看图片在归一化前------------------'''
-        if self.cfg.IS_VISUAL_PRETREATMENT:
-            # 可视化参数 is_mosaic 这个用不起
-            f_show_coco_pics(self.coco_obj, self.path_img, ids_img=[index])
+        # 这个用于调试
+        # if self.cfg.IS_VISUAL_PRETREATMENT:
+        #     可视化参数 is_mosaic 这个用不起
+        #     f_show_coco_pics(self.coco_obj, self.path_img, ids_img=[index])
 
         if target['boxes'].shape[0] == 0:
             flog.warning('数据有问题 重新加载 %s', index)
             return self.__getitem__(index + 1)
 
         if self.transform is not None:
-            if self.is_img_np:
-                # 输入 ltrb 原图
-                # f_plt_show_cv(img, gboxes_ltrb=target['boxes'])
-                img, boxes, labels = self.transform(img, target['boxes'], target['labels'])
-                # 这里会刷新 boxes, labels
-                # f_plt_show_cv(img, gboxes_ltrb=boxes)
-                target['boxes'] = boxes
-                target['labels'] = labels
-            else:
-                # 预处理输入 PIL img 和 np的target
-                img, target = self.transform(img, target)
+            img, target = self.transform(img, target)
+            # if self.is_img_np:
+            #     # 输入 ltrb 原图
+            #     # f_plt_show_cv(img, gboxes_ltrb=target['boxes'])
+            #     # img, boxes, labels = self.transform(img, target['boxes'], target['labels'])
+            #     img, target = self.transform(img, target)
+            #     # 这里会刷新 boxes, labels
+            #     # f_plt_show_cv(img, gboxes_ltrb=boxes)
+            # else:
+            #     # 预处理输入 PIL img 和 np的target
+            #     img, target = self.transform(img, target)
 
         if len(target['boxes']) != len(target['labels']):
             flog.warning('!!! 数据有问题 ttttttttt  %s %s %s ', target, len(target['boxes']), len(target['labels']))
@@ -223,12 +232,12 @@ class CustomCocoDataset(Dataset):
         # annotation_ids = self.coco.getAnnIds(self.image_ids[index], iscrowd=False)
         annotation_ids = self.coco_obj.getAnnIds(self.ids_img[index])  # ann的id
         # anns is num_anns x 4, (x1, x2, y1, y2)
-        bboxs = np.zeros((0, 4), dtype=np.float32)  # np创建 空数组 高级
+        bboxs_np = np.zeros((0, 4), dtype=np.float32)  # np创建 空数组 高级
         labels = []
-        keypoints = np.zeros((0, 10), dtype=np.float32)
+        keypoints_np = []
         # skip the image without annoations
         if len(annotation_ids) == 0:
-            return bboxs, labels
+            return None
 
         coco_anns = self.coco_obj.loadAnns(annotation_ids)
         for a in coco_anns:
@@ -241,36 +250,44 @@ class CustomCocoDataset(Dataset):
             if a['area'] > 0 and x2 >= x1 and y2 >= y1:
                 a['bbox'] = [x1, y1, x2, y2]  # 修正 并写入ltrb
             else:
-                flog.warning('标记框有问题 %s', a)
+                flog.warning('标记框有问题 %s 跳过', a)
                 continue
 
-            labels.append(self.ids_old_new[a['category_id']])
             bbox = np.zeros((1, 4), dtype=np.float32)
             bbox[0, :4] = a['bbox']
-            bboxs = np.append(bboxs, bbox, axis=0)
 
             if self.mode == 'keypoints':
-                k_ = np.array(a['keypoints'])
-                inds = np.arange(2, len(k_), 3)
-                ones = np.ones(len(a['keypoints']), dtype=np.float32)
-                ones[inds] = 0
-                nonzero = np.nonzero(ones)  # 取非零索引
-                k_ = k_[nonzero]
+                '''
+                # 如果关键点在物体segment内，则认为可见.
+           		# v=0 表示这个关键点没有标注（这种情况下x=y=v=0）
+           		# v=1 表示这个关键点标注了但是不可见(被遮挡了）
+           		# v=2 表示这个关键点标注了同时也可见
+                '''
+                keypoints = self.handle_keypoints(a)
+                if keypoints is None:
+                    flog.warning('全0 keypoints %s 跳过')
+                    continue
+                keypoints_np.append(keypoints)
 
-                keypoints = np.append(keypoints, k_[None,], axis=0)
+            # 全部通过后添加
+            bboxs_np = np.append(bboxs_np, bbox, axis=0)
+            labels.append(self.ids_old_new[a['category_id']])
 
         # bboxs = ltwh2ltrb(bboxs) # 前面 已转
-        if bboxs.shape[0] == 0:
+        if bboxs_np.shape[0] == 0:
             flog.error('这图标注 不存在 %s', coco_anns)
+            return None
             # raise Exception('这图标注 不存在 %s', coco_anns)
 
         # 转tensor
         if self.mode == 'bbox':
-            return [torch.tensor(bboxs, dtype=torch.float), torch.tensor(labels, dtype=torch.float)]
+            return [torch.tensor(bboxs_np, dtype=torch.float), torch.tensor(labels, dtype=torch.float)]
         elif self.mode == 'keypoints':
-            return [torch.tensor(bboxs, dtype=torch.float),
+            keypoints_np = np.array(keypoints_np)  # list转np
+            # 有标注的情况下 keypoints_np 一定有
+            return [torch.tensor(bboxs_np, dtype=torch.float),
                     torch.tensor(labels, dtype=torch.float),
-                    torch.tensor(keypoints, dtype=torch.float)]
+                    torch.tensor(keypoints_np, dtype=torch.float)]
 
     def _init_load_classes(self):
         '''
@@ -301,69 +318,89 @@ class CustomCocoDataset(Dataset):
         for k, v in self.classes_ids.items():
             self.ids_classes[v] = k
 
+    def handle_keypoints(self, coco_ann):
+        '''
+
+        :param coco_ann: 这里只会是一维标签
+        :return:
+        '''
+        k_ = np.array(coco_ann['keypoints'])
+
+        '''
+        widerface 不需要加 mask
+        这个是标注是否可用的的定义 
+        # 如果关键点在物体segment内，则认为可见.
+        # v=0 表示这个关键点没有标注（这种情况下x=y=v=0）
+        # v=1 表示这个关键点标注了但是不可见(被遮挡了）
+        # v=2 表示这个关键点标注了同时也可见
+        '''
+        inds = np.arange(2, len(k_), 3)  # 每隔两个选出 [ 2  5  8 11 14]
+        mask = np.ones(len(coco_ann['keypoints']), dtype=np.float32)
+        mask[inds] = 1
+        _t = k_[inds] != 2
+        if _t.any() and _t.sum() != len(_t):
+            # 有 且 不是全部的进入
+            _s = '标签不全为2 %s' % k_
+            flog.error(_s)
+            # raise Exception(_s)
+
+        inds = np.arange(2, len(k_), 3)  # 每隔两个选出
+        ones = np.ones(len(coco_ann['keypoints']), dtype=np.float32)
+        ones[inds] = 0
+        nonzero = np.nonzero(ones)  # 取非零索引
+        keypoint_np = k_[nonzero]  # 选出10个数
+        if np.all(keypoint_np == 0):
+            flog.warning('出现全0 keypoints %s' % coco_ann)
+            return None
+        return keypoint_np
+
 
 def load_dataset_coco(mode, transform=None):
     # -------voc--------
     # path_root = r'M:/AI/datas/VOC2012'  # 自已的数据集
     # file_json = os.path.join(path_root, 'coco/annotations') + '/instances_type3_train.json' # 2776
-    path_root = r'M:/AI/datas/VOC2007'  # 自已的数据集
+
+    # path_root = r'M:/AI/datas/VOC2007'  # 自已的数据集
     # file_json = os.path.join(path_root, 'coco/annotations') + '/instances_type3_train_1096.json'  # 1096
     # file_json = os.path.join(path_root, 'coco/annotations') + '/instances_type4_train_753.json'  # 1096
     # path_img = os.path.join(path_root, 'train', 'JPEGImages')
 
     ''' 这两个都要改 '''
-    file_json = os.path.join(path_root, 'coco/annotations') + '/instances_type4_train_994.json'  # 1096
-    path_img = os.path.join(path_root, 'train', 'JPEGImages')
+    # file_json = os.path.join(path_root, 'coco/annotations') + '/instances_type4_train_994.json'  # 1096
+    # path_img = os.path.join(path_root, 'train', 'JPEGImages')
 
-    # -------raccoon200--------
-    # file_json = r'M:/AI/datas/raccoon200/coco/annotations/instances_train2017.json'
-    # path_img = r'M:/AI/datas/raccoon200/VOCdevkit/JPEGImages'
+    # path_root = r'M:/AI/datas/widerface'  # 自已的数据集
+    # file_json = os.path.join(path_root, 'coco/annotations') + '/person_keypoints_train2017.json'
+    # path_img = os.path.join(path_root, 'coco/images/train2017')
+
+    # path_root = r'E:\AI\datas\coco2017'  # 自已的数据集
+    # file_json = os.path.join(path_root, 'annotations', 'person_keypoints_val2017.json')
+    # path_img = os.path.join(path_root, 'val2017_5000')
+
+    # path_root = r'M:\AI\datas\face_98'  # 自已的数据集
+    # file_json = os.path.join(path_root, 'annotations', 'keypoints_test_2500_2118.json')
+    # path_img = os.path.join(path_root, 'images_test_2118')
+
+    # file_json = os.path.join(path_root, 'annotations', 'keypoints_train_7500_5316.json')
+    # path_img = os.path.join(path_root, 'images_train_5316')
+
+    path_root = r'M:\AI\datas\face_5'
+    file_json = r'M:/AI/datas/face_5/annotations/keypoints_train_10000_10000.json'
+    path_img = os.path.join(path_root, 'images_13466')
 
     dataset = CustomCocoDataset(
         file_json=file_json,
         path_img=path_img,
         mode=mode,
         transform=transform,
-        cfg=cfg,
+        # cfg=cfg,
     )
     return path_img, dataset
 
 
-if __name__ == '__main__':
-    '''
-    用于测试  coco出来是 ltwh
-    '''
-    mode = 'bbox'  # bbox segm keypoints caption
-    from f_tools.pic.enhance.f_data_pretreatment4np import SSDAugmentation, cre_transform_resize4np
-
-
-    class cfg:
-        pass
-
-
-    cfg.IMAGE_SIZE = (448, 448)
-    cfg.PIC_MEAN = (0.406, 0.456, 0.485)
-    cfg.PIC_STD = (0.225, 0.224, 0.229)
-    cfg.KEEP_SIZE = False
-    cfg.USE_BASE4NP = False  # 基础处理
-    cfg.IS_VISUAL_PRETREATMENT = False  # 用于dataset提取时测试
-    transform = cre_transform_resize4np(cfg)['train']
-    # transform = SSDAugmentation(size=(448, 448))
-    path_img, dataset = load_dataset_coco(mode, transform=transform)
-    # path_img, dataset = load_cat(mode)
-
-    print('len(dataset)', len(dataset))
-    coco = dataset.coco_obj
-    # 可视化代码
-    # for data in dataset:
-    #     # coco dataset可视化
-    #     # print(data)
-    #     # img_pil, target = data
-    #     # f_show_coco_pics(coco, path_img, ids_img=[target['image_id']])
-    #     # f_plt_box2(img_pil, target['boxes'], is_recover_size=False)  # 显示原图
-    #     pass
+def t_other():
+    global coco_obj, target, img_np_tensor
     coco_obj = dataset.coco_obj
-
     '''检测dataset'''
     dataset_ = dataset[1]
     for img, target in dataset:
@@ -378,9 +415,8 @@ if __name__ == '__main__':
 
     '''打开某一个图'''
     img_id = coco_obj.getImgIds()[0]
-    img_pil = f_open_cocoimg(path_img, coco_obj, img_id=img_id)
-    img_pil.show()
-
+    img_np_tensor = f_open_cocoimg(path_img, coco_obj, img_id=img_id)
+    img_np_tensor.show()
     '''------------------- 获取指定类别名的id ---------------------'''
     ids_cat = coco_obj.getCatIds()
     print(ids_cat)
@@ -389,14 +425,12 @@ if __name__ == '__main__':
         # {'id': 1, 'name': 'aeroplane'}
         ids = coco_obj.getImgIds(catIds=info_cat['id'])
         print('类型对应有多少个图片', info_cat['id'], info_cat['name'], len(ids))
-
     # ids_cat = coco.getCatIds(catNms=['aeroplane', 'bottle'])
     # ids_cat = coco.getCatIds(catIds=[1, 3])
     # ids_cat = coco_obj.getCatIds(catIds=[1])
     # print(ids_cat)
     # infos_cat = coco.loadCats(ids=[1, 5])
     # print(infos_cat)  # 详细类别信息 [{'id': 1, 'name': 'aeroplane'}, {'id': 2, 'name': 'bicycle'}]
-
     '''获取指定类别id的图片id'''
     ids_img = []
     for idc in ids_cat:
@@ -404,14 +438,89 @@ if __name__ == '__main__':
         ids_img += ids_
         # print(ids_)  # 这个只支持单个元素
     ids_img = list(set(ids_img))  # 去重
-
     '''查看图片信息  '''
     infos_img = coco_obj.loadImgs(ids_img[0])
     print(infos_img)  # [{'height': 281, 'width': 500, 'id': 1, 'file_name': '2007_000032.jpg'}]
     ids_ann = coco_obj.getAnnIds(imgIds=infos_img[0]['id'])
     info_ann = coco_obj.loadAnns(ids_ann)  # annotation 对象
-
     '''获取数据集类别数'''
     flog.debug(coco_obj.loadCats(coco_obj.getCatIds()))
     '''显示标注'''
     # f_show_coco_pics(coco_obj, path_img)
+
+
+def t_keypoint():
+    global data, img_np_tensor, target
+    for data in dataset:
+        # coco dataset可视化
+        # print(data)
+        # 如果有 transform 则返回的基本是统一的 tensor3d torch.Size([3, 448, 448])
+        img_np_tensor, target = data  # 没有transform 则是原图 np(1385, 1024, 3) whc bgr
+        # 这个是用 coco api
+        # print(target)
+
+        f_show_coco_pics(coco, path_img, ids_img=[target['image_id']])
+        # f_show_od_np4plt(img_np_tensor, target['boxes'], is_recover_size=False)  # 显示原图
+        # f_show_od_ts4plt(img_np_tensor, target['boxes'], is_recover_size=True)  # 需要恢复box
+
+        print(len(target['boxes']), len(target['keypoints']))
+        # keypoints 用 这个 这里全是ts
+        show_bbox_keypoints4ts(img_np_tensor,
+                               target['boxes'],
+                               target['keypoints'],
+                               torch.ones(target['boxes'].shape[0]),  # 创建一个scores
+                               is_recover_size=True
+                               )  # 需要恢复box
+        pass
+
+
+def t_bbox(dataset, transform):
+    for data in dataset:
+        # coco dataset可视化
+        # print(data)
+        # 如果有 transform 则返回的基本是统一的 tensor3d torch.Size([3, 448, 448])
+        img_np_tensor, target = data  # 没有transform 则是原图 np(1385, 1024, 3) whc bgr
+        # 这个是用 coco api
+        # print(target)
+
+        # 各种 coco 模式统一用这个
+        f_show_coco_pics(coco, path_img, ids_img=[target['image_id']])
+        # 这里输出的是np或tensor
+        if transform is None:
+            f_show_od_np4plt(img_np_tensor, target['boxes'], is_recover_size=False)  # 显示原图
+        else:
+            f_show_od_ts4plt(img_np_tensor, target['boxes'], is_recover_size=True)  # 需要恢复box
+        pass
+
+
+if __name__ == '__main__':
+    '''
+    用于测试  coco出来是 ltwh
+    '''
+    mode = 'bbox'  # bbox segm keypoints caption
+    # mode = 'keypoints'  # bbox segm keypoints caption
+    from f_tools.pic.enhance.f_data_pretreatment4np import DisposePicSet4SSD, cre_transform_resize4np
+
+
+    class cfg:
+        pass
+
+
+    cfg.IMAGE_SIZE = (448, 448)
+    cfg.PIC_MEAN = (0.406, 0.456, 0.485)
+    cfg.PIC_STD = (0.225, 0.224, 0.229)
+    cfg.KEEP_SIZE = True  # 用 keypoints 需要设置为True
+    cfg.USE_BASE4NP = False  # 基础处理
+    cfg.IS_VISUAL_PRETREATMENT = False  # 用于dataset提取时测试
+    transform = cre_transform_resize4np(cfg)['train']
+    # transform = SSDAugmentation(size=(448, 448))
+    path_img, dataset = load_dataset_coco(mode, transform=transform)
+    # path_img, dataset = load_dataset_coco(mode)
+    # path_img, dataset = load_cat(mode)
+
+    print('len(dataset)', len(dataset))
+    coco = dataset.coco_obj
+    # 可视化代码
+    # t_keypoint(dataset,transform)
+    t_bbox(dataset, transform)
+    # t_other(dataset,transform)

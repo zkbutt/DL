@@ -4,7 +4,7 @@ import sys
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
-from f_tools.datas.data_loader import cfg_type3, cfg_type3_t, cfg_type4
+from f_tools.datas.data_loader import cfg_type3, cfg_type4
 from f_tools.fits.fitting.f_fit_class_base import Train_1gpu
 from torch import optim
 from torchvision import models
@@ -19,14 +19,14 @@ from object_detection.z_center.CONFIG_CENTER import CFG
 
 '''
 python /AI/temp/tmp_pycharm/DL/object_detection/z_center/train_center.py
-tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_center/log/runs_type4/2021-05-05_13_59_20
+tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/z_center/log/runs_type3/2021-06-17_20_46_27
 在更大分辨率的feature上做检测 软化更好
 '''
 
 
 def train_eval_set(cfg):
     # 基本不动
-    cfg.LOSS_EPOCH = False
+    cfg.LOSS_EPOCH_TB = False
     cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
@@ -35,8 +35,6 @@ def train_eval_set(cfg):
     # batch = 2
     # cfg.IS_MIXTURE_FIX = False  # 全精度
     # batch = 3
-    # cfg.CUSTOM_EVEL = True  # 自定义验证
-    cfg.CUSTOM_EVEL = False  # 自定义验证
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 2
         cfg.IS_COCO_EVAL = False
@@ -52,8 +50,8 @@ def train_eval_set(cfg):
     # cfg.NUM_SAVE_INTERVAL = 100
 
     '''特有参数'''
-    cfg.MODE_TRAIN = 1  # base
-    # cfg.MODE_TRAIN = 5  # yolo5
+    # cfg.MODE_TRAIN = 1  # base
+    cfg.MODE_TRAIN = 2  # iou
     cfg.NUM_REG = 1  # 这个是必须
     cfg.KEEP_SIZE = False  # 有anc建议用这个为Ture
     # cfg.KEEP_SIZE = True  # 有anc建议用这个
@@ -61,7 +59,7 @@ def train_eval_set(cfg):
     cfg.PTOPK = 100  # 通用参数
 
     # type3 dark19
-    # cfg.FILE_NAME_WEIGHT = 't_center_type4_res18-120_5.413' + '.pth'  # conf-0.01 nms-0.5
+    cfg.FILE_NAME_WEIGHT = 't_center_type3_res18-100_5.256' + '.pth'  # conf-0.01 nms-0.5
     cfg.MAPS_VAL = [0.70, 0.47]  # 最高
 
     cfg.LR0 = 1e-3
@@ -87,7 +85,7 @@ def init_model(cfg, device, id_gpu=None):
 
     pg = model.parameters()
     optimizer = optim.Adam(pg, cfg.LR0)
-    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [60,80, 120], 0.1)
+    lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [50, 80, 120], 0.1)
     start_epoch = load_weight(cfg.FILE_FIT_WEIGHT, model, optimizer, lr_scheduler, device, is_mgpu=is_mgpu)
 
     model.cfg = cfg

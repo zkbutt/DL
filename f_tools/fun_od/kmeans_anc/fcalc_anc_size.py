@@ -118,8 +118,8 @@ if __name__ == '__main__':
 
     '''-------------加载box--------------'''
     # data = load_voc_boxes() # voc直接计算,类型数据
-    data = load_coco_boxes(keep=False, is_calc_pic_mean=False)  # 基本用这个keep=False coco_dataset
-    # data = load_coco_boxes(keep=False, is_calc_pic_mean=True)
+    # data = load_coco_boxes(keep=False, is_calc_pic_mean=False)  # 基本用这个keep=False coco_dataset
+    data = load_coco_boxes(keep=False, is_calc_pic_mean=True)
     # 计算anc尺寸 和图片均值
     show_time(calc_anc_size, data, clusters, size_in)
 

@@ -7,7 +7,7 @@ import numpy as np
 
 from f_tools.GLOBAL_LOG import flog
 from f_tools.fun_od.f_boxes import ltwh2ltrb
-from f_tools.pic.enhance.f_data_pretreatment4np import SSDAugmentation, RandomMirror, Expand, Normalize, \
+from f_tools.pic.enhance.f_data_pretreatment4np import DisposePicSet4SSD, RandomMirror, Expand, Normalize, \
     ToPercentCoords, RandomSaturation, ConvertFromInts, RandomSampleCrop, cre_transform_resize4np
 from f_tools.pic.f_show import f_plt_od_np, f_show_od_np4plt, f_show_od_ts4plt
 

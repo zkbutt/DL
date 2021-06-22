@@ -9,7 +9,7 @@ from object_detection.fcos.net.net_fcos import Fcos
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
 sys.path.append(os.path.split(rootPath)[0])
-from f_tools.datas.data_loader import cfg_type3, cfg_type4
+from f_tools.datas.data_loader import cfg_type3, cfg_type4, cfg_widerface
 from f_tools.fits.fitting.f_fit_class_base import Train_1gpu
 from f_tools.GLOBAL_LOG import flog
 
@@ -21,7 +21,7 @@ from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init
 
 '''
-tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/fcos/log/runs_type3/2021-06-17_18_49_06
+tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detection/fcos/log/runs_type3/2021-06-18_19_12_04
 
 '''
 
@@ -29,13 +29,13 @@ tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detecti
 def train_eval_set(cfg):
     # 基本不动
     cfg.TB_WRITER = True
-    cfg.LOSS_EPOCH = False
+    cfg.LOSS_EPOCH_TB = False
     cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始
 
-    # batch = 8  # type
-    batch = 16  # type
+    # batch = 16  # type
+    batch = 64  # widerface
     # batch = 2  # type
     if cfg.IS_LOCK_BACKBONE_WEIGHT:
         batch *= 2
@@ -47,21 +47,26 @@ def train_eval_set(cfg):
     # cfg.MODE_TRAIN = 4  # 论文标准实现
     # size = (512, 512)  # size 和 cfg.STRIDES 必须成倍
 
-    cfg.MODE_TRAIN = 5  # 采用cls3
+    # cfg.MODE_TRAIN = 5  # 采用cls3
+    cfg.MODE_TRAIN = 2  # 采用cls4
 
     # cfg.USE_BASE4NP = True  # 这个用于测试
 
     cfg_type3(cfg, batch=batch, image_size=size)  # 加载数据基础参数
     # cfg_type4(cfg, batch=batch, image_size=size)  # 加载数据基础参数
+    # cfg.NUMS_EVAL = {10: 10, 100: 3, 160: 2}
 
-    cfg.NUMS_EVAL = {10: 10, 100: 3, 160: 2}
-    # cfg.NUM_SAVE_INTERVAL = 100
+    cfg.MODE_TRAIN = 6  # 人脸 keypoints
+    # cfg_widerface(cfg, batch=batch, image_size=size, mode='keypoints')  # bbox segm keypoints caption
+    cfg.NUMS_EVAL = {2: 1, 100: 1, 160: 1}
+    cfg.NUM_SAVE_INTERVAL = 1
+    cfg.KEEP_SIZE = True  # 开启避免人脸太小 数据增强不支持
 
     # 原装是416 输出为5层 (0,64,128,256,512,inf)
 
     # type3 dark19
     # cfg.FILE_NAME_WEIGHT = 'zz/t_yolo2_type3_dark19c0.01-137_3.94_p73.5_r49.8' + '.pth'  # conf-0.01 nms-0.5
-    # cfg.FILE_NAME_WEIGHT = 't_fcos_type3_res50-10_1.763' + '.pth'  # conf-0.01 nms-0.5
+    cfg.FILE_NAME_WEIGHT = 't_fcos__widerface_res18-1_7.19' + '.pth'  # conf-0.01 nms-0.5
     cfg.MAPS_VAL = [0.8726537249998292, 0.6458333333333334]
 
     cfg.LR0 = 1e-3

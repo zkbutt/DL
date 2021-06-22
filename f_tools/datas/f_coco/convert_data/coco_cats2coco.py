@@ -112,4 +112,4 @@ if __name__ == '__main__':
 
     to_coco_v2(annotations, classes_ids, path_img, path_root, mode,
                is_copy=False, is_move=False,
-               type=name + '_' + str(len(dataset.ids_img)))
+               file_coco=name + '_' + str(len(dataset.ids_img)))

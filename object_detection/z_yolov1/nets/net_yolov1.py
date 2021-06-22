@@ -7,97 +7,11 @@ from f_tools.GLOBAL_LOG import flog
 from f_tools.f_general import labels2onehot4ts
 from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import f_ohem, x_bce
-from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1
+from f_tools.fits.f_match import boxes_encode4yolo1, boxes_decode4yolo1, fmatch4yolov1
 from f_tools.floss.focal_loss import focalloss
 from f_tools.fun_od.f_boxes import xywh2ltrb, bbox_iou4one_2d, calc_iou4ts, bbox_iou4y, ltrb2xywh, bbox_iou4one
 from f_tools.pic.f_show import f_show_od_np4plt
 from f_tools.yufa.x_calc_adv import f_mershgrid
-
-
-def fmatch4yolov1(gboxes_ltrb_b, glabels_b, grid, gdim, device, cfg, img_ts=None):
-    '''
-    匹配 gyolo 如果需要计算IOU 需在这里生成
-    :param gboxes_ltrb_b: ltrb
-    :param glabels_b:
-    :param grid: 13
-    :param device:
-    :return:
-    '''
-    # 需要在dataset时验证标注有效性
-    txywhs_g, weights, colrows_index = boxes_encode4yolo1(gboxes_ltrb_b, grid, grid, device, cfg)
-
-    p_yolo_one = torch.zeros((grid, grid, gdim), device=device)
-    glabels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
-
-    # 遍历格子
-    for i, (col, row) in enumerate(colrows_index):
-        # 正例匹配 conf 为1
-        conf = torch.tensor([1], device=device, dtype=torch.int16)
-        weight = weights[i]  # 这是一个值 需要加一维 1~2 小目标加成
-        # conf-1, cls-num_class, txywh-4, weight-1, gltrb-4
-        t = torch.cat([conf, glabels_b[i], txywhs_g[i], weight[None], gboxes_ltrb_b[i]], dim=0)
-        p_yolo_one[row, col] = t
-
-    return p_yolo_one
-
-
-def fmatch4yolov1_4iou(gboxes_ltrb_b, glabels_b, grid, gdim, device, cfg, img_ts=None, ptxywh_b=None):
-    '''
-    直接匹配归一化的 gt
-    :param gboxes_ltrb_b: ltrb
-    :param glabels_b:
-    :param grid: 13
-    :param device:
-    :return:
-    '''
-    # 求匹配到的网格 colrows_index 标注成正例   特图回归系数
-    txywhs_g, weights, colrows_index = boxes_encode4yolo1(gboxes_ltrb_b, grid, grid, device, cfg)
-
-    # _gboxes_ltrb_b_t = gboxes_ltrb_b * grid  # 特图真实尺寸
-    # _gboxes_xywh_b_t = ltrb2xywh(_gboxes_ltrb_b_t)
-    # 特图偏移xy
-    # _gboxes_xywh_b_t[..., :2] = _gboxes_xywh_b_t[..., :2] - _gboxes_xywh_b_t[..., :2].long()
-    # gboxes_ltrb_b_toff = xywh2ltrb(_gboxes_xywh_b_t)
-
-    p_yolo_one = torch.zeros((grid, grid, gdim), device=device)
-    glabels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
-
-    # 遍历格子
-    for i, (col, row) in enumerate(colrows_index):
-        # 正例匹配 conf 为1
-        conf = torch.tensor([1], device=device, dtype=torch.int16)
-        weight = weights[i]  # 这是一个值 需要加一维 1~2 小目标加成
-        # conf-1, cls-num_class, txywh-4, weight-1, gltrb-4
-        t = torch.cat([conf, glabels_b[i], txywhs_g[i], weight[None], gboxes_ltrb_b[i]], dim=0)
-        p_yolo_one[row, col] = t
-
-    return p_yolo_one
-
-
-def fmatch4yolov1_4cr(gboxes_ltrb_b, glabels_b, grid, gdim, device, cfg, img_ts=None):
-    '''
-    匹配 reg和cls 两个分支
-    :param gboxes_ltrb_b: ltrb
-    :param glabels_b:
-    :param grid: 13
-    :param device:
-    :return:
-    '''
-    # 需要在dataset时验证标注有效性
-    txywhs_g, weights, colrows_index = boxes_encode4yolo1(gboxes_ltrb_b, grid, grid, device, cfg)
-
-    p_yolo_one = torch.zeros((grid, grid, gdim), device=device)
-    glabels_b = labels2onehot4ts(glabels_b - 1, cfg.NUM_CLASSES)
-
-    # 遍历格子
-    for i, (col, row) in enumerate(colrows_index):
-        txywh_g = txywhs_g[i]
-        weight = weights[i]  # 这是一个值 需要加一维 1~2 小目标加成
-        # cls-num_class, txywh-4, weight-1, gltrb-4
-        t = torch.cat([glabels_b[i], txywh_g, weight[None], gboxes_ltrb_b[i]], dim=0)
-        p_yolo_one[row, col] = t
-
-    return p_yolo_one
 
 
 class LossYOLOv1(nn.Module):
@@ -145,28 +59,16 @@ class LossYOLOv1(nn.Module):
                 整体权重0.4  忽略的
             6. 每一层的损失全加起来
             '''
-            if cfg.MODE_TRAIN == 4:
-                gyolos[i] = fmatch4yolov1_4iou(
-                    gboxes_ltrb_b=gboxes_ltrb_b,
-                    glabels_b=glabels_b,
-                    grid=h,  # 7
-                    gdim=gdim,
-                    device=device,
-                    img_ts=imgs_ts[i],
-                    cfg=cfg,
-                    ptxywh_b=ptxywh[i],
-
-                )
-            else:
-                gyolos[i] = fmatch4yolov1(
-                    gboxes_ltrb_b=gboxes_ltrb_b,
-                    glabels_b=glabels_b,
-                    grid=h,  # 7
-                    gdim=gdim,
-                    device=device,
-                    img_ts=imgs_ts[i],
-                    cfg=cfg
-                )
+            gyolos[i] = fmatch4yolov1(
+                gboxes_ltrb_b=gboxes_ltrb_b,
+                glabels_b=glabels_b,
+                grid=h,  # 7
+                gdim=gdim,
+                device=device,
+                img_ts=imgs_ts[i],
+                cfg=cfg,
+                use_conf=True
+            )
 
             '''可视化验证'''
             if cfg.IS_VISUAL:
@@ -213,13 +115,13 @@ class LossYOLOv1(nn.Module):
         pcls_sigmoid = pyolos[:, :, 1:s_].sigmoid()  # torch.Size([32, 169, 8])
         gcls = gyolos[:, :, 1:s_]  # torch.Size([32, 169, 13])
         _loss_val = x_bce(pcls_sigmoid, gcls, reduction="none")
-        l_cls = ((_loss_val.sum(-1) * mask_pos).sum(-1) / nums_pos).mean() * cfg.LOSS_WEIGHT[2]
+        l_cls = ((_loss_val.sum(-1) * mask_pos).sum(-1) / nums_pos).mean()
 
         # pcls_sigmoid_pos = pyolos_pos[:, 1:s_].sigmoid()
         # gcls_pos = gyolos_pos[:, 1:s_]
         # _loss_val = x_bce(pcls_sigmoid_pos, gcls_pos, reduction="none")  # torch.Size([46, 3])
         # torch.Size([46, 3]) -> val
-        # l_cls = _loss_val.sum(-1).mean() * cfg.LOSS_WEIGHT[2]
+        # l_cls = _loss_val.sum(-1).mean()
 
         ''' ---------------- 类别-conf损失 ---------------- '''
         # conf-1, cls-num_class, txywh-4, weight-1, gltrb-4
@@ -372,14 +274,15 @@ class LossYOLOv1_cr(nn.Module):
             gboxes_ltrb_b = target['boxes']  # ltrb
             glabels_b = target['labels']
 
-            gyolos[i] = fmatch4yolov1_4cr(
+            gyolos[i] = fmatch4yolov1(
                 gboxes_ltrb_b=gboxes_ltrb_b,
                 glabels_b=glabels_b,
                 grid=h,  # 7
                 gdim=gdim,
                 device=device,
                 img_ts=imgs_ts[i],
-                cfg=cfg
+                cfg=cfg,
+                use_conf=False
             )
 
             '''可视化验证'''
@@ -531,7 +434,7 @@ class YOLOv1_Net(nn.Module):
         self.backbone = backbone
 
         dim_layer = backbone.dim_out  # 512
-        dim256 = int(dim_layer / 2)
+        dim256 = dim_layer // 2
         self.spp = nn.Sequential(
             FConv2d(dim_layer, dim256, k=1),
             SPPv2(),
@@ -562,19 +465,19 @@ class YOLOv1_Net(nn.Module):
 class YOLOv1(nn.Module):
     def __init__(self, backbone, cfg):
         super(YOLOv1, self).__init__()
-        if cfg.MODE_TRAIN == 1 or cfg.MODE_TRAIN == 4:
+        if cfg.MODE_TRAIN == 1 or cfg.MODE_TRAIN == 4:  # base 或 IOU 损失及预测
             flog.warning('-------------- LossYOLOv1 ------------- %s', )
             self.net = YOLOv1_Net(backbone, cfg, cfg.NUM_CLASSES + 1)  # 带conf
             self.losser = LossYOLOv1(cfg=cfg)
             self.preder = PredictYOLOv1(cfg=cfg)
 
-        elif cfg.MODE_TRAIN == 2:
+        elif cfg.MODE_TRAIN == 2:  # 去conf 只有cls reg分支
             flog.warning('-------------- LossYOLOv1_cr ------------- %s', )
             self.net = YOLOv1_Net(backbone, cfg, cfg.NUM_CLASSES)  # 只有cls及reg分支
             self.losser = LossYOLOv1_cr(cfg=cfg)
             self.preder = PredictYOLOv1_cr(cfg=cfg)
 
-        elif cfg.MODE_TRAIN == 3:
+        elif cfg.MODE_TRAIN == 3:  # 任意分布 高级reg算法 暂时无效?
             self.net = YOLOv1_Net(backbone, cfg, cfg.NUM_CLASSES, num_reg=4 * cfg.NUM_REG)  # YOLOv1_Net
             self.losser = LossYOLOv1_cr(cfg=cfg)
             self.preder = PredictYOLOv1_cr(cfg=cfg)

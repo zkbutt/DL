@@ -81,7 +81,7 @@ if __name__ == '__main__':
     # img_tensor = F.to_tensor(img_pil)
 
     # (h,w,3)
-    img_np = cv2.imread(file_img)
+    img_np = cv2.imread(file_img)  # 这个打开是hwc bgr
     print(img_np.shape)
     # (h,w,c)->(c,h,w)
     img_tensor = torch.from_numpy(img_np.astype(np.float32)).permute(2, 0, 1)

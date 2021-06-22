@@ -93,14 +93,20 @@ def data_clean(coco_obj, coco_img_ids, catid2clsid, path_img=None):
 
 
 if __name__ == '__main__':
-    path_host = 'M:'
-    path_root = path_host + r'/AI/datas/VOC2007'
+    # path_host = 'M:'
+    # path_root = path_host + r'/AI/datas/VOC2007'
     # file_json = path_root + '/coco/annotations/instances_type3_train_1096.json'
-    file_json = path_root + '/coco/annotations/instances_train_5011.json'
-    path_img = path_root + '/train/JPEGImages'
+    # file_json = path_root + '/coco/annotations/instances_train_5011.json'
+    # path_img = path_root + '/train/JPEGImages'
 
+    path_host = ''
+    path_root = path_host + r'/AI/datas/widerface'
+    file_json = path_root + '/coco/annotations/person_keypoints_train2017.json'
+    path_img = path_root + '/coco/images/train2017'
+
+    s_ids_cats = None
     # s_ids_cats = [3, 8, 12]  # 只选部分
-    s_ids_cats = [1, 2, 5, 14]  # 只选部分
+    # s_ids_cats = [1, 2, 5, 14]  # 只选部分
     # s_ids_cats = []  # 只选部分
 
     coco_obj = COCO(file_json)

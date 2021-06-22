@@ -12,7 +12,7 @@ from object_detection.z_yolov2.nets.net_yolov2 import Yolo_v2
 from object_detection.z_yolov2.CONFIG_YOLOV2 import CFG
 from f_pytorch.tools_model.backbones.darknet import darknet19, darknet_tiny
 from torch import optim
-from f_tools.datas.data_loader import cfg_type3, DataLoader2, cfg_type4, cfg_voc
+from f_tools.datas.data_loader import cfg_type3, FDataLoader2, cfg_type4, cfg_voc
 
 from f_tools.f_torch_tools import load_weight
 from f_tools.fits.f_gpu.f_gpu_api import model_device_init, mgpu_process0_init
@@ -33,7 +33,7 @@ tensorboard --host=192.168.0.199 --logdir=/AI/temp/tmp_pycharm/DL/object_detecti
 def train_eval_set(cfg):
     # 基本不动
     cfg.TB_WRITER = True
-    cfg.LOSS_EPOCH = False
+    cfg.LOSS_EPOCH_TB = False
     cfg.USE_MGPU_EVAL = True  # 一个有一个没得会卡死
     cfg.IS_MULTI_SCALE = False  # 关多尺度训练
     cfg.FILE_NAME_WEIGHT = '123' + '.pth'  # 重新开始

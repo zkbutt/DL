@@ -1,3 +1,5 @@
+import math
+
 import torch
 from torch import Tensor, nn
 
@@ -16,6 +18,26 @@ from f_tools.pic.f_show import f_show_3box4pil, show_anc4pil
 import matplotlib.pyplot as plt
 
 torch.set_printoptions(linewidth=320, sci_mode=False, precision=5, profile='long')
+
+
+def wing_loss(landmarks, labels, w=0.06, epsilon=0.01):
+    """
+    Arguments:
+        landmarks, labels: float tensors with shape [batch_size, landmarks].  landmarks means x1,x2,x3,x4...y1,y2,y3,y4   1-D
+        w, epsilon: a float numbers.
+    Returns:
+        a float tensor with shape [].
+    """
+    x = landmarks - labels  # 差值距离
+    c = w * (1.0 - math.log(1.0 + w / epsilon))
+    absolute_x = torch.abs(x)
+
+    losses = torch.where(w > absolute_x, w * torch.log(1.0 + absolute_x / epsilon), absolute_x - c)
+
+    # loss = tf.reduce_mean(tf.reduce_mean(losses, axis=[1]), axis=0)
+    losses = torch.mean(losses, dim=1, keepdim=True)
+    loss = torch.mean(losses)
+    return loss
 
 
 def x_bce(pconf_sigmoid, gconf, weight=1., reduction='none'):

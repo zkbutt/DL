@@ -394,7 +394,7 @@ def show_bbox_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
         return
     pil_copy = img_pil.copy()
     draw = ImageDraw.Draw(pil_copy)
-    cw = 3
+    cw = 3  # 到左上角?
     for bbox, k, s in zip(bboxs, keypoints, scores):
         if isinstance(bboxs, np.ndarray):
             l, t, r, b = bbox.astype(np.int)
@@ -405,11 +405,15 @@ def show_bbox_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
 
         draw.line([(l, t), (l, b), (r, b), (r, t), (l, t)], width=4,
                   fill=COLORS_ImageDraw[random.randint(0, len(COLORS_ImageDraw) - 1)])
-        draw.chord((k[0] - cw, k[1] - cw, k[0] + cw, k[1] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
-        draw.chord((k[2] - cw, k[3] - cw, k[2] + cw, k[3] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
-        draw.chord((k[4] - cw, k[5] - cw, k[4] + cw, k[5] + cw), 0, 360, fill=(0, 0, 255), outline=(0, 255, 0))
-        draw.chord((k[6] - cw, k[7] - cw, k[6] + cw, k[7] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
-        draw.chord((k[8] - cw, k[9] - cw, k[8] + cw, k[9] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        # draw.chord((k[0] - cw, k[1] - cw, k[0] + cw, k[1] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        # draw.chord((k[2] - cw, k[3] - cw, k[2] + cw, k[3] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        # draw.chord((k[4] - cw, k[5] - cw, k[4] + cw, k[5] + cw), 0, 360, fill=(0, 0, 255), outline=(0, 255, 0))
+        # draw.chord((k[6] - cw, k[7] - cw, k[6] + cw, k[7] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+        # draw.chord((k[8] - cw, k[9] - cw, k[8] + cw, k[9] + cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+
+        for x,y in zip(k[::2],k[1::2]):
+            draw.chord((x - cw, y - cw,x + cw, y+ cw), 0, 360, fill=(255, 0, 0), outline=(0, 255, 0))
+
         # draw.text((l, t), "hello", (0, 255, 0))
         # draw.point([(20, 20), (25, 25), (50, 50), (30, 30)], (0, 255, 0))
         # ltrb 角度顺时间 框色 填充色
@@ -419,9 +423,32 @@ def show_bbox_keypoints4pil(img_pil, bboxs, keypoints, scores=None):
     # plt.show()
 
 
-def show_bbox_keypoints4ts(img_ts, bboxs, keypoints, scores=None):
+def show_bbox_keypoints4ts(img_ts, bboxs, keypoints, scores, is_recover_size=True):
+    '''
+
+    :param img_ts:
+    :param bboxs:
+    :param keypoints:
+    :param scores: 必须造一个分数
+    :return:
+    '''
+    # 恢复 正则化
+    device = img_ts.device
+    img_ts_show = img_ts.permute(1, 2, 0)
+    mean = torch.tensor([0.485, 0.456, 0.406], device=device)
+    std = torch.tensor([0.229, 0.224, 0.225], device=device)
+    img_ts_show = img_ts_show * std + mean
+    img_ts = img_ts_show.permute(2, 0, 1)
+
     img_pil = transforms.ToPILImage()(img_ts)
-    show_bbox_keypoints4pil(img_pil, bboxs.numpy(), keypoints.numpy(), scores=scores.numpy())
+
+    if is_recover_size:
+        whwh_ts = torch.tensor(img_pil.size).repeat(2)
+        bboxs *= whwh_ts
+        keypoints[:, ::2] *= whwh_ts[0]
+        keypoints[:, 1::2] *= whwh_ts[1]
+    show_bbox_keypoints4pil(img_pil, bboxs.detach().cpu().numpy(),
+                            keypoints.detach().cpu().numpy(), scores=scores.numpy())
 
 
 def show_pic_ts(img_ts, labels=None):

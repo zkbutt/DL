@@ -11,7 +11,7 @@ from f_tools.GLOBAL_LOG import flog
 
 class Csv2CocoInstances:
 
-    def __init__(self, path_img, classname_to_id, file_annotations_dict):
+    def __init__(self, path_img, classes_ids, file_annotations_dict):
         '''
 
         :param path_img:
@@ -24,7 +24,7 @@ class Csv2CocoInstances:
         self.ann_id = 0
         self.path_img = path_img
         self.file_annotations_dict = file_annotations_dict
-        self.classname_to_id = classname_to_id
+        self.classes_ids = classes_ids
 
     def save_coco_json(self, instance, save_path):
         json.dump(instance, open(save_path, 'w'), ensure_ascii=False, indent=2)  # indent=2 更加美观显示
@@ -55,7 +55,7 @@ class Csv2CocoInstances:
 
     # 构建类别
     def _init_categories(self):
-        for k, v in self.classname_to_id.items():
+        for k, v in self.classes_ids.items():
             category = {}
             category['id'] = v
             category['name'] = k
@@ -82,7 +82,7 @@ class Csv2CocoInstances:
         annotation = {}
         annotation['id'] = self.ann_id
         annotation['image_id'] = self.img_id
-        annotation['category_id'] = int(self.classname_to_id[label])
+        annotation['category_id'] = int(self.classes_ids[label])
         annotation['segmentation'] = self._get_seg(points)
         annotation['bbox'] = self._get_box(points)
         annotation['iscrowd'] = 0  # 0表示polygon格式  1表示RLE格式
@@ -138,7 +138,7 @@ class Csv2CocoInstances:
 
 class Csv2CocoKeypoints(Csv2CocoInstances):
 
-    def __init__(self, path_img, classname_to_id, file_annotations_dict, name_keypoints, skeleton):
+    def __init__(self, path_img, classes_ids, file_annotations_dict, name_keypoints, skeleton):
         '''
 
         :param path_img:
@@ -163,12 +163,12 @@ class Csv2CocoKeypoints(Csv2CocoInstances):
                 [3, 5], [4, 6], [5, 7]
             ]
         '''
-        super().__init__(path_img, classname_to_id, file_annotations_dict)
+        super().__init__(path_img, classes_ids, file_annotations_dict)
         self.name_keypoints = name_keypoints
         self.skeleton = skeleton
 
     def _init_categories(self):
-        for k, v in classes_ids.items():
+        for k, v in self.classes_ids.items():
             category = {}
             category['id'] = v
             category['name'] = k
@@ -197,7 +197,7 @@ class Csv2CocoKeypoints(Csv2CocoInstances):
 
 
 def to_coco_v2(annotations, classname_to_id, path_img, path_coco_save, mode,
-               is_copy=False, is_move=False, type='train2017'):
+               is_copy=False, is_move=False, file_coco='train2017'):
     '''
 
     :param annotations:
@@ -207,7 +207,7 @@ def to_coco_v2(annotations, classname_to_id, path_img, path_coco_save, mode,
     :param mode: bbox segm keypoints caption
     :param is_copy:
     :param is_move:
-    :param type:
+    :param file_coco:
     :return:
     '''
     if is_move:
@@ -220,8 +220,12 @@ def to_coco_v2(annotations, classname_to_id, path_img, path_coco_save, mode,
     # 检查格式错误
     if mode == 'bbox' and annotations[0].shape[0] != 6:
         raise Exception('加载csv格式出错 mode=%s value=%s' % (mode, annotations[0]))
+
+    ''' 这里要根据数据集改 '''
     if mode == 'keypoints' and annotations[0].shape[0] != 21:
         raise Exception('加载csv格式出错 mode=%s value=%s' % (mode, annotations[0]))
+
+    ''' 这里会按照key进行处理 '''
     for annotation in annotations:
         key = annotation[0].split(os.sep)[-1]  # 取文件名
         value = np.array([annotation[1:]])  # 取bbox
@@ -265,12 +269,76 @@ def to_coco_v2(annotations, classname_to_id, path_img, path_coco_save, mode,
 
     # ---------------这里是转换类--------------
     coco_obj = coco_generate.to_coco_obj(file_names)
-    path_csv = os.path.join(path_annotations, '%s_%s.json' % (name_file, type))
+    path_csv = os.path.join(path_annotations, '%s_%s.json' % (name_file, file_coco))
     coco_generate.save_coco_json(coco_obj, path_csv)
     flog.debug('标注文件制作完成 %s', path_csv)
 
     if is_copy:
-        path_save_img = os.path.join(path_coco_save, 'coco/images', type)
+        path_save_img = os.path.join(path_coco_save, 'coco/images', file_coco)
+        if not os.path.exists(path_save_img):
+            os.makedirs(path_save_img)
+        with tqdm(total=len(file_names), desc=f'复制文件', postfix=dict, mininterval=0.3) as pbar:
+            for file in file_names:
+                src = os.path.join(path_img, file)
+                dst = path_save_img
+                __s = fun_copy(src, dst)
+                # flog.debug('复制成功 %s', __s)
+                pbar.set_postfix(**{'当前文件': __s})
+                pbar.update(1)
+
+
+def to_coco_4keypoint(annotations, classes_ids, path_img, path_coco_save,
+                      size_ann, name_keypoints, skeleton,
+                      is_copy=False, is_move=False, file_coco='train2017'):
+    if is_move:
+        fun_copy = shutil.move
+    else:
+        fun_copy = shutil.copy
+
+    # 重构csv格式标注文件
+    file_annotations_dict = {}
+
+    ''' 这里要根据数据集改 '''
+    if annotations[0].shape[0] != size_ann:
+        raise Exception('加载csv格式出错 annotations[0].shape[0]=%s size_ann=%s' % (annotations[0].shape[0], size_ann,))
+
+    ''' 这里会按照key进行处理 '''
+    for annotation in annotations:
+        key = annotation[0].split(os.sep)[-1]  # 取文件名
+        value = np.array([annotation[1:]])  # 取bbox
+
+        # assert mode == 'boxes' and len(value) == 5, '加载csv格式出错 value=%s' % value
+        # assert mode == 'keypoints' and len(value) == 16, '加载csv格式出错 value=%s' % value
+        if key in file_annotations_dict.keys():
+            file_annotations_dict[key] = np.concatenate((file_annotations_dict[key], value), axis=0)
+        else:
+            file_annotations_dict[key] = value
+
+    file_names = list(file_annotations_dict.keys())
+    # len(annotations):标签数      len(file_names):文件数
+    flog.debug("file_names数量:%s", len(file_names))  #
+
+    # 创建必须的文件夹
+    path_annotations = os.path.join(path_coco_save, 'annotations')
+    if not os.path.exists(path_annotations):
+        os.makedirs(path_annotations)
+
+    # name_keypoints = [
+    #     "left_eye", "right_eye", "nose",
+    #     "left_mouth", "right_mouth",
+    # ]
+    # skeleton = [[3, 1], [3, 2], [3, 4], [3, 5]]  # 连接顺序
+    coco_generate = Csv2CocoKeypoints(path_img, classes_ids, file_annotations_dict, name_keypoints, skeleton)
+
+    # ---------------这里是转换类--------------
+    coco_obj = coco_generate.to_coco_obj(file_names)
+    # mode + train_type + 标签数 + 文件数
+    file_json = os.path.join(path_annotations, '%s_%s.json' % (file_coco, len(file_names)))
+    coco_generate.save_coco_json(coco_obj, file_json)
+    flog.debug('标注文件制作完成 %s', file_json)
+
+    if is_copy:
+        path_save_img = os.path.join(path_coco_save, 'images', file_coco)
         if not os.path.exists(path_save_img):
             os.makedirs(path_save_img)
         with tqdm(total=len(file_names), desc=f'复制文件', postfix=dict, mininterval=0.3) as pbar:
@@ -284,7 +352,7 @@ def to_coco_v2(annotations, classname_to_id, path_img, path_coco_save, mode,
 
 
 def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
-            is_copy=False, is_move=False, type='train2017'):
+            is_copy=False, is_move=False, file_coco='train2017'):
     '''
     coco ann ltwh
     :param file_csv: csv标注
@@ -294,13 +362,13 @@ def to_coco(file_csv, classname_to_id, path_img, path_coco_save, mode,
     :param mode:
     :param is_copy: 复制文件
     :param is_move: 是否移动
-    :param type:  train2017  val2017
+    :param file_coco:  train2017  val2017
     :return:
     '''
     # 文件名, ltrb + keys 类型名
     annotations = pd.read_csv(file_csv, header=None).values
     # 重构csv格式标注文件
-    to_coco_v2(annotations, classname_to_id, path_img, path_coco_save, mode, is_copy, is_move, type)
+    to_coco_v2(annotations, classname_to_id, path_img, path_coco_save, mode, is_copy, is_move, file_coco)
 
 
 if __name__ == '__main__':
@@ -337,6 +405,6 @@ if __name__ == '__main__':
     with open(file_classes_ids, 'r', encoding='utf-8') as f:
         classes_ids = json.load(f)  # 文件转dict 或list
 
-    to_coco(file_csv, classes_ids, path_img, path_coco_save, mode, is_copy=False, is_move=False, type=type)
+    to_coco(file_csv, classes_ids, path_img, path_coco_save, mode, is_copy=False, is_move=False, file_coco=type)
 
     flog.info('数据生成成功 %s', )

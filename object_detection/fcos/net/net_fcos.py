@@ -9,7 +9,7 @@ from f_pytorch.tools_model.f_layer_get import ModelOuts4Resnet
 from f_pytorch.tools_model.f_model_api import FModelBase, FConv2d, Scale
 from f_pytorch.tools_model.fmodels.model_necks import FPN_out_v3, FPN_out_v4
 from f_tools.GLOBAL_LOG import flog
-from f_tools.fits.f_match import match4fcos, boxes_decode4fcos, match4fcos_v2, match4fcos_v3
+from f_tools.fits.f_match import match4fcos, boxes_decode4fcos, match4fcos_v2, match4fcos_v3_noback
 from f_tools.fits.fitting.f_fit_class_base import Predicting_Base
 from f_tools.floss.f_lossfun import x_bce
 from f_tools.floss.focal_loss import BCE_focal_loss, focalloss_fcos
@@ -177,12 +177,12 @@ class FLoss_v2(nn.Module):
 
             # import time
             # start = time.time()
-            gres[i] = match4fcos_v3(gboxes_ltrb_b=gboxes_ltrb_b,
-                                    glabels_b=glabels_b,
-                                    gdim=gdim,
-                                    pcos=outs,
-                                    img_ts=imgs_ts[i],
-                                    cfg=cfg, )
+            gres[i] = match4fcos_v3_noback(gboxes_ltrb_b=gboxes_ltrb_b,
+                                           glabels_b=glabels_b,
+                                           gdim=gdim,
+                                           pcos=outs,
+                                           img_ts=imgs_ts[i],
+                                           cfg=cfg, )
             # flog.debug('show_time---完成---%s--' % (time.time() - start))
 
         # cls3 centerness1 ltrb4 positive_radius1 positive_ingt1 area1
